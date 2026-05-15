@@ -1,10 +1,8 @@
+import { redirect } from 'next/navigation';
+
+// The app has no marketing/landing surface — the root path just sends users
+// into the product. Auth is enforced by middleware: unauthenticated visitors
+// hitting /dashboard are bounced to /login by the `authorized` callback.
 export default function Home() {
-  return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-2 p-8">
-      <h1 className="text-2xl font-semibold">Stock Portfolio Manager</h1>
-      <p className="text-sm text-neutral-400">
-        Scaffold ready. Build proceeds per TODO.md, stage by stage.
-      </p>
-    </main>
-  );
+  redirect('/dashboard');
 }
