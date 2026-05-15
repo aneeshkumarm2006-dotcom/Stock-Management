@@ -9,7 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
-    "prepare": "node ../scripts/setup-husky.mjs"
+    "prepare": "node scripts/prepare.mjs"
   },
   "dependencies": {
     "@auth/mongodb-adapter": "^3.11.2",
