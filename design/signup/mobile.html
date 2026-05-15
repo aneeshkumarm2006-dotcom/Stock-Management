@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-primary-container": "#ffffff",
+                    "surface-bright": "#232c41",
+                    "tertiary-dim": "#42e09a",
+                    "primary-dim": "#699cff",
+                    "surface-container-low": "#0e1320",
+                    "inverse-surface": "#faf8ff",
+                    "on-secondary": "#334153",
+                    "background": "#0a0e18",
+                    "secondary-fixed": "#d4e4fa",
+                    "primary-fixed-dim": "#317bef",
+                    "tertiary-fixed-dim": "#42e09a",
+                    "on-tertiary-fixed": "#003f26",
+                    "tertiary-container": "#54eea7",
+                    "on-error": "#490006",
+                    "secondary-container": "#2e3c4e",
+                    "on-primary-fixed": "#000000",
+                    "surface-container-high": "#181f31",
+                    "surface-container-highest": "#1d253a",
+                    "inverse-on-surface": "#515561",
+                    "surface-tint": "#adc6ff",
+                    "secondary-dim": "#abbad0",
+                    "outline-variant": "#3f485e",
+                    "on-secondary-fixed": "#324052",
+                    "error-dim": "#c54d4a",
+                    "on-primary": "#003d88",
+                    "on-tertiary": "#005e3c",
+                    "on-secondary-fixed-variant": "#4e5d6f",
+                    "surface-dim": "#0a0e18",
+                    "inverse-primary": "#005bc4",
+                    "tertiary-fixed": "#54eea7",
+                    "secondary": "#b9c8de",
+                    "on-secondary-container": "#b1c0d6",
+                    "error-container": "#871f21",
+                    "on-tertiary-container": "#005435",
+                    "surface-variant": "#1d253a",
+                    "on-surface-variant": "#a2abc5",
+                    "surface-container-lowest": "#000000",
+                    "tertiary": "#65fdb5",
+                    "secondary-fixed-dim": "#c6d6ec",
+                    "primary-fixed": "#4388fd",
+                    "outline": "#6d758d",
+                    "primary": "#adc6ff",
+                    "primary-container": "#0e69dc",
+                    "error": "#fa746f",
+                    "on-background": "#dde5ff",
+                    "surface": "#0a0e18",
+                    "on-tertiary-fixed-variant": "#005f3c",
+                    "surface-container": "#131929",
+                    "on-surface": "#dde5ff",
+                    "on-primary-fixed-variant": "#001435",
+                    "on-error-container": "#ff9993"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Space Grotesk"],
+                    "display": ["Space Grotesk"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0e18;
+        }
+        .font-headline {
+            font-family: 'Space Grotesk', sans-serif;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col">
+<!-- Top App Bar -->
+<header class="bg-background flex items-center justify-between px-4 w-full h-16 border-b border-outline-variant fixed top-0 z-50">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary cursor-pointer active:scale-95 transition-transform duration-150">arrow_back</span>
+</div>
+<div class="font-headline font-bold text-xl tracking-tight text-on-surface">PortfolioPro</div>
+<div class="text-primary font-bold hover:bg-surface-container-high transition-colors px-3 py-1 rounded cursor-pointer active:scale-95 transition-transform duration-150">Log in</div>
+</header>
+<!-- Main Content -->
+<main class="flex-grow flex flex-col px-6 pt-24 pb-12 w-full max-w-md mx-auto">
+<!-- Header Text -->
+<div class="mb-8">
+<h1 class="font-headline text-3xl font-bold text-on-surface mb-2">Create Account</h1>
+<p class="text-on-surface-variant font-body">Join the pro-grade terminal for retail investors.</p>
+</div>
+<!-- Form Section -->
+<form class="space-y-5">
+<!-- Full Name -->
+<div class="space-y-1.5">
+<label class="text-sm font-medium text-on-surface-variant px-1" for="name">Full Name</label>
+<div class="relative group">
+<input class="w-full bg-surface-container-low border border-outline-variant text-on-surface rounded-lg px-4 py-3.5 focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all placeholder:text-outline" id="name" placeholder="John Doe" type="text"/>
+</div>
+</div>
+<!-- Email -->
+<div class="space-y-1.5">
+<label class="text-sm font-medium text-on-surface-variant px-1" for="email">Email</label>
+<div class="relative group">
+<input class="w-full bg-surface-container-low border border-outline-variant text-on-surface rounded-lg px-4 py-3.5 focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all placeholder:text-outline" id="email" placeholder="name@company.com" type="email"/>
+</div>
+</div>
+<!-- Password -->
+<div class="space-y-1.5">
+<label class="text-sm font-medium text-on-surface-variant px-1" for="password">Password</label>
+<div class="relative group">
+<input class="w-full bg-surface-container-low border border-outline-variant text-on-surface rounded-lg px-4 py-3.5 focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all placeholder:text-outline" id="password" placeholder="••••••••" type="password"/>
+</div>
+<p class="text-xs text-outline px-1">minimum 8 characters</p>
+</div>
+<!-- Submit Button -->
+<button class="w-full bg-primary-container text-on-primary-container font-headline font-bold py-4 rounded-lg shadow-lg active:scale-[0.98] transition-all mt-4" type="submit">
+                Create account
+            </button>
+</form>
+<!-- Divider -->
+<div class="flex items-center my-8">
+<div class="flex-grow border-t border-outline-variant"></div>
+<span class="px-4 text-xs font-bold text-outline uppercase tracking-widest">OR</span>
+<div class="flex-grow border-t border-outline-variant"></div>
+</div>
+<!-- Social Signup -->
+<button class="w-full flex items-center justify-center gap-3 bg-surface-container-high border border-outline-variant text-on-surface py-3.5 rounded-lg hover:bg-surface-container-highest transition-colors active:scale-[0.98]">
+<svg class="w-5 h-5" viewbox="0 0 24 24">
+<path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"></path>
+<path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"></path>
+<path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"></path>
+<path d="M12 5.38c1.62 0 3.06.56 4.21 1.66l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"></path>
+</svg>
+<span class="font-medium">Continue with Google</span>
+</button>
+<!-- Footer -->
+<div class="mt-auto pt-10 text-center">
+<p class="text-sm text-on-surface-variant">
+                Already have an account? 
+                <a class="text-primary font-bold ml-1 hover:underline" href="#">Log in</a>
+</p>
+</div>
+<!-- Compliance / Privacy -->
+<p class="mt-6 text-[10px] text-center text-outline leading-relaxed px-4">
+            By creating an account, you agree to our Terms of Service and Privacy Policy. Financial data provided is for information purposes only.
+        </p>
+</main>
+<!-- Visual Accent Element (Decorative Chart Sparkline Background) -->
+<div class="fixed bottom-0 left-0 w-full h-1/4 opacity-10 pointer-events-none z-[-1] overflow-hidden">
+<svg class="w-full h-full preserve-aspect-ratio-none" viewbox="0 0 1000 100">
+<path d="M0,80 Q150,20 300,50 T600,30 T900,70 L1000,60 L1000,100 L0,100 Z" fill="url(#grad)"></path>
+<defs>
+<lineargradient id="grad" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" style="stop-color:#adc6ff;stop-opacity:1"></stop>
+<stop offset="100%" style="stop-color:#0a0e18;stop-opacity:1"></stop>
+</lineargradient>
+</defs>
+</svg>
+</div>
+</body></html>
