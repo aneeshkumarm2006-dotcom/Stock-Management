@@ -1,5 +1,20 @@
 import type { Metadata } from "next";
+import { Inter, Space_Grotesk } from "next/font/google";
 import "./globals.css";
+import { Providers } from "@/components/providers/Providers";
+
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-sans",
+});
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-display",
+});
 
 export const metadata: Metadata = {
   title: process.env.NEXT_PUBLIC_APP_NAME ?? "Portfolio",
@@ -13,8 +28,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body>{children}</body>
+    <html
+      lang="en"
+      className={`dark ${inter.variable} ${spaceGrotesk.variable}`}
+    >
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

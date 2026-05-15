@@ -3,31 +3,67 @@
 @tailwind utilities;
 
 /*
- * Base theme. Dark is the default (PDR §12 / Tech_Stack §Frontend).
- * Real design tokens are wired from the Stitch reference in Stage 6.
+ * Base theme — dark is the default and only v1 product theme
+ * (PDR §12, tokens.md). Tokens are wired in tailwind.config.ts; this file
+ * sets the canvas, fonts, scrollbar, and a few shared helpers.
  */
 @layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    color-scheme: dark;
   }
 
   html {
     color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
-    background: var(--background);
-    color: var(--foreground);
-    font-family:
-      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial,
-      sans-serif;
+    @apply bg-bg text-fg;
+    font-family: var(--font-sans), Inter, ui-sans-serif, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    @apply bg-primary-container text-white;
+  }
+
+  /* Thin terminal-style scrollbars (matches Stitch references). */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0a0e18;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #3f485e;
+    border-radius: 3px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #3f485e #0a0e18;
+  }
+
+  /* Tabular numerals for all monetary / quantity figures (tokens.md). */
+  .font-display,
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
   }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* P&L semantics — green up, red down, never the blue primary (tokens.md). */
+  .pnl-up {
+    @apply text-gain;
+  }
+  .pnl-down {
+    @apply text-loss;
   }
 }
