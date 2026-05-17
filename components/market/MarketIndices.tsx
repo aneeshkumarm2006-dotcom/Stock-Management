@@ -13,22 +13,23 @@ import { SectionHeader, StaleNote, SectionError } from "@/components/market/shar
 import { cn } from "@/lib/utils/cn";
 
 // Display order + short labels (PDR §5.5 §1).
+// Free TwelveData plan gates raw index symbols, so the strip tracks the ETF
+// that mirrors each index (see INDEX_SYMBOLS in twelvedata.ts). Labels name
+// the proxy so the figures aren't mistaken for the index level itself.
 const ORDER = [
   "sp500",
   "nasdaq",
   "dow",
   "tsx",
-  "tsxv",
   "vix",
   "usdcad",
 ] as const;
 const SHORT: Record<string, string> = {
-  sp500: "S&P 500",
-  nasdaq: "NASDAQ",
-  dow: "Dow Jones",
-  tsx: "TSX Composite",
-  tsxv: "TSX Venture",
-  vix: "VIX",
+  sp500: "S&P 500 (SPY)",
+  nasdaq: "NASDAQ-100 (QQQ)",
+  dow: "Dow Jones (DIA)",
+  tsx: "Canada (EWC)",
+  vix: "VIX (VIXY)",
   usdcad: "USD/CAD",
 };
 

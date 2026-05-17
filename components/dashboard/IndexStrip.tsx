@@ -10,13 +10,15 @@ import { StatStripSkeleton } from "@/components/skeletons";
 import { cn } from "@/lib/utils/cn";
 
 // The five the dashboard surfaces, in order (PDR §5.2). getIndices also
-// returns tsxv/vix — those are reserved for the Market page (Stage 11).
+// returns vix — reserved for the Market page (Stage 11). On the free
+// TwelveData plan these track ETF proxies (see INDEX_SYMBOLS), so labels
+// name the proxy to avoid implying a raw index level.
 const DASHBOARD_KEYS = ["sp500", "nasdaq", "dow", "tsx", "usdcad"] as const;
 const SHORT_LABEL: Record<string, string> = {
-  sp500: "S&P 500",
-  nasdaq: "NASDAQ",
-  dow: "Dow Jones",
-  tsx: "TSX Comp",
+  sp500: "S&P 500 (SPY)",
+  nasdaq: "NASDAQ (QQQ)",
+  dow: "Dow (DIA)",
+  tsx: "Canada (EWC)",
   usdcad: "USD/CAD",
 };
 

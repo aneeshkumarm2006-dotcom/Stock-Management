@@ -273,15 +273,18 @@ export async function searchSymbols(
   });
 }
 
-/** Symbols for the index strip (PDR §5.2, §5.5). Plan may gate some — the
- *  caller degrades gracefully per missing key. */
+/** Symbols for the index strip (PDR §5.2, §5.5). Twelve Data gates raw index
+ *  symbols (GSPC/IXIC/DJI/VIX) behind the Pro/Venture plan, so on the free
+ *  plan we track the liquid ETF that mirrors each index instead — SPY≈S&P 500,
+ *  QQQ≈NASDAQ-100, DIA≈Dow, EWC≈Canadian market, VIXY≈VIX. USD/CAD is a forex
+ *  pair and free on every plan. The caller still degrades gracefully per
+ *  missing key. (TSX Venture has no free ETF proxy and is omitted.) */
 const INDEX_SYMBOLS: Array<{ key: string; symbol: string; label: string }> = [
-  { key: 'sp500', symbol: 'GSPC', label: 'S&P 500' },
-  { key: 'nasdaq', symbol: 'IXIC', label: 'NASDAQ Composite' },
-  { key: 'dow', symbol: 'DJI', label: 'Dow Jones' },
-  { key: 'tsx', symbol: 'GSPTSE', label: 'TSX Composite' },
-  { key: 'tsxv', symbol: 'JX', label: 'TSX Venture' },
-  { key: 'vix', symbol: 'VIX', label: 'VIX' },
+  { key: 'sp500', symbol: 'SPY', label: 'S&P 500 (SPY)' },
+  { key: 'nasdaq', symbol: 'QQQ', label: 'NASDAQ-100 (QQQ)' },
+  { key: 'dow', symbol: 'DIA', label: 'Dow Jones (DIA)' },
+  { key: 'tsx', symbol: 'EWC', label: 'Canada (EWC)' },
+  { key: 'vix', symbol: 'VIXY', label: 'VIX (VIXY)' },
   { key: 'usdcad', symbol: 'USD/CAD', label: 'USD/CAD' },
 ];
 
