@@ -215,15 +215,19 @@ export function usePortfolio(): PortfolioData {
     ): PortfolioRow | null =>
       list.length === 0 ? null : list.slice().sort(cmp)[0] ?? null;
 
+    const best = pick(quoted, (a, b) => b.metrics.pnlPct - a.metrics.pnlPct);
+    const worst = pick(quoted, (a, b) => a.metrics.pnlPct - b.metrics.pnlPct);
+
+    // With a single quoted holding, best and worst resolve to the same row.
+    // Showing one stock in both cards is misleading (a position in loss
+    // appearing as "best performer"), so attribute it to only one card based
+    // on its sign and leave the other empty.
+    const onlyOne = best !== null && best === worst;
+    const isGain = best !== null && best.metrics.pnlPct >= 0;
+
     const statsValue: PortfolioStats = {
-      bestPerformer: pick(
-        quoted,
-        (a, b) => b.metrics.pnlPct - a.metrics.pnlPct,
-      ),
-      worstPerformer: pick(
-        quoted,
-        (a, b) => a.metrics.pnlPct - b.metrics.pnlPct,
-      ),
+      bestPerformer: onlyOne ? (isGain ? best : null) : best,
+      worstPerformer: onlyOne ? (isGain ? null : worst) : worst,
       highestValue: pick(
         built,
         (a, b) => b.metrics.currentValue - a.metrics.currentValue,

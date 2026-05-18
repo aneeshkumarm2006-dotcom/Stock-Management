@@ -24,8 +24,8 @@ import {
   GRID_STROKE,
 } from "./chartTheme";
 
-const INVESTED_COLOR = "#A2ABC5";
-const VALUE_COLOR = "#3B82F6";
+const INVESTED_COLOR = "#94A3B8";
+const VALUE_COLOR = "#38BDF8";
 
 export function InvestedVsValue({
   summary,
@@ -100,7 +100,7 @@ export function InvestedVsValue({
                 ]}
               />
               <Legend
-                wrapperStyle={{ fontSize: 11, color: "#A2ABC5" }}
+                wrapperStyle={{ fontSize: 11, color: "#94A3B8" }}
                 iconType="circle"
               />
               <Bar

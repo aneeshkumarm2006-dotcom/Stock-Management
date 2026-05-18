@@ -34,16 +34,16 @@
     height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: #0a0e18;
+    background: #0c0d10;
   }
   ::-webkit-scrollbar-thumb {
-    background: #3f485e;
+    background: #2b2e37;
     border-radius: 3px;
   }
 
   * {
     scrollbar-width: thin;
-    scrollbar-color: #3f485e #0a0e18;
+    scrollbar-color: #2b2e37 #0c0d10;
   }
 
   /* Tabular numerals for all monetary / quantity figures (tokens.md). */

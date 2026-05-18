@@ -31,10 +31,10 @@ import { useSettingsStore } from "@/store/useSettingsStore";
 /* tokens.md — chart palette */
 const UP = "#16C784";
 const DOWN = "#EF4444";
-const GRID = "#1D253A"; // surface-highest, very low contrast gridlines
-const BORDER = "#3F485E";
-const AXIS_TEXT = "#A2ABC5"; // on-surface-variant
-const AVG_LINE = "#3B82F6"; // primary — explicitly a reference, not a P&L color
+const GRID = "#24272F"; // surface-highest, very low contrast gridlines
+const BORDER = "#2B2E37";
+const AXIS_TEXT = "#94A3B8"; // on-surface-variant
+const AVG_LINE = "#38BDF8"; // primary — explicitly a reference, not a P&L color
 
 interface CandlestickChartProps {
   candles: WireCandle[];

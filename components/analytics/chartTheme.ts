@@ -5,17 +5,17 @@
 
 /** Recharts <Tooltip contentStyle> — the dark popover from tokens.md. */
 export const TOOLTIP_CONTENT_STYLE = {
-  background: "#181F31",
-  border: "1px solid #3F485E",
+  background: "#1D1F26",
+  border: "1px solid #2B2E37",
   borderRadius: 8,
   fontSize: 12,
 } as const;
 
-export const TOOLTIP_ITEM_STYLE = { color: "#DDE5FF" } as const;
-export const TOOLTIP_LABEL_STYLE = { color: "#A2ABC5" } as const;
+export const TOOLTIP_ITEM_STYLE = { color: "#E6E8EC" } as const;
+export const TOOLTIP_LABEL_STYLE = { color: "#94A3B8" } as const;
 
 /** Axis / grid tints (low-contrast, terminal aesthetic). */
-export const AXIS_TICK = { fill: "#A2ABC5", fontSize: 11 } as const;
+export const AXIS_TICK = { fill: "#94A3B8", fontSize: 11 } as const;
 export const GRID_STROKE = "#2A3142";
 
 /** Semantic P&L colors — green up / red down, never the blue primary. */
@@ -24,14 +24,14 @@ export const LOSS = "#EF4444";
 
 /** Brand-forward categorical palette (matches AllocationCard). */
 export const PALETTE = [
-  "#3B82F6",
+  "#38BDF8",
   "#16C784",
   "#65FDB5",
   "#4388FD",
-  "#A2ABC5",
-  "#0E69DC",
+  "#94A3B8",
+  "#0EA5E9",
   "#FA746F",
-  "#3F485E",
+  "#2B2E37",
 ];
 
 export const COUNTRY_LABEL: Record<string, string> = {

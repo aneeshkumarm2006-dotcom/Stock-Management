@@ -1,18 +1,21 @@
 import type { Config } from "tailwindcss";
 
 /*
- * Theme wired from the Stitch design system "Portfolio Dark"
- * (site/design/tokens.md). Two complementary naming layers, same values:
+ * Theme: "Portfolio Neutral" design system.
  *
+ *  - Primary  #38BDF8 (sky)      - Secondary #94A3B8 (slate)
+ *  - Tertiary #F1A02B (amber)    - Neutral   #72787C (outline seed)
+ *
+ * Two complementary naming layers, same values:
  *  1. Semantic tokens (preferred in app code): bg, surface.*, border,
  *     outline, fg.*, primary.*, secondary, gain, loss, heat.*, error.*.
  *  2. Stitch tonal aliases (surface-container-*, on-surface*, outline-variant,
- *     tertiary, *-container) — kept so markup built to match the saved
- *     site/design/*.html references stays 1:1 with the reference classes.
+ *     tertiary, *-container) — kept so existing markup stays 1:1.
  *
- * Note: per tokens.md, the semantic `primary` is the BRAND blue (#3B82F6),
- * not the Stitch tonal light-blue — used for links, active nav, primary
- * buttons, and focus rings.
+ * Note: `primary` is the BRAND sky-blue (#38BDF8) used for links, active nav,
+ * primary buttons, and focus rings. Because it is bright, text/icons ON primary
+ * use the dark `primary.fg`. Gain/loss stay green/red — never use the blue
+ * primary to indicate a gain (mandatory P&L semantics).
  */
 const config: Config = {
   darkMode: "class",
@@ -24,28 +27,33 @@ const config: Config = {
     extend: {
       colors: {
         // ---- Semantic (preferred) ----
-        bg: "#0A0E18",
+        bg: "#0C0D10",
         surface: {
-          DEFAULT: "#131929",
-          high: "#181F31",
-          highest: "#1D253A",
-          low: "#0E1320",
+          DEFAULT: "#16181D",
+          high: "#1D1F26",
+          highest: "#24272F",
+          low: "#101216",
           lowest: "#000000",
         },
-        border: "#3F485E",
-        outline: "#6D758D",
+        border: "#2B2E37",
+        outline: "#72787C",
         fg: {
-          DEFAULT: "#DDE5FF",
-          muted: "#A2ABC5",
+          DEFAULT: "#E6E8EC",
+          muted: "#94A3B8",
         },
         primary: {
-          DEFAULT: "#3B82F6",
-          container: "#0E69DC",
-          fg: "#FFFFFF",
+          DEFAULT: "#38BDF8",
+          container: "#0EA5E9",
+          fg: "#082131",
         },
         secondary: {
           DEFAULT: "#94A3B8",
-          container: "#2E3C4E",
+          container: "#2A3340",
+        },
+        tertiary: {
+          DEFAULT: "#F1A02B",
+          container: "#7A4E12",
+          fg: "#0C0D10",
         },
         gain: {
           DEFAULT: "#16C784",
@@ -57,7 +65,7 @@ const config: Config = {
         },
         heat: {
           neg: "#7F1D1D",
-          mid: "#1E2533",
+          mid: "#1F232B",
           pos: "#14532D",
         },
         error: {
@@ -67,26 +75,38 @@ const config: Config = {
         },
 
         // ---- Stitch tonal aliases (design-reference parity) ----
-        background: "#0A0E18",
-        "on-background": "#DDE5FF",
-        "on-surface": "#DDE5FF",
-        "on-surface-variant": "#A2ABC5",
+        background: "#0C0D10",
+        "on-background": "#E6E8EC",
+        "on-surface": "#E6E8EC",
+        "on-surface-variant": "#94A3B8",
         "surface-container-lowest": "#000000",
-        "surface-container-low": "#0E1320",
-        "surface-container": "#131929",
-        "surface-container-high": "#181F31",
-        "surface-container-highest": "#1D253A",
-        "outline-variant": "#3F485E",
-        tertiary: "#16C784",
-        "secondary-container": "#2E3C4E",
-        "primary-container": "#0E69DC",
-        "on-primary": "#FFFFFF",
+        "surface-container-low": "#101216",
+        "surface-container": "#16181D",
+        "surface-container-high": "#1D1F26",
+        "surface-container-highest": "#24272F",
+        "outline-variant": "#2B2E37",
+        "secondary-container": "#2A3340",
+        "tertiary-container": "#7A4E12",
+        "primary-container": "#0EA5E9",
+        "on-primary": "#082131",
       },
       fontFamily: {
-        display: ["var(--font-display)", "Space Grotesk", "sans-serif"],
-        headline: ["var(--font-display)", "Space Grotesk", "sans-serif"],
+        display: ["var(--font-display)", "Hanken Grotesk", "sans-serif"],
+        headline: ["var(--font-display)", "Hanken Grotesk", "sans-serif"],
         sans: ["var(--font-sans)", "Inter", "ui-sans-serif", "system-ui"],
         body: ["var(--font-sans)", "Inter", "ui-sans-serif", "system-ui"],
+        mono: [
+          "var(--font-mono)",
+          "JetBrains Mono",
+          "ui-monospace",
+          "monospace",
+        ],
+        label: [
+          "var(--font-mono)",
+          "JetBrains Mono",
+          "ui-monospace",
+          "monospace",
+        ],
       },
       borderRadius: {
         sm: "0.25rem",

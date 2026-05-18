@@ -28,14 +28,14 @@ const DIMS: { id: Dim; label: string }[] = [
 
 // Brand-forward palette pulled from tokens.md; the last entry is "Others".
 const PALETTE = [
-  "#3B82F6",
+  "#38BDF8",
   "#16C784",
   "#65FDB5",
   "#4388FD",
-  "#A2ABC5",
-  "#0E69DC",
+  "#94A3B8",
+  "#0EA5E9",
 ];
-const OTHERS_COLOR = "#3F485E";
+const OTHERS_COLOR = "#2B2E37";
 const MAX_SLICES = 6;
 
 const COUNTRY_LABEL: Record<string, string> = { US: "United States", CA: "Canada" };
@@ -129,12 +129,12 @@ export function AllocationCard({ summary }: { summary: PortfolioSummary }) {
                   </Pie>
                   <Tooltip
                     contentStyle={{
-                      background: "#181F31",
-                      border: "1px solid #3F485E",
+                      background: "#1D1F26",
+                      border: "1px solid #2B2E37",
                       borderRadius: 8,
                       fontSize: 12,
                     }}
-                    itemStyle={{ color: "#DDE5FF" }}
+                    itemStyle={{ color: "#E6E8EC" }}
                     formatter={(value: number, name: string) => [
                       formatCurrency(value, cur, { format: numberFormat }),
                       labelFor(name),

@@ -79,7 +79,7 @@ export function PnlRanking({ summary }: { summary: PortfolioSummary }) {
                 axisLine={false}
                 tickLine={false}
               />
-              <ReferenceLine x={0} stroke="#3F485E" />
+              <ReferenceLine x={0} stroke="#2B2E37" />
               <Tooltip
                 cursor={{ fill: "#ffffff08" }}
                 contentStyle={TOOLTIP_CONTENT_STYLE}
