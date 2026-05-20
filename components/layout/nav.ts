@@ -3,7 +3,6 @@
 import {
   LayoutDashboard,
   Wallet,
-  LineChart,
   PieChart,
   Settings,
   type LucideIcon,
@@ -18,7 +17,6 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/portfolio", label: "Portfolio", icon: Wallet },
-  { href: "/market", label: "Market", icon: LineChart },
   { href: "/analytics", label: "Analytics", icon: PieChart },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
