@@ -17,11 +17,7 @@ import type { Currency } from "@/lib/utils/convertCurrency";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { useSettingsStore } from "@/store/useSettingsStore";
-import {
-  TOOLTIP_CONTENT_STYLE,
-  TOOLTIP_ITEM_STYLE,
-  PALETTE,
-} from "./chartTheme";
+import { useChartTheme } from "./chartTheme";
 
 export function ExposureDonut({
   title,
@@ -35,8 +31,13 @@ export function ExposureDonut({
   displayCurrency: Currency;
 }) {
   const numberFormat = useSettingsStore((s) => s.numberFormat);
+  const t = useChartTheme();
   const data = slices.filter((s) => s.value > 0);
   const labelFor = (key: string) => labelMap[key] ?? key;
+  // Skip the gain/loss/neutral tail so country / currency donuts stay brand-led.
+  const slicePalette = t.palette.slice(0, 6);
+  const colorAt = (i: number) =>
+    slicePalette[i % slicePalette.length] ?? slicePalette[0]!;
 
   return (
     <Card className="flex flex-col">
@@ -62,15 +63,12 @@ export function ExposureDonut({
                     isAnimationActive={false}
                   >
                     {data.map((s, i) => (
-                      <Cell
-                        key={s.key}
-                        fill={PALETTE[i % PALETTE.length] ?? PALETTE[0]}
-                      />
+                      <Cell key={s.key} fill={colorAt(i)} />
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={TOOLTIP_CONTENT_STYLE}
-                    itemStyle={TOOLTIP_ITEM_STYLE}
+                    contentStyle={t.tooltipContent}
+                    itemStyle={t.tooltipItem}
                     formatter={(value: number, name: string) => [
                       formatCurrency(value, displayCurrency, {
                         format: numberFormat,
@@ -91,9 +89,7 @@ export function ExposureDonut({
                   <div className="flex items-center gap-2">
                     <span
                       className="h-2 w-2 rounded-full"
-                      style={{
-                        background: PALETTE[i % PALETTE.length] ?? PALETTE[0],
-                      }}
+                      style={{ background: colorAt(i) }}
                     />
                     <span className="text-xs font-bold text-fg">
                       {labelFor(s.key)}

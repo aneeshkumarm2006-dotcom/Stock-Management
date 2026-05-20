@@ -38,7 +38,7 @@ export function TopHoldings({
             Sorted by value (desc)
           </span>
           <Link
-            href="/portfolio"
+            href="/stock/portfolio"
             className="text-[10px] font-bold uppercase tracking-wider text-primary hover:underline"
           >
             View all

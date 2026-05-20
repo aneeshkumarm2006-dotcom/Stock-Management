@@ -16,16 +16,7 @@ import type { PortfolioSummary } from "@/lib/utils/portfolioMath";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { useSettingsStore } from "@/store/useSettingsStore";
-import {
-  TOOLTIP_CONTENT_STYLE,
-  TOOLTIP_ITEM_STYLE,
-  TOOLTIP_LABEL_STYLE,
-  AXIS_TICK,
-  GRID_STROKE,
-} from "./chartTheme";
-
-const INVESTED_COLOR = "#94A3B8";
-const VALUE_COLOR = "#38BDF8";
+import { useChartTheme } from "./chartTheme";
 
 export function InvestedVsValue({
   summary,
@@ -34,6 +25,7 @@ export function InvestedVsValue({
 }) {
   const numberFormat = useSettingsStore((s) => s.numberFormat);
   const cur = summary.displayCurrency;
+  const t = useChartTheme();
 
   const data = summary.positions
     .map((p) => ({
@@ -69,12 +61,12 @@ export function InvestedVsValue({
             >
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke={GRID_STROKE}
+                stroke={t.gridStroke}
                 vertical={false}
               />
               <XAxis
                 dataKey="ticker"
-                tick={AXIS_TICK}
+                tick={t.axisTick}
                 axisLine={false}
                 tickLine={false}
                 interval={0}
@@ -84,34 +76,34 @@ export function InvestedVsValue({
               />
               <YAxis
                 tickFormatter={(v: number) => money(v)}
-                tick={AXIS_TICK}
+                tick={t.axisTick}
                 axisLine={false}
                 tickLine={false}
                 width={64}
               />
               <Tooltip
-                cursor={{ fill: "#ffffff08" }}
-                contentStyle={TOOLTIP_CONTENT_STYLE}
-                itemStyle={TOOLTIP_ITEM_STYLE}
-                labelStyle={TOOLTIP_LABEL_STYLE}
+                cursor={{ fill: t.cursorFill }}
+                contentStyle={t.tooltipContent}
+                itemStyle={t.tooltipItem}
+                labelStyle={t.tooltipLabel}
                 formatter={(value: number, name: string) => [
                   money(value),
                   name,
                 ]}
               />
               <Legend
-                wrapperStyle={{ fontSize: 11, color: "#94A3B8" }}
+                wrapperStyle={{ fontSize: 11, color: t.axisTick.fill }}
                 iconType="circle"
               />
               <Bar
                 dataKey="Invested"
-                fill={INVESTED_COLOR}
+                fill={t.neutral}
                 radius={[2, 2, 0, 0]}
                 isAnimationActive={false}
               />
               <Bar
                 dataKey="Value"
-                fill={VALUE_COLOR}
+                fill={t.primary}
                 radius={[2, 2, 0, 0]}
                 isAnimationActive={false}
               />

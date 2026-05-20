@@ -1,6 +1,6 @@
 // Login — email/password (RHF + Zod) + Continue with Google. On success the
 // Credentials sign-in sets the session cookie on the browser response, then we
-// route to `callbackUrl` (default /dashboard). The signIn server event
+// route to `callbackUrl` (default /stock/dashboard). The signIn server event
 // (auth.ts) provisions the default Settings doc on first login.
 // Refs: PDR.md §4; site/design/login; tokens.md; Stage 3 (auth.ts).
 "use client";
@@ -27,7 +27,7 @@ type LoginValues = z.infer<typeof loginSchema>;
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const callbackUrl = searchParams.get("callbackUrl") || "/stock/dashboard";
 
   const [showPassword, setShowPassword] = useState(false);
   // Pre-populate from an Auth.js redirect (e.g. failed Google link) or from a

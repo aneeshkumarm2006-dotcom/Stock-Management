@@ -52,7 +52,7 @@ export const authConfig: NextAuthConfig = {
 
       if (isPublic) {
         if (isLoggedIn) {
-          return Response.redirect(new URL('/dashboard', request.nextUrl));
+          return Response.redirect(new URL('/stock/dashboard', request.nextUrl));
         }
         return true;
       }

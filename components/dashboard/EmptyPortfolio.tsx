@@ -24,7 +24,7 @@ export function EmptyPortfolio() {
         Add your first holding to see live valuation, allocation and P&amp;L
         across your US and Canadian positions.
       </p>
-      <Link href="/portfolio" className="mt-6">
+      <Link href="/stock/portfolio" className="mt-6">
         <Button onClick={() => openAddPanel()}>
           <Plus className="h-4 w-4" />
           Add Your First Position

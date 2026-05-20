@@ -16,6 +16,7 @@ import type { PortfolioSummary, AllocationSlice } from "@/lib/utils/portfolioMat
 import { Card, CardContent } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { useSettingsStore } from "@/store/useSettingsStore";
+import { useChartTheme } from "@/components/analytics/chartTheme";
 import { cn } from "@/lib/utils/cn";
 
 type Dim = "stock" | "sector" | "country";
@@ -26,16 +27,6 @@ const DIMS: { id: Dim; label: string }[] = [
   { id: "country", label: "Country" },
 ];
 
-// Brand-forward palette pulled from tokens.md; the last entry is "Others".
-const PALETTE = [
-  "#38BDF8",
-  "#16C784",
-  "#65FDB5",
-  "#4388FD",
-  "#94A3B8",
-  "#0EA5E9",
-];
-const OTHERS_COLOR = "#2B2E37";
 const MAX_SLICES = 6;
 
 const COUNTRY_LABEL: Record<string, string> = { US: "United States", CA: "Canada" };
@@ -58,6 +49,7 @@ function foldTail(slices: AllocationSlice[]): AllocationSlice[] {
 export function AllocationCard({ summary }: { summary: PortfolioSummary }) {
   const [dim, setDim] = React.useState<Dim>("stock");
   const numberFormat = useSettingsStore((s) => s.numberFormat);
+  const t = useChartTheme();
 
   const slices = React.useMemo(() => {
     const source =
@@ -70,10 +62,13 @@ export function AllocationCard({ summary }: { summary: PortfolioSummary }) {
   }, [dim, summary]);
 
   const cur = summary.displayCurrency;
+  // Skip the gain/loss/neutral tail of the chart palette so the donut keeps the
+  // brand-forward look (no red slice for a healthy position).
+  const slicePalette = t.palette.slice(0, 6);
   const colorFor = (key: string, i: number) =>
     key === "Others"
-      ? OTHERS_COLOR
-      : (PALETTE[i % PALETTE.length] ?? OTHERS_COLOR);
+      ? t.othersColor
+      : (slicePalette[i % slicePalette.length] ?? t.othersColor);
   const labelFor = (key: string) =>
     dim === "country" ? (COUNTRY_LABEL[key] ?? key) : key;
 
@@ -128,13 +123,8 @@ export function AllocationCard({ summary }: { summary: PortfolioSummary }) {
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{
-                      background: "#1D1F26",
-                      border: "1px solid #2B2E37",
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                    itemStyle={{ color: "#E6E8EC" }}
+                    contentStyle={t.tooltipContent}
+                    itemStyle={t.tooltipItem}
                     formatter={(value: number, name: string) => [
                       formatCurrency(value, cur, { format: numberFormat }),
                       labelFor(name),

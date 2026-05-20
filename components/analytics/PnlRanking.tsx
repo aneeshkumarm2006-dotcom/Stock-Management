@@ -19,18 +19,12 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { formatPercent } from "@/lib/utils/formatNumber";
 import { useSettingsStore } from "@/store/useSettingsStore";
-import {
-  TOOLTIP_CONTENT_STYLE,
-  TOOLTIP_ITEM_STYLE,
-  TOOLTIP_LABEL_STYLE,
-  AXIS_TICK,
-  GAIN,
-  LOSS,
-} from "./chartTheme";
+import { useChartTheme } from "./chartTheme";
 
 export function PnlRanking({ summary }: { summary: PortfolioSummary }) {
   const numberFormat = useSettingsStore((s) => s.numberFormat);
   const cur = summary.displayCurrency;
+  const t = useChartTheme();
 
   const data = summary.positions
     .map((p) => ({
@@ -67,7 +61,7 @@ export function PnlRanking({ summary }: { summary: PortfolioSummary }) {
               <XAxis
                 type="number"
                 tickFormatter={(v: number) => `${v.toFixed(0)}%`}
-                tick={AXIS_TICK}
+                tick={t.axisTick}
                 axisLine={false}
                 tickLine={false}
               />
@@ -75,16 +69,16 @@ export function PnlRanking({ summary }: { summary: PortfolioSummary }) {
                 type="category"
                 dataKey="ticker"
                 width={72}
-                tick={AXIS_TICK}
+                tick={t.axisTick}
                 axisLine={false}
                 tickLine={false}
               />
-              <ReferenceLine x={0} stroke="#2B2E37" />
+              <ReferenceLine x={0} stroke={t.candle.border} />
               <Tooltip
-                cursor={{ fill: "#ffffff08" }}
-                contentStyle={TOOLTIP_CONTENT_STYLE}
-                itemStyle={TOOLTIP_ITEM_STYLE}
-                labelStyle={TOOLTIP_LABEL_STYLE}
+                cursor={{ fill: t.cursorFill }}
+                contentStyle={t.tooltipContent}
+                itemStyle={t.tooltipItem}
+                labelStyle={t.tooltipLabel}
                 formatter={(
                   _v: number,
                   _n: string,
@@ -104,7 +98,7 @@ export function PnlRanking({ summary }: { summary: PortfolioSummary }) {
                 {data.map((d) => (
                   <Cell
                     key={d.ticker}
-                    fill={d.pnlPct >= 0 ? GAIN : LOSS}
+                    fill={d.pnlPct >= 0 ? t.gain : t.loss}
                   />
                 ))}
               </Bar>

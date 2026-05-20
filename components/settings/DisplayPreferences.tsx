@@ -133,9 +133,8 @@ export function DisplayPreferences() {
         </SelectField>
 
         <p className="text-[11px] leading-relaxed text-fg-muted sm:col-span-3">
-          Currency and number format apply across every page immediately. This
-          version ships a dark theme only; the light option is saved and will
-          take effect when light styling is added.
+          Currency, number format, and theme apply across every page
+          immediately.
         </p>
       </CardContent>
     </Card>

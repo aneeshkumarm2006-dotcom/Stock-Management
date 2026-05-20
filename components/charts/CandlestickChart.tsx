@@ -27,14 +27,7 @@ import type { HistoricalRange } from "@/lib/db/models/HistoricalCache";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import type { Currency } from "@/lib/utils/convertCurrency";
 import { useSettingsStore } from "@/store/useSettingsStore";
-
-/* tokens.md — chart palette */
-const UP = "#16C784";
-const DOWN = "#EF4444";
-const GRID = "#24272F"; // surface-highest, very low contrast gridlines
-const BORDER = "#2B2E37";
-const AXIS_TEXT = "#94A3B8"; // on-surface-variant
-const AVG_LINE = "#38BDF8"; // primary — explicitly a reference, not a P&L color
+import { useChartTheme } from "@/components/analytics/chartTheme";
 
 interface CandlestickChartProps {
   candles: WireCandle[];
@@ -108,9 +101,12 @@ export function CandlestickChart({
   const priceLineRef = React.useRef<IPriceLine | null>(null);
   const [ready, setReady] = React.useState(false);
   const numberFormat = useSettingsStore((s) => s.numberFormat);
+  const chartTheme = useChartTheme();
+  const candle = chartTheme.candle;
 
-  // Mount: build the chart once. Dynamic import keeps it off the server and
-  // out of the initial bundle.
+  // Mount: build the chart once per theme. lightweight-charts takes colors at
+  // creation time, so a theme switch tears the chart down and re-creates it
+  // — `candle` is therefore part of the effect's dependency list.
   React.useEffect(() => {
     let disposed = false;
     let resizeObserver: ResizeObserver | null = null;
@@ -123,16 +119,16 @@ export function CandlestickChart({
       const chart = lwc.createChart(el, {
         layout: {
           background: { type: lwc.ColorType.Solid, color: "transparent" },
-          textColor: AXIS_TEXT,
+          textColor: candle.axisText,
           fontFamily: "var(--font-inter), system-ui, sans-serif",
         },
         grid: {
-          vertLines: { color: GRID },
-          horzLines: { color: GRID },
+          vertLines: { color: candle.grid },
+          horzLines: { color: candle.grid },
         },
-        rightPriceScale: { borderColor: BORDER },
+        rightPriceScale: { borderColor: candle.border },
         timeScale: {
-          borderColor: BORDER,
+          borderColor: candle.border,
           secondsVisible: false,
         },
         crosshair: { mode: lwc.CrosshairMode.Normal },
@@ -142,12 +138,12 @@ export function CandlestickChart({
       });
 
       const series = chart.addCandlestickSeries({
-        upColor: UP,
-        downColor: DOWN,
-        borderUpColor: UP,
-        borderDownColor: DOWN,
-        wickUpColor: UP,
-        wickDownColor: DOWN,
+        upColor: candle.up,
+        downColor: candle.down,
+        borderUpColor: candle.up,
+        borderDownColor: candle.down,
+        wickUpColor: candle.up,
+        wickDownColor: candle.down,
       });
 
       handlesRef.current = { chart, series };
@@ -170,7 +166,7 @@ export function CandlestickChart({
       priceLineRef.current = null;
       setReady(false);
     };
-  }, []);
+  }, [candle]);
 
   // Show the time-of-day on the axis only for the intraday (1W / 1h) range.
   React.useEffect(() => {
@@ -202,7 +198,7 @@ export function CandlestickChart({
         if (!handlesRef.current) return;
         priceLineRef.current = handlesRef.current.series.createPriceLine({
           price: avgBuyPrice,
-          color: AVG_LINE,
+          color: candle.avgLine,
           lineWidth: 1,
           lineStyle: lwc.LineStyle.Dashed,
           axisLabelVisible: true,
@@ -210,7 +206,7 @@ export function CandlestickChart({
         });
       });
     }
-  }, [ready, avgBuyPrice, candles]);
+  }, [ready, avgBuyPrice, candles, candle]);
 
   const showOverlay = isLoading || !!error || (ready && candles.length === 0);
 
@@ -230,7 +226,7 @@ export function CandlestickChart({
             <span className="flex items-center gap-1.5 text-[10px] font-medium text-fg-muted">
               <span
                 className="inline-block h-0 w-4 border-t border-dashed"
-                style={{ borderColor: AVG_LINE }}
+                style={{ borderColor: candle.avgLine }}
               />
               Avg buy{" "}
               {formatCurrency(avgBuyPrice, avgBuyCurrency, {

@@ -5,5 +5,5 @@ import { redirect } from 'next/navigation';
 // Unauthenticated users never reach here for protected paths — middleware's
 // `authorized` callback redirects them to /login first.
 export default function NotFound() {
-  redirect('/dashboard');
+  redirect('/stock/dashboard');
 }

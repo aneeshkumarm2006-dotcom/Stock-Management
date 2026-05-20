@@ -77,9 +77,13 @@ export async function PUT(request: Request) {
   }
 
   await connectToDatabase();
+  const insertDefaults: Record<string, unknown> = { userId };
+  for (const [key, value] of Object.entries(DEFAULTS)) {
+    if (!(key in parsed.data)) insertDefaults[key] = value;
+  }
   const doc = await Settings.findOneAndUpdate(
     { userId },
-    { $set: parsed.data, $setOnInsert: { userId, ...DEFAULTS } },
+    { $set: parsed.data, $setOnInsert: insertDefaults },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   ).lean();
 

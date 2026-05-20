@@ -1,7 +1,7 @@
 // Shared chrome for the unauthenticated auth pages (login, signup). Centered
 // card on the dark canvas with the subtle gradient-blob decor and legal
 // footer from the Stitch references (site/design/login, site/design/signup).
-// Route protection (logged-in users bounced to /dashboard) is handled by
+// Route protection (logged-in users bounced to /stock/dashboard) is handled by
 // middleware.ts via authConfig.authorized — this layout is presentational.
 // Refs: PDR.md §4, §12; site/design/login, site/design/signup, tokens.md.
 import type { ReactNode } from "react";

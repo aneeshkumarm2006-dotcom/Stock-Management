@@ -16,18 +16,13 @@ import type { PortfolioSummary } from "@/lib/utils/portfolioMath";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { useSettingsStore } from "@/store/useSettingsStore";
-import {
-  TOOLTIP_CONTENT_STYLE,
-  TOOLTIP_ITEM_STYLE,
-  TOOLTIP_LABEL_STYLE,
-  AXIS_TICK,
-  PALETTE,
-} from "./chartTheme";
+import { useChartTheme } from "./chartTheme";
 
 export function SectorExposure({ summary }: { summary: PortfolioSummary }) {
   const numberFormat = useSettingsStore((s) => s.numberFormat);
   const cur = summary.displayCurrency;
   const data = summary.allocationBySector.filter((s) => s.value > 0);
+  const t = useChartTheme();
 
   return (
     <Card className="flex flex-col">
@@ -57,7 +52,7 @@ export function SectorExposure({ summary }: { summary: PortfolioSummary }) {
                 type="number"
                 domain={[0, "dataMax"]}
                 tickFormatter={(v: number) => `${v.toFixed(0)}%`}
-                tick={AXIS_TICK}
+                tick={t.axisTick}
                 axisLine={false}
                 tickLine={false}
               />
@@ -65,15 +60,15 @@ export function SectorExposure({ summary }: { summary: PortfolioSummary }) {
                 type="category"
                 dataKey="key"
                 width={120}
-                tick={AXIS_TICK}
+                tick={t.axisTick}
                 axisLine={false}
                 tickLine={false}
               />
               <Tooltip
-                cursor={{ fill: "#ffffff08" }}
-                contentStyle={TOOLTIP_CONTENT_STYLE}
-                itemStyle={TOOLTIP_ITEM_STYLE}
-                labelStyle={TOOLTIP_LABEL_STYLE}
+                cursor={{ fill: t.cursorFill }}
+                contentStyle={t.tooltipContent}
+                itemStyle={t.tooltipItem}
+                labelStyle={t.tooltipLabel}
                 formatter={(_v: number, _n: string, item: { payload?: { pct: number; value: number } }) => [
                   `${(item.payload?.pct ?? 0).toFixed(1)}% · ${formatCurrency(
                     item.payload?.value ?? 0,
@@ -87,7 +82,7 @@ export function SectorExposure({ summary }: { summary: PortfolioSummary }) {
                 {data.map((s, i) => (
                   <Cell
                     key={s.key}
-                    fill={PALETTE[i % PALETTE.length] ?? PALETTE[0]}
+                    fill={t.palette[i % t.palette.length] ?? t.palette[0]}
                   />
                 ))}
               </Bar>

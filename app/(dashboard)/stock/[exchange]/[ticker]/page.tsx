@@ -57,7 +57,7 @@ function NotFound({ message }: { message: string }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-md border border-border bg-surface-high px-6 py-20 text-center">
       <p className="text-sm font-semibold text-fg">{message}</p>
-      <Link href="/portfolio" className="mt-5">
+      <Link href="/stock/portfolio" className="mt-5">
         <Button variant="secondary">
           <ArrowLeft className="h-4 w-4" />
           Back to portfolio
@@ -130,7 +130,7 @@ function StockDetail({
   return (
     <div className="space-y-6">
       <Link
-        href="/portfolio"
+        href="/stock/portfolio"
         className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-fg-muted hover:text-fg"
       >
         <ArrowLeft className="h-3.5 w-3.5" />

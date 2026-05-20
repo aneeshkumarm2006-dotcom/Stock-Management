@@ -1,7 +1,7 @@
 // Signup — name/email/password (RHF + Zod). POSTs /api/auth/register (creates
 // the User; no email verification per PDR §4), then runs the programmatic
 // Credentials sign-in from the browser so the session cookie is issued on the
-// response, and routes to /dashboard. The signIn server event (auth.ts)
+// response, and routes to /stock/dashboard. The signIn server event (auth.ts)
 // provisions the default Settings doc.
 // Refs: PDR.md §4; site/design/signup; tokens.md; app/api/auth/register.
 "use client";
@@ -38,7 +38,7 @@ type SignupValues = z.infer<typeof signupSchema>;
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const callbackUrl = searchParams.get("callbackUrl") || "/stock/dashboard";
 
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);

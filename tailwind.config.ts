@@ -1,10 +1,15 @@
 import type { Config } from "tailwindcss";
 
 /*
- * Theme: "Portfolio Neutral" design system.
+ * Theme: "Portfolio Neutral" design system, theme-switchable.
  *
  *  - Primary  #38BDF8 (sky)      - Secondary #94A3B8 (slate)
  *  - Tertiary #F1A02B (amber)    - Neutral   #72787C (outline seed)
+ *
+ * Tokens are exposed as CSS variables (`--c-*` holding space-separated RGB
+ * triples) so the same Tailwind utilities resolve to a different palette
+ * when `html.dark` vs. `html.light` is set. See `app/globals.css` for the
+ * concrete palettes.
  *
  * Two complementary naming layers, same values:
  *  1. Semantic tokens (preferred in app code): bg, surface.*, border,
@@ -12,11 +17,15 @@ import type { Config } from "tailwindcss";
  *  2. Stitch tonal aliases (surface-container-*, on-surface*, outline-variant,
  *     tertiary, *-container) — kept so existing markup stays 1:1.
  *
- * Note: `primary` is the BRAND sky-blue (#38BDF8) used for links, active nav,
- * primary buttons, and focus rings. Because it is bright, text/icons ON primary
- * use the dark `primary.fg`. Gain/loss stay green/red — never use the blue
- * primary to indicate a gain (mandatory P&L semantics).
+ * Note: `primary` is the BRAND sky-blue used for links, active nav, primary
+ * buttons, and focus rings. In dark mode it is bright on dark surfaces, so
+ * text/icons ON primary use the dark `primary.fg`. In light mode the swatch
+ * is darker (#0284C7) for AA contrast on white, and `primary.fg` flips to
+ * white. Gain/loss stay green/red — never use the blue primary to indicate
+ * a gain (mandatory P&L semantics).
  */
+const rgb = (token: string) => `rgb(var(--c-${token}) / <alpha-value>)`;
+
 const config: Config = {
   darkMode: "class",
   content: [
@@ -27,68 +36,68 @@ const config: Config = {
     extend: {
       colors: {
         // ---- Semantic (preferred) ----
-        bg: "#0C0D10",
+        bg: rgb("bg"),
         surface: {
-          DEFAULT: "#16181D",
-          high: "#1D1F26",
-          highest: "#24272F",
-          low: "#101216",
-          lowest: "#000000",
+          DEFAULT: rgb("surface"),
+          high: rgb("surface-high"),
+          highest: rgb("surface-highest"),
+          low: rgb("surface-low"),
+          lowest: rgb("surface-lowest"),
         },
-        border: "#2B2E37",
-        outline: "#72787C",
+        border: rgb("border"),
+        outline: rgb("outline"),
         fg: {
-          DEFAULT: "#E6E8EC",
-          muted: "#94A3B8",
+          DEFAULT: rgb("fg"),
+          muted: rgb("fg-muted"),
         },
         primary: {
-          DEFAULT: "#38BDF8",
-          container: "#0EA5E9",
-          fg: "#082131",
+          DEFAULT: rgb("primary"),
+          container: rgb("primary-container"),
+          fg: rgb("primary-fg"),
         },
         secondary: {
-          DEFAULT: "#94A3B8",
-          container: "#2A3340",
+          DEFAULT: rgb("secondary"),
+          container: rgb("secondary-container"),
         },
         tertiary: {
-          DEFAULT: "#F1A02B",
-          container: "#7A4E12",
-          fg: "#0C0D10",
+          DEFAULT: rgb("tertiary"),
+          container: rgb("tertiary-container"),
+          fg: rgb("tertiary-fg"),
         },
         gain: {
-          DEFAULT: "#16C784",
-          bright: "#65FDB5",
+          DEFAULT: rgb("gain"),
+          bright: rgb("gain-bright"),
         },
         loss: {
-          DEFAULT: "#EF4444",
-          bright: "#FA746F",
+          DEFAULT: rgb("loss"),
+          bright: rgb("loss-bright"),
         },
         heat: {
-          neg: "#7F1D1D",
-          mid: "#1F232B",
-          pos: "#14532D",
+          neg: rgb("heat-neg"),
+          mid: rgb("heat-mid"),
+          pos: rgb("heat-pos"),
         },
         error: {
-          DEFAULT: "#FA746F",
-          container: "#871F21",
-          fg: "#FF9993",
+          DEFAULT: rgb("error"),
+          container: rgb("error-container"),
+          fg: rgb("error-fg"),
         },
 
         // ---- Stitch tonal aliases (design-reference parity) ----
-        background: "#0C0D10",
-        "on-background": "#E6E8EC",
-        "on-surface": "#E6E8EC",
-        "on-surface-variant": "#94A3B8",
-        "surface-container-lowest": "#000000",
-        "surface-container-low": "#101216",
-        "surface-container": "#16181D",
-        "surface-container-high": "#1D1F26",
-        "surface-container-highest": "#24272F",
-        "outline-variant": "#2B2E37",
-        "secondary-container": "#2A3340",
-        "tertiary-container": "#7A4E12",
-        "primary-container": "#0EA5E9",
-        "on-primary": "#082131",
+        background: rgb("bg"),
+        "on-background": rgb("fg"),
+        "on-surface": rgb("fg"),
+        "on-surface-variant": rgb("fg-muted"),
+        "surface-container-lowest": rgb("surface-lowest"),
+        "surface-container-low": rgb("surface-low"),
+        "surface-container": rgb("surface"),
+        "surface-container-high": rgb("surface-high"),
+        "surface-container-highest": rgb("surface-highest"),
+        "outline-variant": rgb("border"),
+        "secondary-container": rgb("secondary-container"),
+        "tertiary-container": rgb("tertiary-container"),
+        "primary-container": rgb("primary-container"),
+        "on-primary": rgb("primary-fg"),
       },
       fontFamily: {
         display: ["var(--font-display)", "Hanken Grotesk", "sans-serif"],

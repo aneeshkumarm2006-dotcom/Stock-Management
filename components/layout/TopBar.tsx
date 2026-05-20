@@ -5,6 +5,7 @@
 // display toggle (Settings store, PDR §9), and the account menu.
 import Link from "next/link";
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, Settings as SettingsIcon, LogOut } from "lucide-react";
@@ -13,6 +14,7 @@ import { useAutoRefresh } from "@/lib/hooks/useAutoRefresh";
 import { useUiStore } from "@/store/useUiStore";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { Dropdown, DropdownItem } from "@/components/ui/dropdown";
+import { getWorkspaceForPath } from "@/components/layout/nav";
 import { cn } from "@/lib/utils/cn";
 
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "Portfolio";
@@ -59,11 +61,17 @@ function MarketPill() {
 export function TopBar() {
   const queryClient = useQueryClient();
   const { data: session } = useSession();
+  const pathname = usePathname();
   const lastRefreshAt = useUiStore((s) => s.lastRefreshAt);
   const markRefreshed = useUiStore((s) => s.markRefreshed);
   const requestForceRefresh = useUiStore((s) => s.requestForceRefresh);
   const displayCurrency = useSettingsStore((s) => s.displayCurrency);
   const setDisplayCurrency = useSettingsStore((s) => s.setDisplayCurrency);
+
+  // The market status pill, last-updated label, and manual refresh button are
+  // stocks-specific — in the Property Management workspace they're not
+  // meaningful, so we hide them. The USD/CAD toggle stays (per client request).
+  const isStocks = getWorkspaceForPath(pathname) === "stocks";
 
   // 60s market-open + page-focused auto-refresh lives here since the TopBar is
   // mounted for the whole authenticated shell (Stage 14, PDR §10).
@@ -102,22 +110,26 @@ export function TopBar() {
           <span className="font-display text-sm font-bold text-fg md:hidden">
             {APP_NAME}
           </span>
-          <MarketPill />
-          <div className="hidden h-4 w-px bg-border sm:block" />
-          <div className="hidden items-center gap-3 text-[11px] font-medium uppercase tracking-wider text-fg-muted sm:flex">
-            <span>{lastRefreshLabel}</span>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              aria-label="Refresh data"
-              className="transition-colors hover:text-primary disabled:opacity-50"
-            >
-              <RefreshCw
-                className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
-              />
-            </button>
-          </div>
+          {isStocks && (
+            <>
+              <MarketPill />
+              <div className="hidden h-4 w-px bg-border sm:block" />
+              <div className="hidden items-center gap-3 text-[11px] font-medium uppercase tracking-wider text-fg-muted sm:flex">
+                <span>{lastRefreshLabel}</span>
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  aria-label="Refresh data"
+                  className="transition-colors hover:text-primary disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={cn("h-3.5 w-3.5", refreshing && "animate-spin")}
+                  />
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-4 md:gap-6">
