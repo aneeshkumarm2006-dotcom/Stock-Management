@@ -46,7 +46,7 @@ export function Sidebar() {
     >
       <div className="mb-4 flex items-center gap-2">
         {!collapsed && (
-          <div className="flex-1 overflow-hidden">
+          <div className="min-w-0 flex-1">
             <WorkspaceSwitcher />
           </div>
         )}
