@@ -15,9 +15,6 @@ import { useUiStore } from "@/store/useUiStore";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { Dropdown, DropdownItem } from "@/components/ui/dropdown";
 import { getWorkspaceForPath } from "@/components/layout/nav";
-import { TrialChip } from "@/components/pm/TrialChip";
-import { BellBadge } from "@/components/pm/BellBadge";
-import { AceApplicationsPill } from "@/components/pm/AceApplicationsPill";
 import { cn } from "@/lib/utils/cn";
 
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "Portfolio";
@@ -75,7 +72,6 @@ export function TopBar() {
   // stocks-specific — in the Property Management workspace they're not
   // meaningful, so we hide them. The USD/CAD toggle stays (per client request).
   const isStocks = getWorkspaceForPath(pathname) === "stocks";
-  const isPm = !isStocks;
 
   // 60s market-open + page-focused auto-refresh lives here since the TopBar is
   // mounted for the whole authenticated shell (Stage 14, PDR §10).
@@ -137,15 +133,6 @@ export function TopBar() {
         </div>
 
         <div className="flex items-center gap-3 md:gap-4">
-          {isPm && (
-            <>
-              <div className="hidden md:block">
-                <AceApplicationsPill />
-              </div>
-              <TrialChip />
-              <BellBadge />
-            </>
-          )}
           <div className="flex rounded border border-border bg-surface p-0.5">
             {(["USD", "CAD"] as const).map((c) => (
               <button

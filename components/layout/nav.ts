@@ -100,6 +100,7 @@ export function isActiveGroup(pathname: string, group: NavGroup): boolean {
 /** Derives the active workspace from the current URL — URL is the source of truth. */
 export function getWorkspaceForPath(pathname: string): WorkspaceId {
   if (pathname === "/properties" || pathname.startsWith("/properties/")) return "pm";
+  if (pathname === "/settings/pm" || pathname.startsWith("/settings/pm/")) return "pm";
   return "stocks";
 }
 
@@ -192,6 +193,7 @@ const PM_NAV: NavNode[] = [
   { href: "/properties/files", label: "Files", icon: FolderOpen },
   { href: "/properties/reports", label: "Reports", icon: BarChart3 },
   { href: "/properties/analytics", label: "Analytics Hub", icon: PieChart },
+  { href: "/settings/pm", label: "Settings", icon: Settings },
 ];
 
 export function getNavForWorkspace(ws: WorkspaceId): NavNode[] {
