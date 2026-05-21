@@ -157,6 +157,7 @@ const PM_NAV: NavNode[] = [
       { href: "/properties/accounting/eft-approvals", label: "EFT approvals", icon: CheckCircle },
       { href: "/properties/accounting/budgets", label: "Budgets", icon: PiggyBank },
       { href: "/properties/accounting/chart-of-accounts", label: "Chart of accounts", icon: List },
+      { href: "/properties/accounting/locked-periods", label: "Locked periods", icon: Calculator },
       { href: "/properties/accounting/company-financials", label: "Company financials", icon: Building2 },
       { href: "/properties/accounting/1099-tax-filings", label: "1099 tax filings", icon: FileSpreadsheet },
     ],

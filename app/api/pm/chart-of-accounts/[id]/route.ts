@@ -1,10 +1,17 @@
 // Per-row CRUD on ChartOfAccount. System-seeded rows cannot be renamed,
-// retyped, or deleted (BR-AC-4). DELETE soft-archives (active=false) per
-// BR-AC-18 — Phase 2 will block deletion entirely when JournalEntry refs exist.
+// retyped, or deleted (BR-AC-4). DELETE hard-deletes user-added accounts when
+// safe; soft-archives system-seeded or in-use accounts (BR-AC-18).
+//
+// Phase 2: real JE-reference guard wired — DELETE refuses to hard-delete when
+// any JournalEntry line references the account (BR-AC-4 second clause).
+// BankAccount.chartOfAccountId is also checked so a CoA that's still mapped
+// to a bank account stays alive.
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
+import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
+import { BankAccount } from '@/lib/db/models/pm/BankAccount';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -104,7 +111,7 @@ export async function PATCH(
 
   await logActivity({
     orgId: ctx.orgId,
-    parentType: 'Task',
+    parentType: 'ChartOfAccount',
     parentId: doc._id,
     eventType: 'Chart of account updated',
     actorUserId: ctx.userId,
@@ -130,16 +137,38 @@ export async function DELETE(
     );
   }
 
-  // Phase 2 will block delete entirely when JournalEntry referenes this
-  // account; for now soft-archive matches the wider BR-AC-18 pattern.
-  doc.active = false;
-  await doc.save();
+  // BR-AC-4 — refuse hard-delete when any JE line references this account
+  // OR when a bank account is mapped to it. Soft-archive remains an option
+  // via PATCH { active: false }.
+  const orgObjectId = new Types.ObjectId(ctx.orgId);
+  const [jeRefs, bankRefs] = await Promise.all([
+    JournalEntry.countDocuments({
+      organizationId: orgObjectId,
+      'lines.accountId': doc._id,
+    }),
+    BankAccount.countDocuments({
+      organizationId: orgObjectId,
+      chartOfAccountId: doc._id,
+    }),
+  ]);
+  if (jeRefs > 0 || bankRefs > 0) {
+    return NextResponse.json(
+      {
+        error: `Account is in use (${jeRefs} journal entr${jeRefs === 1 ? 'y' : 'ies'}, ${bankRefs} bank account${bankRefs === 1 ? '' : 's'}). Inactivate instead.`,
+        journalEntryRefs: jeRefs,
+        bankAccountRefs: bankRefs,
+      },
+      { status: 409 },
+    );
+  }
+
+  await doc.deleteOne();
 
   await logActivity({
     orgId: ctx.orgId,
-    parentType: 'Task',
+    parentType: 'ChartOfAccount',
     parentId: doc._id,
-    eventType: 'Chart of account archived',
+    eventType: 'Chart of account deleted',
     actorUserId: ctx.userId,
   });
 

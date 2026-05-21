@@ -25,6 +25,12 @@ export interface IBankAccount {
   lastReconciliationDate?: Date | null;
   isCompanyCash: boolean;
   isDefault: boolean;
+  /** Phase 2 — FK to the underlying GL cash account. Required for JE/Deposit
+   * postings to route through this bank account into the General Ledger.
+   * Optional in the schema so legacy Phase 1 rows still load; the create
+   * modal nudges users to set it and JE/Deposit routes refuse to post when
+   * the source bank account has no mapping. */
+  chartOfAccountId?: Types.ObjectId | null;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -54,6 +60,11 @@ const BankAccountSchema = new Schema<IBankAccount>(
     lastReconciliationDate: { type: Date, default: null },
     isCompanyCash: { type: Boolean, default: false },
     isDefault: { type: Boolean, default: false },
+    chartOfAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmChartOfAccount',
+      default: null,
+    },
     active: { type: Boolean, default: true },
   },
   { timestamps: true, collection: 'pm_bank_accounts' },

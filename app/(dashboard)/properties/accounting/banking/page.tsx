@@ -6,6 +6,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { fromCents } from "@/lib/pm/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Tabs,
@@ -35,7 +37,9 @@ interface BankRow {
   retailCashEnabled: boolean;
   isCompanyCash: boolean;
   isDefault: boolean;
+  chartOfAccountId: string | null;
   active: boolean;
+  balance: number;
   undepositedFunds: boolean;
 }
 
@@ -136,6 +140,7 @@ function BankAccountsTab() {
                 <th className="py-2">Name</th>
                 <th>Type</th>
                 <th>Account #</th>
+                <th className="text-right">Balance</th>
                 <th>Flags</th>
                 <th />
               </tr>
@@ -176,6 +181,18 @@ function BankAccountsTab() {
                   <td className="text-fg-muted tabular-nums">
                     {r.accountNumberMasked}
                   </td>
+                  <td className="text-right tabular-nums">
+                    {r.chartOfAccountId ? (
+                      <CurrencyAmount value={fromCents(r.balance)} />
+                    ) : (
+                      <span
+                        className="text-xs italic text-fg-muted"
+                        title="No GL cash account mapped — set chartOfAccountId to populate balance."
+                      >
+                        unmapped
+                      </span>
+                    )}
+                  </td>
                   <td className="text-xs text-fg-muted">
                     {[
                       r.epayEnabled && "ePay",
@@ -212,6 +229,13 @@ function BankAccountsTab() {
   );
 }
 
+interface CoaOption {
+  id: string;
+  name: string;
+  type: string;
+  defaultFor: string | null;
+}
+
 function AddBankAccountModal({
   open,
   onClose,
@@ -231,8 +255,28 @@ function AddBankAccountModal({
     retailCashEnabled: false,
     isCompanyCash: false,
     isDefault: false,
+    chartOfAccountId: "",
   });
   const [saving, setSaving] = React.useState(false);
+  const [coas, setCoas] = React.useState<CoaOption[]>([]);
+
+  // Load Cash-type CoA rows for the picker; pre-select Operating Cash.
+  React.useEffect(() => {
+    if (!open) return;
+    fetch("/api/pm/chart-of-accounts")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: CoaOption[]) => {
+        const cashRows = rows.filter(
+          (r) =>
+            r.type === "Current Asset (cash)" || r.type === "Current Asset",
+        );
+        setCoas(cashRows);
+        const operating = cashRows.find((r) => r.defaultFor === "Operating Cash");
+        if (operating) {
+          setForm((f) => (f.chartOfAccountId ? f : { ...f, chartOfAccountId: operating.id }));
+        }
+      });
+  }, [open]);
 
   function reset() {
     setForm({
@@ -244,6 +288,7 @@ function AddBankAccountModal({
       retailCashEnabled: false,
       isCompanyCash: false,
       isDefault: false,
+      chartOfAccountId: "",
     });
   }
 
@@ -261,6 +306,7 @@ function AddBankAccountModal({
         name: form.name.trim(),
         purpose: form.purpose.trim() || undefined,
         accountNumberMasked: form.accountNumberMasked.trim(),
+        chartOfAccountId: form.chartOfAccountId || null,
       }),
     });
     setSaving(false);
@@ -331,6 +377,28 @@ function AddBankAccountModal({
                 <option value="Cash">Cash</option>
               </select>
             </div>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ba-coa">GL cash account</Label>
+            <select
+              id="ba-coa"
+              value={form.chartOfAccountId}
+              onChange={(e) =>
+                setForm({ ...form, chartOfAccountId: e.target.value })
+              }
+              className="h-10 w-full rounded border border-border bg-surface-highest px-3 text-sm text-fg"
+            >
+              <option value="">— none (set later) —</option>
+              {coas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.type})
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-fg-muted">
+              Required for journal entries and deposits to route through this
+              bank account.
+            </p>
           </div>
           <div className="grid gap-2 md:grid-cols-2">
             <label className="flex items-center gap-2 text-sm text-fg">

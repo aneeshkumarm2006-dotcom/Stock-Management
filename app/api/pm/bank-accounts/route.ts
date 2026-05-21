@@ -1,6 +1,8 @@
-// BankAccount CRUD (PDR_MASTER §3.16). Derived `balance` /
-// `undepositedFunds` are returned as zeros in Phase 1 — Phase 2 wires the
-// JournalLine roll-up. Account numbers are always returned masked (BR-AC-13).
+// BankAccount CRUD (PDR_MASTER §3.16). Phase 2 wires real `balance` /
+// `undepositedFunds` roll-ups from JournalEntry lines and accepts the new
+// `chartOfAccountId` mapping that ties this bank to its underlying GL cash
+// account (required for JE/Deposit postings to route through). Account
+// numbers are always returned masked (BR-AC-13).
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
@@ -11,25 +13,49 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { bankAccountCreateSchema } from '@/lib/validation/pm/bankAccount';
 import { logActivity } from '@/lib/pm/activity';
+import { computeBankRollups } from '@/lib/pm/bankBalances';
 
 export const runtime = 'nodejs';
 
-function serialize(d: Record<string, unknown>) {
-  return {
-    id: String(d._id),
-    name: d.name,
-    purpose: d.purpose ?? '',
-    accountNumberMasked: d.accountNumberMasked,
-    type: d.type,
-    epayEnabled: Boolean(d.epayEnabled),
-    retailCashEnabled: Boolean(d.retailCashEnabled),
-    lastReconciliationDate: d.lastReconciliationDate ?? null,
-    isCompanyCash: Boolean(d.isCompanyCash),
-    isDefault: Boolean(d.isDefault),
-    active: Boolean(d.active),
-    // Phase 2 wiring — see BR-AC-7. Returned as zero until ledger lands.
+interface BankSerializable {
+  id: string;
+  name: string;
+  purpose: string;
+  accountNumberMasked: string;
+  type: string;
+  epayEnabled: boolean;
+  retailCashEnabled: boolean;
+  lastReconciliationDate: Date | string | null;
+  isCompanyCash: boolean;
+  isDefault: boolean;
+  chartOfAccountId: string | null;
+  active: boolean;
+  balance: number;
+  undepositedFunds: boolean;
+}
+
+function serialize(
+  d: Record<string, unknown>,
+  rollup: { balance: number; undepositedFunds: boolean } = {
     balance: 0,
     undepositedFunds: false,
+  },
+): BankSerializable {
+  return {
+    id: String(d._id),
+    name: (d.name as string) ?? '',
+    purpose: (d.purpose as string) ?? '',
+    accountNumberMasked: (d.accountNumberMasked as string) ?? '',
+    type: (d.type as string) ?? 'Checking',
+    epayEnabled: Boolean(d.epayEnabled),
+    retailCashEnabled: Boolean(d.retailCashEnabled),
+    lastReconciliationDate: (d.lastReconciliationDate as Date | null) ?? null,
+    isCompanyCash: Boolean(d.isCompanyCash),
+    isDefault: Boolean(d.isDefault),
+    chartOfAccountId: d.chartOfAccountId ? String(d.chartOfAccountId) : null,
+    active: Boolean(d.active),
+    balance: rollup.balance,
+    undepositedFunds: rollup.undepositedFunds,
   };
 }
 
@@ -47,7 +73,13 @@ export async function GET(request: Request) {
   if (!includeInactive) filter.active = true;
 
   const rows = await BankAccount.find(filter).sort({ name: 1 }).lean();
-  return NextResponse.json(rows.map(serialize));
+  const rollups = await computeBankRollups(
+    ctx.orgId,
+    rows.map((r) => r._id),
+  );
+  return NextResponse.json(
+    rows.map((r) => serialize(r as Record<string, unknown>, rollups.get(String(r._id)))),
+  );
 }
 
 export async function POST(request: Request) {
@@ -80,11 +112,14 @@ export async function POST(request: Request) {
     retailCashEnabled: parsed.data.retailCashEnabled ?? false,
     isCompanyCash: parsed.data.isCompanyCash ?? false,
     isDefault: parsed.data.isDefault ?? false,
+    chartOfAccountId: parsed.data.chartOfAccountId
+      ? new Types.ObjectId(parsed.data.chartOfAccountId)
+      : null,
   });
 
   await logActivity({
     orgId: ctx.orgId,
-    parentType: 'Task',
+    parentType: 'BankAccount',
     parentId: doc._id,
     eventType: 'Bank account created',
     actorUserId: ctx.userId,

@@ -1,5 +1,8 @@
 // Zod validators for BankAccount. DECISIONS.md [G-S-15], [G-S-34].
+// Phase 2 adds the optional `chartOfAccountId` link to the underlying GL
+// cash account so JE/Deposit postings can route through.
 import { z } from 'zod';
+import { Types } from 'mongoose';
 import { MASKED_ACCOUNT_REGEX } from '@/lib/db/models/pm/BankAccount';
 
 const TYPES = ['Checking', 'Savings', 'Cash'] as const;
@@ -10,6 +13,10 @@ const maskedAccountNumber = z
   .max(20)
   .regex(MASKED_ACCOUNT_REGEX, 'Mask all but last 2–4 digits, e.g. ****1234');
 
+const objectIdString = z
+  .string()
+  .refine((v) => Types.ObjectId.isValid(v), { message: 'Invalid id' });
+
 export const bankAccountCreateSchema = z.object({
   name: z.string().min(1).max(120),
   purpose: z.string().max(200).optional(),
@@ -19,6 +26,7 @@ export const bankAccountCreateSchema = z.object({
   retailCashEnabled: z.boolean().optional(),
   isCompanyCash: z.boolean().optional(),
   isDefault: z.boolean().optional(),
+  chartOfAccountId: objectIdString.nullable().optional(),
 });
 
 export const bankAccountUpdateSchema = z
@@ -31,6 +39,7 @@ export const bankAccountUpdateSchema = z
     retailCashEnabled: z.boolean().optional(),
     isCompanyCash: z.boolean().optional(),
     isDefault: z.boolean().optional(),
+    chartOfAccountId: objectIdString.nullable().optional(),
     active: z.boolean().optional(),
     lastReconciliationDate: z.string().datetime().nullable().optional(),
   })

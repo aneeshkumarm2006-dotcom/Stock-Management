@@ -1,18 +1,19 @@
 // Polymorphic parent enums shared by Note, ActivityLogEntry, and PmFile.
-// Note + ActivityLogEntry parents are the Phase 0 PARENT_TYPES set; PmFile
-// adds `Account` for account-level uploads (PDR_MASTER §3.29 — Buildium parity:
+// Note + ActivityLogEntry parents are the PARENT_TYPES set; PmFile adds
+// `Account` for account-level uploads (PDR_MASTER §3.29 — Buildium parity:
 // `Upload account file` permits a File without a Location).
-// Phase 1+ adds the missing types (Bill, Email, JournalEntry, Deposit) to
-// FILE_LOCATION_TYPES as those entities ship — keep this file the single
-// source of truth.
+// Each phase extends both sets as new entities ship — keep this file the
+// single source of truth.
 
 import { z } from "zod";
 
 /**
- * Polymorphic parent for Note + ActivityLogEntry.
- * Order matches PROPERTY_TODO.md Phase 0 §"Polymorphic cross-cutting tables".
+ * Polymorphic parent for Note + ActivityLogEntry. Phase 2 adds the accounting
+ * entities so JE/Deposit/locked-period mutations get a real audit-log parent
+ * (previously they piggy-backed on `Task` as a placeholder).
  */
 export const PARENT_TYPES = [
+  // Phase 0/1 — rentals + tasks
   "Property",
   "Unit",
   "Lease",
@@ -23,12 +24,19 @@ export const PARENT_TYPES = [
   "Applicant",
   "Listing",
   "Task",
+  // Phase 2 — accounting entities
+  "BankAccount",
+  "ChartOfAccount",
+  "JournalEntry",
+  "Deposit",
+  "LockedPeriodPolicy",
+  "CompanyAccount",
 ] as const;
 
 /**
  * File locations — superset of PARENT_TYPES with `Account` for account-level
- * uploads (no parent). Phase 1+ will extend with Bill, Email, JournalEntry,
- * Deposit as those entities ship.
+ * uploads (no parent). Phase 2 adds JournalEntry + Deposit so attachments land
+ * on the right entity.
  */
 export const FILE_LOCATION_TYPES = [
   ...PARENT_TYPES,
@@ -39,19 +47,24 @@ export const parentTypeSchema = z.enum(PARENT_TYPES);
 export const fileLocationTypeSchema = z.enum(FILE_LOCATION_TYPES);
 
 /**
- * Phase 1+ entities that are FK-validated when an upload lands. Membership
- * means "POST /api/pm/files looks up `locationId` in the matching Mongo
- * collection and rejects when it doesn't exist". Anything not in this set is
- * allowed through (placeholder-writes pattern from Phase 0).
- *
- * Phase 1 adds: Property, Unit, Tenant, RentalOwner.
- * Phases 3/4 will add: Vendor, WorkOrder, Lease, Applicant, Listing, Task.
+ * Entities that are FK-validated when an upload lands. Membership means
+ * "POST /api/pm/files looks up `locationId` in the matching Mongo collection
+ * and rejects when it doesn't exist". Anything not in this set is allowed
+ * through (placeholder-writes pattern from Phase 0).
  */
 export const FK_VALIDATED_LOCATION_TYPES = new Set<string>([
+  // Phase 1
   'Property',
   'Unit',
   'Tenant',
   'RentalOwner',
+  // Phase 2
+  'BankAccount',
+  'ChartOfAccount',
+  'JournalEntry',
+  'Deposit',
+  'LockedPeriodPolicy',
+  'CompanyAccount',
 ]);
 
 /**
@@ -63,6 +76,12 @@ export const COLLECTION_BY_LOCATION_TYPE: Record<string, string> = {
   Unit: 'pm_units',
   Tenant: 'pm_tenants',
   RentalOwner: 'pm_rental_owners',
+  BankAccount: 'pm_bank_accounts',
+  ChartOfAccount: 'pm_chart_of_accounts',
+  JournalEntry: 'pm_journal_entries',
+  Deposit: 'pm_deposits',
+  LockedPeriodPolicy: 'pm_locked_period_policies',
+  CompanyAccount: 'pm_company_accounts',
 };
 
 /** Type guard for runtime checks. */

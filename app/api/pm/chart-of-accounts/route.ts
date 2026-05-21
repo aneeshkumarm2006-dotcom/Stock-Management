@@ -91,8 +91,7 @@ export async function POST(request: Request) {
 
     await logActivity({
       orgId: ctx.orgId,
-      // Account-level event — no natural polymorphic parent yet.
-      parentType: 'Task',
+      parentType: 'ChartOfAccount',
       parentId: doc._id,
       eventType: 'Chart of account created',
       actorUserId: ctx.userId,

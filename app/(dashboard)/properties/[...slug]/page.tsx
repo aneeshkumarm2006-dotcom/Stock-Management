@@ -38,6 +38,7 @@ const TITLES: Record<string, string> = {
   "accounting/eft-approvals": "EFT approvals",
   "accounting/budgets": "Budgets",
   "accounting/chart-of-accounts": "Chart of accounts",
+  "accounting/locked-periods": "Locked periods",
   "accounting/company-financials": "Company financials",
   "accounting/1099-tax-filings": "1099 tax filings",
   "maintenance/vendors": "Vendors",

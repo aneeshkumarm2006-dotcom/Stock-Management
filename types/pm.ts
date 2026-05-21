@@ -111,6 +111,27 @@ export type ChartOfAccountDefaultFor =
 /** Vendor.taxIdentityType — DECISIONS.md [G-S-25]. Pre-declared for Phase 4. */
 export type TaxIdentityType = "SSN" | "EIN" | "ITIN";
 
+// -----------------------------------------------------------------------------
+// Phase 2 — Accounting ledger enums
+// -----------------------------------------------------------------------------
+
+/** JournalEntry.status — DECISIONS.md [G-S-18]. Posted is the steady state;
+ * Draft is editable; Voided is paired with a reversing JE via
+ * `reversesJournalEntryId`. Reports filter `status !== 'Voided'`. */
+export type JournalEntryStatus = "Posted" | "Draft" | "Voided";
+
+/** JournalEntry / JournalLine scope (PDR §3.19, §3.19a). A JE's scope is
+ * advisory — BR-AC-14 lets individual lines target different scopes within a
+ * single entry (multi-property posting). */
+export type JournalEntryScopeType = "Property" | "Company";
+
+/** LockedPeriodPolicy.scope (PDR §3.27). Per-property requires `propertyId`. */
+export type LockedPeriodScope = "Global" | "Per-property";
+
+/** Deposit.status — Posted is the steady state; Voided is paired with the
+ * underlying JE being voided. */
+export type DepositStatus = "Posted" | "Voided";
+
 /** US ISO-3166 sub-division states/territories used by composite address. */
 export type UsState =
   | "AL" | "AK" | "AZ" | "AR" | "CA" | "CO" | "CT" | "DE" | "FL" | "GA"

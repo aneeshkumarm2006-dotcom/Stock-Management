@@ -1,4 +1,4 @@
-// Org-default seeding (Phases 0 + 1). Called by `getOrCreateOrgForUser`.
+// Org-default seeding (Phases 0 + 1 + 2). Called by `getOrCreateOrgForUser`.
 // Idempotent: each upsert uses `$setOnInsert` so a re-run is a no-op.
 //
 // Phase 0 seeds: FileCategory `Leases` (BR-FI-2), VendorCategory `Uncategorized`
@@ -6,12 +6,16 @@
 // (Phase 0a [G-S-41]).
 // Phase 1 seeds: system Chart of Accounts (11 rows, all `systemSeeded=true`)
 // covering the `defaultFor` enum from DECISIONS.md [G-S-14].
+// Phase 2 seeds: one CompanyAccount per org (PDR §3.28 — the management
+// company's own books).
 import type { Types } from 'mongoose';
 import { FileCategory } from '@/lib/db/models/pm/FileCategory';
 import { VendorCategory } from '@/lib/db/models/pm/VendorCategory';
 import { TaskCategory } from '@/lib/db/models/pm/TaskCategory';
 import { ProjectType } from '@/lib/db/models/pm/ProjectType';
 import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
+import { CompanyAccount } from '@/lib/db/models/pm/CompanyAccount';
+import { Organization } from '@/lib/db/models/pm/Organization';
 import type {
   ChartOfAccountType,
   ChartOfAccountDefaultFor,
@@ -99,6 +103,30 @@ const SYSTEM_ACCOUNTS: SystemAccountSeed[] = [
 ];
 
 /**
+ * Idempotent CompanyAccount seeding (Phase 2). One row per org, name derived
+ * from the org's slug to match the Buildium pattern (`<slug>.managebuilding.com`
+ * — we don't append the suffix in MVP but the name is a stable handle).
+ * Public so the company-accounts route can backfill orgs that pre-date Phase 2.
+ */
+export async function seedCompanyAccount(
+  organizationId: Types.ObjectId,
+): Promise<void> {
+  const org = await Organization.findById(organizationId).lean();
+  const name = org?.name ?? org?.slug ?? 'Company';
+  await CompanyAccount.updateOne(
+    { organizationId },
+    {
+      $setOnInsert: {
+        organizationId,
+        name,
+        active: true,
+      },
+    },
+    { upsert: true },
+  );
+}
+
+/**
  * Idempotent system-account seeding. Safe to call multiple times.
  * Public so the ChartOfAccount routes can backfill an org that pre-dates
  * Phase 1 on first read.
@@ -182,6 +210,7 @@ export async function seedDefaults(
       { upsert: true },
     ),
     seedSystemAccounts(organizationId),
+    seedCompanyAccount(organizationId),
   ]);
 }
 

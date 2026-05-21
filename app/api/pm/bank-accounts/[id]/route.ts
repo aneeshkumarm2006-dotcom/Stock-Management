@@ -1,5 +1,8 @@
 // Per-row CRUD on BankAccount. DELETE soft-archives (BR-AC-18). Property FKs
-// stay intact even when archived so historical references survive.
+// stay intact even when archived so historical references survive. Phase 2:
+// GET returns real `balance` / `undepositedFunds` from the GL; PATCH accepts
+// `chartOfAccountId` mapping. Activity log entries now point at the
+// BankAccount parentType (Phase 2 enum extension).
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
@@ -10,6 +13,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { bankAccountUpdateSchema } from '@/lib/validation/pm/bankAccount';
 import { logActivity } from '@/lib/pm/activity';
+import { computeBankRollups } from '@/lib/pm/bankBalances';
 
 export const runtime = 'nodejs';
 
@@ -30,6 +34,11 @@ export async function GET(
   if (!ctx) return unauthorizedResponse();
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const rollups = await computeBankRollups(ctx.orgId, [doc._id]);
+  const rollup = rollups.get(String(doc._id)) ?? {
+    balance: 0,
+    undepositedFunds: false,
+  };
   return NextResponse.json({
     id: String(doc._id),
     name: doc.name,
@@ -41,9 +50,10 @@ export async function GET(
     lastReconciliationDate: doc.lastReconciliationDate ?? null,
     isCompanyCash: doc.isCompanyCash,
     isDefault: doc.isDefault,
+    chartOfAccountId: doc.chartOfAccountId ? String(doc.chartOfAccountId) : null,
     active: doc.active,
-    balance: 0,
-    undepositedFunds: false,
+    balance: rollup.balance,
+    undepositedFunds: rollup.undepositedFunds,
   });
 }
 
@@ -73,20 +83,29 @@ export async function PATCH(
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   // `lastReconciliationDate` arrives as ISO string from the client; coerce.
-  const { lastReconciliationDate, ...rest } = parsed.data;
+  // `chartOfAccountId` arrives as a string; coerce to ObjectId.
+  const { lastReconciliationDate, chartOfAccountId, ...rest } = parsed.data;
   Object.assign(doc, rest);
   if (lastReconciliationDate !== undefined) {
     doc.lastReconciliationDate = lastReconciliationDate
       ? new Date(lastReconciliationDate)
       : null;
   }
+  if (chartOfAccountId !== undefined) {
+    doc.chartOfAccountId = chartOfAccountId
+      ? new Types.ObjectId(chartOfAccountId)
+      : null;
+  }
   await doc.save();
 
   await logActivity({
     orgId: ctx.orgId,
-    parentType: 'Task',
+    parentType: 'BankAccount',
     parentId: doc._id,
-    eventType: 'Bank account updated',
+    eventType:
+      chartOfAccountId !== undefined
+        ? 'Bank account → CoA mapped'
+        : 'Bank account updated',
     actorUserId: ctx.userId,
   });
 
@@ -107,7 +126,7 @@ export async function DELETE(
 
   await logActivity({
     orgId: ctx.orgId,
-    parentType: 'Task',
+    parentType: 'BankAccount',
     parentId: doc._id,
     eventType: 'Bank account archived',
     actorUserId: ctx.userId,
