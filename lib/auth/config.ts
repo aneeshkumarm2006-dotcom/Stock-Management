@@ -4,6 +4,7 @@
 // Refs: PDR.md §3, §4; Tech_Stack.md §Authentication, §Security Notes.
 import type { NextAuthConfig } from 'next-auth';
 import Google from 'next-auth/providers/google';
+import type { OrgRole } from '@/types/pm';
 
 const THIRTY_DAYS_SECONDS = 60 * 60 * 24 * 30;
 const isProd = process.env.NODE_ENV === 'production';
@@ -60,18 +61,44 @@ export const authConfig: NextAuthConfig = {
       // Returning false makes Auth.js redirect to `pages.signIn` (/login).
       return isLoggedIn;
     },
-    // On sign-in, persist the Mongo user id into the token. For Credentials the
-    // `authorize` return carries it; for Google the adapter-created user id.
-    jwt({ token, user }) {
+    // Edge-safe JWT callback (no DB calls). Mongo lookups happen in the
+    // Node-only override in `auth.ts`. Here we only copy `user` fields onto
+    // the token on first sign-in and propagate the impersonation merge that
+    // `useSession().update({...})` issues.
+    jwt({ token, user, trigger, session }) {
       if (user?.id) {
         token.id = user.id;
       }
+      // NextAuth surfaces `update()` payloads here when trigger === 'update'.
+      // The impersonation route uses this to swap the effective user id and
+      // stamp the acting admin.
+      if (trigger === 'update' && session) {
+        const next = session as {
+          impersonatedBy?: string | null;
+          effectiveUserId?: string;
+        };
+        if (next.impersonatedBy === null) {
+          // Explicit revert — drop the claim and restore the admin's id.
+          if (token.impersonatedBy) token.id = token.impersonatedBy;
+          delete token.impersonatedBy;
+        } else if (next.impersonatedBy && next.effectiveUserId) {
+          token.impersonatedBy = next.impersonatedBy;
+          token.id = next.effectiveUserId;
+        }
+      }
       return token;
     },
-    // Expose the id on the session object for server-side user scoping.
+    // Expose id + PM claims on the session object for server-side scoping.
     session({ session, token }) {
       if (token.id && session.user) {
         session.user.id = String(token.id);
+      }
+      if (session.user) {
+        if (token.orgId) session.user.orgId = String(token.orgId);
+        if (token.roles) session.user.roles = token.roles as OrgRole[];
+        if (token.impersonatedBy) {
+          session.user.impersonatedBy = String(token.impersonatedBy);
+        }
       }
       return session;
     },

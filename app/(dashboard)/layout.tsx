@@ -4,6 +4,8 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { MobileTabBar } from "@/components/layout/MobileTabBar";
+import { DashboardShell } from "@/components/layout/DashboardShell";
+import { FloatingActionCluster } from "@/components/layout/FloatingActionCluster";
 import { SettingsHydrator } from "@/components/settings/SettingsHydrator";
 import { NetworkStatus } from "@/components/providers/NetworkStatus";
 
@@ -17,13 +19,14 @@ export default function DashboardLayout({
       <SettingsHydrator />
       <NetworkStatus />
       <Sidebar />
-      <div className="flex min-h-screen flex-col md:pl-64">
+      <DashboardShell>
         <TopBar />
         <main className="flex-1 px-4 pb-24 pt-6 md:px-6 md:pb-8">
           {children}
         </main>
-      </div>
+      </DashboardShell>
       <MobileTabBar />
+      <FloatingActionCluster />
     </div>
   );
 }

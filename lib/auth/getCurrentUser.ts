@@ -4,6 +4,7 @@
 // Refs: PDR.md §12; Tech_Stack.md §Authentication, §Security Notes.
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import type { OrgRole } from '@/types/pm';
 
 /** Thrown when no valid session is present. */
 export class UnauthorizedError extends Error {
@@ -37,6 +38,33 @@ export async function requireUserId(): Promise<string> {
 /** Standard 401 JSON body for route handlers. */
 export function unauthorizedResponse(): NextResponse {
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+}
+
+export interface PmContext {
+  userId: string;
+  orgId: string;
+  roles: OrgRole[];
+  /** Acting admin id when impersonation is active; otherwise null. */
+  impersonatedBy: string | null;
+}
+
+/**
+ * PM helper — returns the session's PM-scoped context. Used by every
+ * `/api/pm/*` route. Throws when unauthenticated; returns null when the user
+ * is authenticated but has no PM org yet (shouldn't happen after first sign-in
+ * since the JWT callback auto-provisions one).
+ */
+export async function getPmContext(): Promise<PmContext | null> {
+  const session = await auth();
+  const u = session?.user;
+  if (!u?.id) return null;
+  if (!u.orgId) return null;
+  return {
+    userId: u.id,
+    orgId: u.orgId,
+    roles: u.roles ?? [],
+    impersonatedBy: u.impersonatedBy ?? null,
+  };
 }
 
 export default requireUserId;

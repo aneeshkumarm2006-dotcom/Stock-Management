@@ -12,15 +12,42 @@ import { verifyPassword } from '@/lib/auth/password';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { User } from '@/lib/db/models/User';
 import { Settings } from '@/lib/db/models/Settings';
+import { getOrCreateOrgForUser } from '@/lib/pm/org';
+import type { OrgRole } from '@/types/pm';
 
 const credentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
 
+const baseJwt = authConfig.callbacks?.jwt;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: mongoAdapter,
+  callbacks: {
+    ...authConfig.callbacks,
+    // Node-runtime JWT enrichment: ensures every authenticated session
+    // carries `orgId` + `roles` for PM scoping. Falls back to the edge-safe
+    // callback for the common case where no DB lookup is needed.
+    async jwt(params) {
+      const token = (baseJwt ? await baseJwt(params) : params.token) ?? params.token;
+      if (!token) return token;
+      // `params.user` is only populated on the very first sign-in. After that
+      // we hit the lazy path: if a stale JWT lacks orgId, look it up once.
+      const needsOrg = !token.orgId && token.id;
+      if (needsOrg) {
+        try {
+          const { orgId, roles } = await getOrCreateOrgForUser(String(token.id));
+          token.orgId = orgId;
+          token.roles = roles as OrgRole[];
+        } catch (err) {
+          console.error('jwt: getOrCreateOrgForUser failed', err);
+        }
+      }
+      return token;
+    },
+  },
   events: {
     // Guarantee every user has a Settings doc from their first login onward
     // (Stage 7 / PDR §5.7). Runs server-side for *both* the Credentials and

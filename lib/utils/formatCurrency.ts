@@ -24,6 +24,12 @@ interface FormatCurrencyOptions {
   compact?: boolean;
   /** Hide the currency symbol (e.g. inside a labelled column). */
   hideSymbol?: boolean;
+  /**
+   * Accounting variant: render negatives as `($X.XX)` (parentheses, no
+   * leading minus) per BR-AC-12. Pair with the `<CurrencyAmount>` component
+   * to also apply the red `text-loss` colour.
+   */
+  accounting?: boolean;
 }
 
 export function formatCurrency(
@@ -37,6 +43,7 @@ export function formatCurrency(
     signed = false,
     compact = false,
     hideSymbol = false,
+    accounting = false,
   } = options;
 
   if (value == null || !Number.isFinite(value)) return "—";
@@ -48,7 +55,12 @@ export function formatCurrency(
     compact,
   });
   const symbol = hideSymbol ? "" : SYMBOL[currency];
-  const sign = negative ? "-" : signed ? "+" : "";
 
+  if (accounting && negative) {
+    // Accounting style: ($1,234.56) — no leading minus, parentheses wrap.
+    return `(${symbol}${formatted})`;
+  }
+
+  const sign = negative ? "-" : signed ? "+" : "";
   return `${sign}${symbol}${formatted}`;
 }
