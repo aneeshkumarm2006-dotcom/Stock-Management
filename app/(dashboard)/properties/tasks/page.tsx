@@ -43,6 +43,14 @@ interface TaskRow {
 type SearchOption = "new" | "me" | "all";
 
 export default function TasksPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <TasksPageInner />
+    </React.Suspense>
+  );
+}
+
+function TasksPageInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { toast } = useToast();
