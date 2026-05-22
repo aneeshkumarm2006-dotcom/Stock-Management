@@ -39,6 +39,15 @@ export const PARENT_TYPES = [
   "DraftLease",
   "RentersInsurancePolicy",
   "Pet",
+  // Phase 4 — Maintenance + A/P entities (Vendor, WorkOrder, Task already
+  // covered above as Phase 0/1 reservations). CalendarEvent stub ships here
+  // for BR-MV-7 so WorkOrder → schedule-event has a real parent to write
+  // against; full surface in Phase 7.
+  "Bill",
+  "BillPayment",
+  "RecurringTransaction",
+  "EftRequest",
+  "CalendarEvent",
 ] as const;
 
 /**
@@ -81,6 +90,15 @@ export const FK_VALIDATED_LOCATION_TYPES = new Set<string>([
   'Lease',
   'RentersInsurancePolicy',
   'Pet',
+  // Phase 4 — Maintenance + A/P entities
+  'Vendor',
+  'Task',
+  'WorkOrder',
+  'Bill',
+  'BillPayment',
+  'RecurringTransaction',
+  'EftRequest',
+  'CalendarEvent',
 ]);
 
 /**
@@ -105,6 +123,15 @@ export const COLLECTION_BY_LOCATION_TYPE: Record<string, string> = {
   Lease: 'pm_leases',
   RentersInsurancePolicy: 'pm_renters_insurance_policies',
   Pet: 'pm_pets',
+  // Phase 4 — Maintenance + A/P entities
+  Vendor: 'pm_vendors',
+  Task: 'pm_tasks',
+  WorkOrder: 'pm_work_orders',
+  Bill: 'pm_bills',
+  BillPayment: 'pm_bill_payments',
+  RecurringTransaction: 'pm_recurring_transactions',
+  EftRequest: 'pm_eft_requests',
+  CalendarEvent: 'pm_calendar_events',
 };
 
 /** Type guard for runtime checks. */

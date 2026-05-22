@@ -321,3 +321,237 @@ export type UsState =
   | "NM" | "NY" | "NC" | "ND" | "OH" | "OK" | "OR" | "PA" | "RI" | "SC"
   | "SD" | "TN" | "TX" | "UT" | "VT" | "VA" | "WA" | "WV" | "WI" | "WY"
   | "DC" | "PR";
+
+// -----------------------------------------------------------------------------
+// Phase 4 — Maintenance + A/P enums (DECISIONS.md Phase 4)
+// -----------------------------------------------------------------------------
+
+/** WorkOrder.status — DECISIONS.md [G-S-4]. `Completed` + `Cancelled` are
+ *  terminal; UI grays out further status edits but bill posting remains
+ *  permitted against a `Completed` WO. */
+export type WorkOrderStatus =
+  | "New"
+  | "In progress"
+  | "On hold"
+  | "Completed"
+  | "Cancelled";
+
+export const WORK_ORDER_STATUSES: readonly WorkOrderStatus[] = [
+  "New",
+  "In progress",
+  "On hold",
+  "Completed",
+  "Cancelled",
+] as const;
+
+export const WORK_ORDER_TERMINAL_STATUSES: readonly WorkOrderStatus[] = [
+  "Completed",
+  "Cancelled",
+] as const;
+
+/** Shared priority chip used by WorkOrder + Task — DECISIONS.md [G-S-5] +
+ *  [G-S-8]. Renders via `<PriorityChip />`. */
+export type WorkPriority = "Low" | "Normal" | "High" | "Urgent";
+
+export const WORK_PRIORITIES: readonly WorkPriority[] = [
+  "Low",
+  "Normal",
+  "High",
+  "Urgent",
+] as const;
+
+/** WorkOrder.entryDetails — DECISIONS.md [G-S-6]. `Do not enter` disables
+ *  the entryContacts selector. */
+export type EntryDetails =
+  | "Tenant will be home"
+  | "Permission to enter"
+  | "Call first"
+  | "Do not enter";
+
+export const ENTRY_DETAILS: readonly EntryDetails[] = [
+  "Tenant will be home",
+  "Permission to enter",
+  "Call first",
+  "Do not enter",
+] as const;
+
+/** WorkOrder.billStatus — independent of Bill.status lifecycle (BR-MV-9).
+ *  Rolled up from the count + amount of Bills linked back via
+ *  `Bill.workOrderId`. */
+export type WorkOrderBillStatus =
+  | "No bills added"
+  | "Open"
+  | "Partially paid"
+  | "Paid"
+  | "Voided";
+
+export const WORK_ORDER_BILL_STATUSES: readonly WorkOrderBillStatus[] = [
+  "No bills added",
+  "Open",
+  "Partially paid",
+  "Paid",
+  "Voided",
+] as const;
+
+/** Task.status — DECISIONS.md [G-S-7]. `Closed` is soft archive;
+ *  `Cancelled` is explicit walk-away. */
+export type TaskStatus =
+  | "New"
+  | "In progress"
+  | "Completed"
+  | "Closed"
+  | "Cancelled"
+  | "On hold";
+
+export const TASK_STATUSES: readonly TaskStatus[] = [
+  "New",
+  "In progress",
+  "Completed",
+  "Closed",
+  "Cancelled",
+  "On hold",
+] as const;
+
+export const TASK_TERMINAL_STATUSES: readonly TaskStatus[] = [
+  "Completed",
+  "Closed",
+  "Cancelled",
+] as const;
+
+/** Task.taskType — drives the source* fields. */
+export type TaskType =
+  | "To do"
+  | "Resident request"
+  | "Rental owner request"
+  | "Contact request";
+
+export const TASK_TYPES: readonly TaskType[] = [
+  "To do",
+  "Resident request",
+  "Rental owner request",
+  "Contact request",
+] as const;
+
+/** WorkOrder.chargeWorkTo — polymorphic, BR-MV-10. UI enforces single pick
+ *  via radio group ([G-B-30]). */
+export type ChargeTargetType = "Property" | "Lease" | "RentalOwner";
+
+export interface ChargeTarget {
+  type: ChargeTargetType;
+  id: string;
+}
+
+export const CHARGE_TARGET_TYPES: readonly ChargeTargetType[] = [
+  "Property",
+  "Lease",
+  "RentalOwner",
+] as const;
+
+/** Bill.status — DECISIONS.md [G-S-17]. `Overdue` is derived nightly. */
+export type BillStatus =
+  | "Draft"
+  | "Due"
+  | "Overdue"
+  | "Partially paid"
+  | "Paid"
+  | "Voided";
+
+export const BILL_STATUSES: readonly BillStatus[] = [
+  "Draft",
+  "Due",
+  "Overdue",
+  "Partially paid",
+  "Paid",
+  "Voided",
+] as const;
+
+/** Bill.scope.type — Property scope routes the JE into per-property reports;
+ *  Company scope is the org-wide G&A bucket. */
+export type BillScopeType = "Property" | "Company";
+
+export interface BillScope {
+  type: BillScopeType;
+  id: string | null;
+}
+
+/** BillPayment.paymentMethod — DECISIONS.md [G-S-16]. Check is the only
+ *  method that requires `checkNumber`. */
+export type BillPaymentMethod = "Check" | "ACH" | "EFT" | "Wire";
+
+export const BILL_PAYMENT_METHODS: readonly BillPaymentMethod[] = [
+  "Check",
+  "ACH",
+  "EFT",
+  "Wire",
+] as const;
+
+/** RecurringTransaction.type — drives payee cardinality (Bill/Check need a
+ *  payee; JE has no payee). */
+export type RecurringTransactionType = "Check" | "Bill" | "Journal entry";
+
+export const RECURRING_TRANSACTION_TYPES: readonly RecurringTransactionType[] = [
+  "Check",
+  "Bill",
+  "Journal entry",
+] as const;
+
+/** RecurringTransaction.frequency — DECISIONS.md note: Phase 4 ships the
+ *  four standard cadences. Custom-interval shape ([G-S-9]) lands in Phase 5
+ *  with RecurringTask. */
+export type RecurringFrequency =
+  | "Weekly"
+  | "Monthly"
+  | "Quarterly"
+  | "Yearly";
+
+export const RECURRING_FREQUENCIES: readonly RecurringFrequency[] = [
+  "Weekly",
+  "Monthly",
+  "Quarterly",
+  "Yearly",
+] as const;
+
+/** RecurringTransaction.duration — termination rule. */
+export type RecurringDuration = "Until cancelled" | "End after N";
+
+export const RECURRING_DURATIONS: readonly RecurringDuration[] = [
+  "Until cancelled",
+  "End after N",
+] as const;
+
+/** RecurringTransaction.payee — polymorphic Vendor|RentalOwner, or null
+ *  when type='Journal entry'. */
+export type RecurringPayeeType = "Vendor" | "RentalOwner";
+
+export interface RecurringPayee {
+  type: RecurringPayeeType;
+  id: string;
+}
+
+export const RECURRING_PAYEE_TYPES: readonly RecurringPayeeType[] = [
+  "Vendor",
+  "RentalOwner",
+] as const;
+
+/** EftRequest.status — three-state with `Pending` as the inbox bucket. */
+export type EftRequestStatus = "Pending" | "Approved" | "Rejected";
+
+export const EFT_REQUEST_STATUSES: readonly EftRequestStatus[] = [
+  "Pending",
+  "Approved",
+  "Rejected",
+] as const;
+
+/** EftRequest.payee — polymorphic Vendor|RentalOwner|Tenant. */
+export type EftPayeeType = "Vendor" | "RentalOwner" | "Tenant";
+
+export interface EftPayee {
+  type: EftPayeeType;
+  id: string;
+}
+
+export const EFT_PAYEE_TYPES: readonly EftPayeeType[] = [
+  "Vendor",
+  "RentalOwner",
+  "Tenant",
+] as const;
