@@ -29,6 +29,7 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
+import { PropertyVacancyWidget } from "@/components/pm/PropertyVacancyWidget";
 import type {
   PropertyClass,
   PropertySubType,
@@ -236,6 +237,15 @@ export default function PropertyDetailPage() {
                 />
               </dl>
               <ReplacePhotoButton propertyId={doc.id} hasPhoto={!!doc.photo} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Vacancy</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PropertyVacancyWidget propertyId={doc.id} />
             </CardContent>
           </Card>
 

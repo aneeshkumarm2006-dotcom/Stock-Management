@@ -10,7 +10,12 @@ import { useSettingsStore } from "@/store/useSettingsStore";
 import { cn } from "@/lib/utils/cn";
 
 interface CurrencyAmountProps {
-  value: number | null | undefined;
+  /** Pre-converted dollar value (legacy API). */
+  value?: number | null | undefined;
+  /** Integer-cents shorthand — Phase 3 leasing pages pass cents directly so
+   *  the call site doesn't have to thread `fromCents` everywhere. Equivalent
+   *  to `value={cents / 100}`. */
+  cents?: number | null | undefined;
   currency?: Currency;
   /**
    * Defaults to true — every PM money cell uses the accounting variant. Pass
@@ -26,6 +31,7 @@ interface CurrencyAmountProps {
 
 export function CurrencyAmount({
   value,
+  cents,
   currency = "USD",
   accounting = true,
   decimals,
@@ -34,9 +40,12 @@ export function CurrencyAmount({
   className,
 }: CurrencyAmountProps) {
   const format = useSettingsStore((s) => s.numberFormat);
-  const negative = typeof value === "number" && Number.isFinite(value) && value < 0;
+  const resolved =
+    cents != null && Number.isFinite(cents) ? cents / 100 : value;
+  const negative =
+    typeof resolved === "number" && Number.isFinite(resolved) && resolved < 0;
 
-  const text = formatCurrency(value, currency, {
+  const text = formatCurrency(resolved, currency, {
     format,
     decimals,
     hideSymbol,

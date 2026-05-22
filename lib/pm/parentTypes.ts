@@ -31,6 +31,14 @@ export const PARENT_TYPES = [
   "Deposit",
   "LockedPeriodPolicy",
   "CompanyAccount",
+  // Phase 3 — leasing-lifecycle entities (Lease, Tenant, Applicant, Listing
+  // already covered; the rest are new). DraftLease lives in its own URL space
+  // (BR-LL-8) but writes notes/activity/files against the same parent slot
+  // so a draft → active promotion preserves history.
+  "Prospect",
+  "DraftLease",
+  "RentersInsurancePolicy",
+  "Pet",
 ] as const;
 
 /**
@@ -65,6 +73,14 @@ export const FK_VALIDATED_LOCATION_TYPES = new Set<string>([
   'Deposit',
   'LockedPeriodPolicy',
   'CompanyAccount',
+  // Phase 3 — leasing-lifecycle entities
+  'Listing',
+  'Prospect',
+  'Applicant',
+  'DraftLease',
+  'Lease',
+  'RentersInsurancePolicy',
+  'Pet',
 ]);
 
 /**
@@ -82,6 +98,13 @@ export const COLLECTION_BY_LOCATION_TYPE: Record<string, string> = {
   Deposit: 'pm_deposits',
   LockedPeriodPolicy: 'pm_locked_period_policies',
   CompanyAccount: 'pm_company_accounts',
+  Listing: 'pm_listings',
+  Prospect: 'pm_prospects',
+  Applicant: 'pm_applicants',
+  DraftLease: 'pm_draft_leases',
+  Lease: 'pm_leases',
+  RentersInsurancePolicy: 'pm_renters_insurance_policies',
+  Pet: 'pm_pets',
 };
 
 /** Type guard for runtime checks. */

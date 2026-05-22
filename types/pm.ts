@@ -132,6 +132,187 @@ export type LockedPeriodScope = "Global" | "Per-property";
  * underlying JE being voided. */
 export type DepositStatus = "Posted" | "Voided";
 
+// -----------------------------------------------------------------------------
+// Phase 3 — Leasing lifecycle enums
+// -----------------------------------------------------------------------------
+
+/** Prospect.status — DECISIONS.md [G-S-2]. 6 buckets covering the CRM
+ *  funnel from first touch through funnel exit. Set per Phase 3 since the
+ *  decision was unblocked inline. */
+export type ProspectStatus =
+  | "New"
+  | "Contacted"
+  | "Toured"
+  | "Application sent"
+  | "Lost"
+  | "Converted";
+
+export const PROSPECT_STATUSES: readonly ProspectStatus[] = [
+  "New",
+  "Contacted",
+  "Toured",
+  "Application sent",
+  "Lost",
+  "Converted",
+] as const;
+
+/** Applicant.status — BR-LA-6 explicitly decouples from checklist progress.
+ *  PM may approve with open items. */
+export type ApplicantStatus =
+  | "New"
+  | "Screening"
+  | "Approved"
+  | "Rejected"
+  | "Withdrawn"
+  | "Converted";
+
+export const APPLICANT_STATUSES: readonly ApplicantStatus[] = [
+  "New",
+  "Screening",
+  "Approved",
+  "Rejected",
+  "Withdrawn",
+  "Converted",
+] as const;
+
+/** Applicant.screeningStatus — order-and-watch tri-state. */
+export type ApplicantScreeningStatus =
+  | "Not ordered"
+  | "Ordered"
+  | "Received"
+  | "Failed";
+
+export const APPLICANT_SCREENING_STATUSES: readonly ApplicantScreeningStatus[] = [
+  "Not ordered",
+  "Ordered",
+  "Received",
+  "Failed",
+] as const;
+
+/** Lease.esignatureStatus — DECISIONS.md [G-S-1]. 11-value lifecycle that
+ *  mirrors Buildium's HelloSign-style envelope tracker. Recorded here so we
+ *  unblock the schema and let Phase 3 ship; downstream Phase 6 may add
+ *  bounce/error categories. */
+export type EsignatureStatus =
+  | "Unknown"
+  | "Not sent"
+  | "Processing"
+  | "Sent"
+  | "Viewed"
+  | "Partially signed"
+  | "Signed"
+  | "Completed"
+  | "Declined"
+  | "Voided"
+  | "Expired";
+
+export const ESIGNATURE_STATUSES: readonly EsignatureStatus[] = [
+  "Unknown",
+  "Not sent",
+  "Processing",
+  "Sent",
+  "Viewed",
+  "Partially signed",
+  "Signed",
+  "Completed",
+  "Declined",
+  "Voided",
+  "Expired",
+] as const;
+
+/** Lease.leaseType — BR-LL-1: At-will leases do NOT require endDate. */
+export type LeaseType = "Fixed" | "Fixed w/rollover" | "At-will";
+
+export const LEASE_TYPES: readonly LeaseType[] = [
+  "Fixed",
+  "Fixed w/rollover",
+  "At-will",
+] as const;
+
+/** Lease.status — derived primarily by date math but persisted for fast
+ *  filtering on `(2) Active, Future` (BR-LL-2). */
+export type LeaseStatus =
+  | "Active"
+  | "Future"
+  | "Expired"
+  | "Ended"
+  | "Cancelled";
+
+export const LEASE_STATUSES: readonly LeaseStatus[] = [
+  "Active",
+  "Future",
+  "Expired",
+  "Ended",
+  "Cancelled",
+] as const;
+
+/** DraftLease.executionStatus — order-of-operations gate before promote. */
+export type DraftLeaseExecutionStatus =
+  | "Draft"
+  | "Out for signature"
+  | "Ready to execute"
+  | "Executed"
+  | "Cancelled";
+
+export const DRAFT_LEASE_EXECUTION_STATUSES: readonly DraftLeaseExecutionStatus[] = [
+  "Draft",
+  "Out for signature",
+  "Ready to execute",
+  "Executed",
+  "Cancelled",
+] as const;
+
+/** RentCycle — drives recurring rent charge cadence. */
+export type RentCycle = "Monthly" | "Weekly" | "Bi-weekly" | "Quarterly" | "Yearly";
+
+export const RENT_CYCLES: readonly RentCycle[] = [
+  "Monthly",
+  "Weekly",
+  "Bi-weekly",
+  "Quarterly",
+  "Yearly",
+] as const;
+
+/** RentersInsurancePolicy.carrier — third-party vs Buildium-bundled MSI. */
+export type RentersInsuranceCarrier = "MSI" | "Third Party";
+
+export const RENTERS_INSURANCE_CARRIERS: readonly RentersInsuranceCarrier[] = [
+  "MSI",
+  "Third Party",
+] as const;
+
+/** Pet.petType — minimal classification; freeform `breed` not modelled. */
+export type PetType =
+  | "Dog"
+  | "Cat"
+  | "Bird"
+  | "Reptile"
+  | "Small mammal"
+  | "Fish"
+  | "Other";
+
+export const PET_TYPES: readonly PetType[] = [
+  "Dog",
+  "Cat",
+  "Bird",
+  "Reptile",
+  "Small mammal",
+  "Fish",
+  "Other",
+] as const;
+
+/** Renewal sub-tab — `Not started | Renewal offers | Accepted offers`
+ *  per BR-LL-12. The persisted `renewalState` lives on the renewal
+ *  projection, not the Lease itself. */
+export type RenewalState = "Not started" | "Offer sent" | "Accepted" | "Declined";
+
+export const RENEWAL_STATES: readonly RenewalState[] = [
+  "Not started",
+  "Offer sent",
+  "Accepted",
+  "Declined",
+] as const;
+
 /** US ISO-3166 sub-division states/territories used by composite address. */
 export type UsState =
   | "AL" | "AK" | "AZ" | "AR" | "CA" | "CO" | "CT" | "DE" | "FL" | "GA"

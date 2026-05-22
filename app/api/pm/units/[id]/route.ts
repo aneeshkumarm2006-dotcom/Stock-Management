@@ -1,11 +1,14 @@
 // Per-row CRUD on Unit. GET inflates the parent Property address (PDR §3.2 —
-// `address` is derived from the parent property) and the last ActivityLogEntry
-// for the `mostRecentEvent` field. `currentTenants` returns [] in Phase 1.
+// `address` is derived from the parent property), the last ActivityLogEntry
+// for the `mostRecentEvent` field, and (Phase 3) `currentTenants` from the
+// Active lease on the unit, plus a small `activeLease` summary so the UI
+// can decide whether to surface "occupied" badges.
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Unit } from '@/lib/db/models/pm/Unit';
 import { Property } from '@/lib/db/models/pm/Property';
+import { Lease } from '@/lib/db/models/pm/Lease';
 import { ActivityLogEntry } from '@/lib/db/models/pm/ActivityLogEntry';
 import {
   getPmContext,
@@ -49,6 +52,31 @@ export async function GET(
     .sort({ createdAt: -1 })
     .lean();
 
+  // Phase 3 — derive `currentTenants` from the Active lease on this unit.
+  // BR-LL-2 allows Future + Active to coexist; we surface only Active here
+  // because tenants haven't moved in on Future leases yet.
+  const activeLease = await Lease.findOne({
+    organizationId: doc.organizationId,
+    unitId: doc._id,
+    status: 'Active',
+  })
+    .select({
+      _id: 1,
+      leaseNumber: 1,
+      tenants: 1,
+      startDate: 1,
+      endDate: 1,
+      leaseType: 1,
+    })
+    .lean();
+  const currentTenants =
+    activeLease?.tenants?.map((t) => ({
+      tenantId: String(t.tenantId),
+      firstName: t.firstName,
+      lastName: t.lastName,
+      isCosigner: t.isCosigner,
+    })) ?? [];
+
   return NextResponse.json({
     id: String(doc._id),
     propertyId: String(doc.propertyId),
@@ -60,8 +88,16 @@ export async function GET(
     sizeSqft: doc.sizeSqft ?? null,
     description: doc.description ?? '',
     amenities: doc.amenities ?? [],
-    // Phase 3 wiring once Lease + Tenant junction lands.
-    currentTenants: [],
+    currentTenants,
+    activeLease: activeLease
+      ? {
+          id: String(activeLease._id),
+          leaseNumber: activeLease.leaseNumber,
+          leaseType: activeLease.leaseType,
+          startDate: activeLease.startDate,
+          endDate: activeLease.endDate ?? null,
+        }
+      : null,
     mostRecentEvent: lastEvent
       ? {
           eventType: lastEvent.eventType,
@@ -132,9 +168,24 @@ export async function DELETE(
   if (!ctx) return unauthorizedResponse();
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  // Units do not soft-archive — they're cheap data, and Phase 3 leases will
-  // bind them. Phase 1 hard-deletes; if a Lease later FKs into a unit, the
-  // delete will be blocked then.
+  // Phase 3 — block delete when an Active or Future lease references the
+  // unit. Past/Ended/Cancelled leases keep their historical reference but
+  // do not block.
+  const blockingLease = await Lease.findOne({
+    organizationId: doc.organizationId,
+    unitId: doc._id,
+    status: { $in: ['Active', 'Future'] },
+  })
+    .select({ _id: 1, leaseNumber: 1, status: 1 })
+    .lean<{ _id: Types.ObjectId; leaseNumber: number; status: string } | null>();
+  if (blockingLease) {
+    return NextResponse.json(
+      {
+        error: `Unit is bound to lease #${blockingLease.leaseNumber} (${blockingLease.status}); end or cancel the lease first.`,
+      },
+      { status: 409 },
+    );
+  }
   await doc.deleteOne();
 
   await logActivity({

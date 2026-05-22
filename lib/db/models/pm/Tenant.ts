@@ -1,6 +1,8 @@
-// Tenant (skeleton — PDR §3.5). Phase 1 ships the minimal directory shape
-// required by the TODO. Lease binding (`currentLeaseId`), Applicant
-// promotion (BR-LA path), and renters-insurance roll-up all land in Phase 3.
+// Tenant (PDR §3.5). Phase 1 shipped the minimal directory shape. Phase 3
+// adds `currentLeaseId` — the lease the tenant is currently living on. It's
+// set by `leasingPromotion.executeDraftLease()` and refreshed by
+// `lib/pm/leaseStatus.recomputeLeaseStatuses()`. Empty when the tenant is
+// between leases or in the directory only.
 // Phone shape mirrors RentalOwner: `{ number, smsOptIn }` per slot.
 import { Schema, model, models, Types, type Model } from 'mongoose';
 import type { UsState } from '@/types/pm';
@@ -37,6 +39,9 @@ export interface ITenant {
   ssnLast4?: string;
   cosignerFlag: boolean;
   residentCenterAccess: boolean;
+  /** Phase 3 — points at the Active lease the tenant lives on; null when
+   *  between leases. Maintained by leasingPromotion + recomputeLeaseStatuses. */
+  currentLeaseId?: Types.ObjectId | null;
   customFields: Map<string, unknown>;
   active: boolean;
   createdAt: Date;
@@ -97,6 +102,11 @@ const TenantSchema = new Schema<ITenant>(
     },
     cosignerFlag: { type: Boolean, default: false },
     residentCenterAccess: { type: Boolean, default: false },
+    currentLeaseId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmLease',
+      default: null,
+    },
     customFields: { type: Map, of: Schema.Types.Mixed, default: () => new Map() },
     active: { type: Boolean, default: true },
   },
@@ -104,6 +114,7 @@ const TenantSchema = new Schema<ITenant>(
 );
 
 TenantSchema.index({ organizationId: 1, active: 1, lastName: 1, firstName: 1 });
+TenantSchema.index({ organizationId: 1, currentLeaseId: 1 });
 
 export const Tenant: Model<ITenant> =
   (models.PmTenant as Model<ITenant>) ??
