@@ -12,7 +12,7 @@ import {
 import { lockedPeriodUpdateSchema } from '@/lib/validation/pm/lockedPeriodPolicy';
 import { logActivity } from '@/lib/pm/activity';
 import { canManageOrg } from '@/lib/pm/roles';
-import { serializeLockedPeriod } from '../route';
+import { serializeLockedPeriod } from '../serialize';
 
 export const runtime = 'nodejs';
 

@@ -14,7 +14,7 @@ import { journalEntryUpdateSchema } from '@/lib/validation/pm/journalEntry';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
 import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
-import { serializeJournalEntry } from '../route';
+import { serializeJournalEntry } from '../serialize';
 
 export const runtime = 'nodejs';
 

@@ -12,21 +12,9 @@ import {
 import { logActivity } from '@/lib/pm/activity';
 import { canManageOrg } from '@/lib/pm/roles';
 import { seedCompanyAccount } from '@/lib/pm/seed';
+import { serializeCompanyAccount } from './serialize';
 
 export const runtime = 'nodejs';
-
-export function serializeCompanyAccount(d: Record<string, unknown>) {
-  return {
-    id: String(d._id),
-    name: (d.name as string) ?? '',
-    defaultCashAccountId: d.defaultCashAccountId
-      ? String(d.defaultCashAccountId)
-      : null,
-    active: Boolean(d.active),
-    createdAt:
-      d.createdAt instanceof Date ? d.createdAt.toISOString() : String(d.createdAt),
-  };
-}
 
 export async function GET() {
   const ctx = await getPmContext();

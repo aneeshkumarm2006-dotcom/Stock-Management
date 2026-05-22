@@ -11,7 +11,7 @@ import {
 import { companyAccountUpdateSchema } from '@/lib/validation/pm/companyAccount';
 import { logActivity } from '@/lib/pm/activity';
 import { canManageOrg } from '@/lib/pm/roles';
-import { serializeCompanyAccount } from '../route';
+import { serializeCompanyAccount } from '../serialize';
 
 export const runtime = 'nodejs';
 

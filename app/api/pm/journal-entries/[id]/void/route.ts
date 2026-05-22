@@ -18,7 +18,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { logActivity } from '@/lib/pm/activity';
 import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
-import { serializeJournalEntry } from '../../route';
+import { serializeJournalEntry } from '../../serialize';
 
 export const runtime = 'nodejs';
 

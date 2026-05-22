@@ -8,9 +8,10 @@
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -56,7 +57,7 @@ interface PropertyOption {
   name: string;
 }
 
-export default function GeneralLedgerPage() {
+function GeneralLedgerContent() {
   const searchParams = useSearchParams();
   const [accounts, setAccounts] = React.useState<AccountOption[]>([]);
   const [properties, setProperties] = React.useState<PropertyOption[]>([]);
@@ -342,6 +343,20 @@ export default function GeneralLedgerPage() {
         onSaved={load}
       />
     </div>
+  );
+}
+
+export default function GeneralLedgerPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex justify-center py-20">
+          <Loader2 className="h-6 w-6 animate-spin text-fg-muted" />
+        </div>
+      }
+    >
+      <GeneralLedgerContent />
+    </Suspense>
   );
 }
 

@@ -13,7 +13,7 @@ import {
 import { depositUpdateSchema } from '@/lib/validation/pm/deposit';
 import { logActivity } from '@/lib/pm/activity';
 import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
-import { serializeDeposit } from '../route';
+import { serializeDeposit } from '../serialize';
 
 export const runtime = 'nodejs';
 
