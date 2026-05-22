@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/post-recurring",
       "schedule": "15 6 * * *"
+    },
+    {
+      "path": "/api/cron/post-recurring-tasks",
+      "schedule": "30 6 * * *"
     }
   ]
 }

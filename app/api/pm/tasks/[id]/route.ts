@@ -3,7 +3,8 @@
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
-import { Task } from '@/lib/db/models/pm/Task';
+import { Task, TASK_TERMINAL_STATUSES_DB } from '@/lib/db/models/pm/Task';
+import { Project } from '@/lib/db/models/pm/Project';
 import { WorkOrder } from '@/lib/db/models/pm/WorkOrder';
 import {
   getPmContext,
@@ -12,6 +13,10 @@ import {
 import { taskUpdateSchema } from '@/lib/validation/pm/task';
 import { allWorkOrdersTerminal, isPastDue } from '@/lib/pm/taskHelpers';
 import { logActivity } from '@/lib/pm/activity';
+import {
+  notifyTaskAssigned,
+  notifyTaskCompleted,
+} from '@/lib/pm/taskNotifications';
 import type { TaskStatus, WorkOrderStatus } from '@/types/pm';
 
 export const runtime = 'nodejs';
@@ -54,6 +59,8 @@ export async function GET(
     sourceContactId: doc.sourceContactId ? String(doc.sourceContactId) : null,
     description: doc.description ?? '',
     workOrders: (doc.workOrders ?? []).map((w) => String(w)),
+    projectIds: (doc.projectIds ?? []).map((p) => String(p)),
+    createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   });
 }
@@ -114,8 +121,12 @@ export async function PATCH(
     sourceTenantId,
     sourceOwnerId,
     sourceContactId,
+    projectIds,
     ...rest
   } = parsed.data;
+  const previousAssignees = (doc.assignees ?? []).map((a) => String(a));
+  const previousStatus = doc.status;
+  const previousProjectIds = (doc.projectIds ?? []).map((p) => String(p));
   Object.assign(doc, rest);
   if (dueDate !== undefined) {
     doc.dueDate = dueDate ? new Date(dueDate) : null;
@@ -153,8 +164,37 @@ export async function PATCH(
       ? new Types.ObjectId(sourceContactId)
       : null;
   }
+  if (projectIds !== undefined) {
+    doc.projectIds = projectIds.map((p) => new Types.ObjectId(p));
+  }
 
   await doc.save();
+
+  // Sync the symmetric Project.tasks[] (Phase 5 [G-B-31]).
+  if (projectIds !== undefined) {
+    const next = new Set(projectIds);
+    const previous = new Set(previousProjectIds);
+    const added = Array.from(next).filter((p) => !previous.has(p));
+    const removed = Array.from(previous).filter((p) => !next.has(p));
+    if (added.length > 0) {
+      await Project.updateMany(
+        {
+          _id: { $in: added.map((p) => new Types.ObjectId(p)) },
+          organizationId: new Types.ObjectId(ctx.orgId),
+        },
+        { $addToSet: { tasks: doc._id } },
+      );
+    }
+    if (removed.length > 0) {
+      await Project.updateMany(
+        {
+          _id: { $in: removed.map((p) => new Types.ObjectId(p)) },
+          organizationId: new Types.ObjectId(ctx.orgId),
+        },
+        { $pull: { tasks: doc._id } },
+      );
+    }
+  }
 
   await logActivity({
     orgId: ctx.orgId,
@@ -163,6 +203,30 @@ export async function PATCH(
     eventType: 'Task updated',
     actorUserId: ctx.userId,
   });
+
+  // [G-S-40] — assignment notification fan-out for any newly added assignees.
+  if (assignees !== undefined) {
+    const prev = new Set(previousAssignees);
+    const newlyAdded = assignees.filter((a) => !prev.has(a));
+    if (newlyAdded.length > 0) {
+      await notifyTaskAssigned(
+        {
+          _id: doc._id,
+          organizationId: doc.organizationId,
+          taskId: doc.taskId,
+          title: doc.title,
+        },
+        newlyAdded,
+      );
+    }
+  }
+  // [G-S-40] — terminal-transition notification.
+  if (
+    doc.status !== previousStatus &&
+    (TASK_TERMINAL_STATUSES_DB as readonly string[]).includes(doc.status)
+  ) {
+    await notifyTaskCompleted(doc);
+  }
 
   return NextResponse.json({ ok: true });
 }
@@ -183,6 +247,17 @@ export async function DELETE(
           'Cannot delete a task that owns work orders. Cancel the work orders first.',
       },
       { status: 409 },
+    );
+  }
+
+  // Detach from any Projects before delete (Phase 5 [G-B-31]).
+  if (doc.projectIds && doc.projectIds.length > 0) {
+    await Project.updateMany(
+      {
+        _id: { $in: doc.projectIds },
+        organizationId: new Types.ObjectId(ctx.orgId),
+      },
+      { $pull: { tasks: doc._id } },
     );
   }
 

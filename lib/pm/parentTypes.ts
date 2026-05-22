@@ -48,6 +48,12 @@ export const PARENT_TYPES = [
   "RecurringTransaction",
   "EftRequest",
   "CalendarEvent",
+  // Phase 5 — Tasks (full) + Projects. RecurringTask drives the cadence
+  // engine; Project groups Tasks; OwnerContributionRequest cross-links
+  // a Task to a Phase 9 A/P workflow (skeleton only — full UI Phase 9).
+  "Project",
+  "RecurringTask",
+  "OwnerContributionRequest",
 ] as const;
 
 /**
@@ -99,6 +105,10 @@ export const FK_VALIDATED_LOCATION_TYPES = new Set<string>([
   'RecurringTransaction',
   'EftRequest',
   'CalendarEvent',
+  // Phase 5 — Tasks + Projects
+  'Project',
+  'RecurringTask',
+  'OwnerContributionRequest',
 ]);
 
 /**
@@ -132,6 +142,10 @@ export const COLLECTION_BY_LOCATION_TYPE: Record<string, string> = {
   RecurringTransaction: 'pm_recurring_transactions',
   EftRequest: 'pm_eft_requests',
   CalendarEvent: 'pm_calendar_events',
+  // Phase 5
+  Project: 'pm_projects',
+  RecurringTask: 'pm_recurring_tasks',
+  OwnerContributionRequest: 'pm_owner_contribution_requests',
 };
 
 /** Type guard for runtime checks. */

@@ -12,9 +12,11 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { taskCreateSchema } from '@/lib/validation/pm/task';
+import { Project } from '@/lib/db/models/pm/Project';
 import { nextTaskId } from '@/lib/pm/taskIdSequence';
 import { isPastDue } from '@/lib/pm/taskHelpers';
 import { logActivity } from '@/lib/pm/activity';
+import { notifyTaskAssigned } from '@/lib/pm/taskNotifications';
 
 export const runtime = 'nodejs';
 
@@ -61,21 +63,35 @@ async function ensureVendorsInOrg(ids: string[], orgId: string) {
   return cnt === ids.length;
 }
 
+async function ensureProjectsInOrg(ids: string[], orgId: string) {
+  if (ids.length === 0) return true;
+  const objectIds = ids.map((i) => new Types.ObjectId(i));
+  const cnt = await Project.countDocuments({
+    _id: { $in: objectIds },
+    organizationId: new Types.ObjectId(orgId),
+  });
+  return cnt === ids.length;
+}
+
 export async function GET(request: Request) {
   const ctx = await getPmContext();
   if (!ctx) return unauthorizedResponse();
 
   const { searchParams } = new URL(request.url);
   const propertyId = searchParams.get('propertyId');
+  const projectId = searchParams.get('projectId');
   const status = searchParams.get('status');
   const taskType = searchParams.get('taskType');
   const includeTerminal = searchParams.get('includeTerminal') === '1';
   const q = searchParams.get('q')?.trim();
+  // BR-TP-1 — view selector drives default status set per BR-TP-2 / BR-TP-3.
+  const searchOption =
+    (searchParams.get('searchOption') as 'new' | 'me' | 'all' | null) ?? null;
 
   await connectToDatabase();
-  const filter: Record<string, unknown> = {
-    organizationId: new Types.ObjectId(ctx.orgId),
-  };
+  const orgObjectId = new Types.ObjectId(ctx.orgId);
+  const filter: Record<string, unknown> = { organizationId: orgObjectId };
+
   if (!includeTerminal) {
     filter.status = { $nin: ['Completed', 'Closed', 'Cancelled'] };
   } else if (status) {
@@ -85,10 +101,24 @@ export async function GET(request: Request) {
   if (propertyId && Types.ObjectId.isValid(propertyId)) {
     filter.propertyId = new Types.ObjectId(propertyId);
   }
+  if (projectId && Types.ObjectId.isValid(projectId)) {
+    filter.projectIds = new Types.ObjectId(projectId);
+  }
   if (q) {
     const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     filter.title = rx;
   }
+
+  // searchOption layers on top of the base filter.
+  if (searchOption === 'new') {
+    // Incoming list (BR-TP-1) — explicitly the `New` status only.
+    filter.status = 'New';
+  } else if (searchOption === 'me') {
+    // BR-TP-3 — current user is assignee OR collaborator.
+    const me = new Types.ObjectId(ctx.userId);
+    filter.$or = [{ assignees: me }, { collaborators: me }];
+  }
+  // 'all' or null falls through with the default no-terminal filter (BR-TP-2).
 
   const rows = await Task.find(filter)
     .sort({ taskId: -1 })
@@ -164,6 +194,15 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  if (
+    parsed.data.projectIds &&
+    !(await ensureProjectsInOrg(parsed.data.projectIds, ctx.orgId))
+  ) {
+    return NextResponse.json(
+      { error: 'One or more project ids are invalid for this org' },
+      { status: 400 },
+    );
+  }
 
   const taskId = await nextTaskId(ctx.orgId);
 
@@ -198,8 +237,24 @@ export async function POST(request: Request) {
       : null,
     description: parsed.data.description,
     workOrders: [],
+    projectIds: (parsed.data.projectIds ?? []).map(
+      (p) => new Types.ObjectId(p),
+    ),
     createdByUserId: new Types.ObjectId(ctx.userId),
   });
+
+  // Keep Project.tasks[] in sync with Task.projectIds[] (Phase 5 [G-B-31]).
+  if (parsed.data.projectIds && parsed.data.projectIds.length > 0) {
+    await Project.updateMany(
+      {
+        _id: {
+          $in: parsed.data.projectIds.map((p) => new Types.ObjectId(p)),
+        },
+        organizationId: new Types.ObjectId(ctx.orgId),
+      },
+      { $addToSet: { tasks: doc._id } },
+    );
+  }
 
   await logActivity({
     orgId: ctx.orgId,
@@ -209,6 +264,19 @@ export async function POST(request: Request) {
     actorUserId: ctx.userId,
     payload: { taskId, title: doc.title, taskType: doc.taskType },
   });
+
+  // Notification fan-out for any initial assignees (G-S-40 trigger 1).
+  if (parsed.data.assignees && parsed.data.assignees.length > 0) {
+    await notifyTaskAssigned(
+      {
+        _id: doc._id,
+        organizationId: doc.organizationId,
+        taskId: doc.taskId,
+        title: doc.title,
+      },
+      parsed.data.assignees,
+    );
+  }
 
   return NextResponse.json(
     { id: String(doc._id), taskId: doc.taskId },

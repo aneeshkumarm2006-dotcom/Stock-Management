@@ -18,7 +18,7 @@ import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
 import type { IRecurringTransaction } from '@/lib/db/models/pm/RecurringTransaction';
 import type { RecurringFrequency } from '@/types/pm';
 
-function advanceNextDate(
+export function advanceNextDate(
   current: Date,
   frequency: RecurringFrequency,
 ): Date {

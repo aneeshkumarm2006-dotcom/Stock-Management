@@ -46,6 +46,7 @@ import {
   Zap,
   UserCircle,
   Globe,
+  FolderKanban,
   type LucideIcon,
 } from "lucide-react";
 
@@ -173,7 +174,17 @@ const PM_NAV: NavNode[] = [
       { href: "/properties/maintenance/property-inspections", label: "Property inspections", icon: ClipboardCheck },
     ],
   },
-  { href: "/properties/tasks", label: "Tasks", icon: CheckSquare },
+  {
+    kind: "group",
+    id: "tasks",
+    label: "Tasks",
+    icon: CheckSquare,
+    children: [
+      { href: "/properties/tasks", label: "Tasks", icon: CheckSquare },
+      { href: "/properties/tasks/recurring", label: "Recurring tasks", icon: Repeat },
+      { href: "/properties/projects", label: "Projects", icon: FolderKanban },
+    ],
+  },
   {
     kind: "group",
     id: "communication",

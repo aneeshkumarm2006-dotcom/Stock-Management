@@ -23,6 +23,8 @@ const baseFields = {
   sourceOwnerId: objectIdSchema.nullable().optional(),
   sourceContactId: objectIdSchema.nullable().optional(),
   description: z.string().max(4000).optional(),
+  /** Phase 5 [G-B-31] — M:N to Project. Optional on both create + update. */
+  projectIds: z.array(objectIdSchema).optional(),
 };
 
 export const taskCreateSchema = z.object(baseFields);
@@ -44,6 +46,7 @@ export const taskUpdateSchema = z
     sourceOwnerId: baseFields.sourceOwnerId,
     sourceContactId: baseFields.sourceContactId,
     description: baseFields.description,
+    projectIds: baseFields.projectIds,
   })
   .refine((d) => Object.keys(d).length > 0, {
     message: 'No fields to update',

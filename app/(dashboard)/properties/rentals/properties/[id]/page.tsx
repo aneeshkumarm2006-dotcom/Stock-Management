@@ -1,6 +1,7 @@
 // /properties/rentals/properties/[id] — Property detail.
-// Tabs: Summary | Financials | Units | Event history | Notes | Files
-// Tasks/Vendors tabs and Vacancy chart deliberately deferred to Phase 3/4.
+// Tabs: Summary | Financials | Units | Tasks | Event history | Notes | Files
+// Tasks sub-tab (Phase 5) reuses the central Task store filtered by
+// propertyId (§9 Q5 — "filtered view of the same store").
 "use client";
 
 import * as React from "react";
@@ -201,6 +202,7 @@ export default function PropertyDetailPage() {
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="units">Units ({units.length})</TabsTrigger>
+          <TabsTrigger value="tasks">Tasks</TabsTrigger>
           <TabsTrigger value="events">Event history</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
@@ -615,6 +617,10 @@ export default function PropertyDetailPage() {
           />
         </TabsContent>
 
+        <TabsContent value="tasks" className="mt-4">
+          <PropertyTasksTab propertyId={doc.id} />
+        </TabsContent>
+
         <TabsContent value="events" className="mt-4">
           <ActivityLog parentType="Property" parentId={doc.id} />
         </TabsContent>
@@ -641,6 +647,112 @@ function Field({
       <dt className="text-xs uppercase tracking-widest text-fg-muted">{label}</dt>
       <dd className="text-sm text-fg">{value}</dd>
     </div>
+  );
+}
+
+function PropertyTasksTab({ propertyId }: { propertyId: string }) {
+  // Phase 5 §9 Q5 — filtered view over the same central task store. Uses
+  // /api/pm/tasks?propertyId=… so the rows match exactly what /properties/tasks
+  // would show for the same scope. Past-due red rendering reuses the
+  // `pastDue` flag returned by the API (BR-TP-6).
+  interface Row {
+    id: string;
+    taskId: number;
+    title: string;
+    status: string;
+    priority: string;
+    dueDate: string | null;
+    pastDue: boolean;
+  }
+  const [rows, setRows] = React.useState<Row[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [includeTerminal, setIncludeTerminal] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    const sp = new URLSearchParams();
+    sp.set("propertyId", propertyId);
+    if (includeTerminal) sp.set("includeTerminal", "1");
+    const r = await fetch(`/api/pm/tasks?${sp.toString()}`);
+    if (r.ok) setRows((await r.json()) as Row[]);
+    setLoading(false);
+  }, [propertyId, includeTerminal]);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Tasks ({rows.length})</CardTitle>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-fg-muted">
+            <input
+              type="checkbox"
+              checked={includeTerminal}
+              onChange={(e) => setIncludeTerminal(e.target.checked)}
+            />
+            Show closed
+          </label>
+          <Link
+            href={`/properties/tasks?propertyId=${propertyId}`}
+            className="text-xs text-fg-muted hover:underline"
+          >
+            Open in Tasks →
+          </Link>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <p className="text-sm text-fg-muted">Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-fg-muted">No tasks for this property.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
+              <tr>
+                <th className="py-2">#</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Due</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((t) => (
+                <tr key={t.id} className="border-b border-border/40">
+                  <td className="py-2 font-mono text-xs text-fg-muted">
+                    #{t.taskId}
+                  </td>
+                  <td>
+                    <Link
+                      href={`/properties/tasks/${t.id}`}
+                      className="font-medium text-fg hover:underline"
+                    >
+                      {t.title}
+                    </Link>
+                  </td>
+                  <td className="text-fg-muted">{t.status}</td>
+                  <td className="text-fg-muted">{t.priority}</td>
+                  <td
+                    className={
+                      t.pastDue
+                        ? "font-bold text-error"
+                        : "text-fg-muted"
+                    }
+                  >
+                    {t.dueDate
+                      ? new Date(t.dueDate).toLocaleDateString()
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

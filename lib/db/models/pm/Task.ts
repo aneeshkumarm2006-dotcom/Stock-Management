@@ -67,6 +67,10 @@ export interface ITask {
   /** Back-references; updated whenever a WorkOrder is created with this
    *  Task as parent. */
   workOrders: Types.ObjectId[];
+  /** Phase 5 [G-B-31] — many-to-many link to Project. The Project doc
+   *  carries the symmetric `tasks[]`; the projects/[id]/tasks route keeps
+   *  both sides in sync. */
+  projectIds: Types.ObjectId[];
   createdByUserId: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -129,6 +133,7 @@ const TaskSchema = new Schema<ITask>(
     workOrders: [
       { type: Schema.Types.ObjectId, ref: 'PmWorkOrder' },
     ],
+    projectIds: [{ type: Schema.Types.ObjectId, ref: 'PmProject' }],
     createdByUserId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
@@ -143,6 +148,8 @@ TaskSchema.index({ organizationId: 1, status: 1, dueDate: 1 });
 TaskSchema.index({ organizationId: 1, taskType: 1, status: 1 });
 TaskSchema.index({ organizationId: 1, propertyId: 1, status: 1 });
 TaskSchema.index({ organizationId: 1, sourceTenantId: 1 });
+TaskSchema.index({ organizationId: 1, projectIds: 1 });
+TaskSchema.index({ organizationId: 1, assignees: 1, status: 1 });
 
 // Source* field is conditional on taskType.
 TaskSchema.pre('save', function (next) {

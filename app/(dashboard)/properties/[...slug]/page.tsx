@@ -44,7 +44,6 @@ const TITLES: Record<string, string> = {
   "maintenance/vendors": "Vendors",
   "maintenance/work-orders": "Work orders",
   "maintenance/property-inspections": "Property inspections",
-  tasks: "Tasks",
   "communication/emails": "Emails",
   "communication/text-messages": "Text messages",
   "communication/mailings": "Mailings",
