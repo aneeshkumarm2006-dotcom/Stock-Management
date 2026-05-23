@@ -65,6 +65,14 @@ interface LeaseRow {
 }
 
 export default function RentRollPage() {
+  return (
+    <React.Suspense fallback={<div className="text-sm text-fg-muted">Loading…</div>}>
+      <RentRollPageInner />
+    </React.Suspense>
+  );
+}
+
+function RentRollPageInner() {
   const searchParams = useSearchParams();
   const expiringParam = searchParams.get("expiring");
   const insuranceParam = searchParams.get("insurance");
