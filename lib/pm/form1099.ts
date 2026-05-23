@@ -46,11 +46,6 @@ export interface Vendor1099Row {
   meetsThreshold: boolean;
 }
 
-interface RawPayment {
-  vendorId: Types.ObjectId | null;
-  amountCents: number;
-}
-
 /** Aggregate every Vendor payment posted in the tax year (calendar
  *  year). Categorizes each Vendor as 1099-NEC by default; MISC is
  *  surfaced when the Vendor has been flagged as a rent payee — Phase 9

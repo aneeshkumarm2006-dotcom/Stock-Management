@@ -382,7 +382,7 @@ function ApprovalRuleModal({
               onChange={(e) => setThreshold(e.target.value)}
             />
             <p className="mt-1 text-xs text-fg-muted">
-              Rule applies when an EFT's amount is at least this much.
+              Rule applies when an EFT&apos;s amount is at least this much.
             </p>
           </div>
 
