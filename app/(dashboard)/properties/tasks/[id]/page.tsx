@@ -23,8 +23,10 @@ import {
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
-import { ComingSoon } from "@/components/pm/ComingSoon";
+import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { AddWorkOrderModal } from "@/components/pm/AddWorkOrderModal";
+import { RequestOwnerContributionModal } from "@/components/pm/RequestOwnerContributionModal";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { useToast } from "@/components/ui/toast";
 
 interface TaskDetail {
@@ -62,6 +64,13 @@ interface ProjectRef {
   id: string;
   name: string;
 }
+interface OcrLink {
+  id: string;
+  status: string;
+  requestedAmount: number;
+  receivedAmount: number;
+  dueDate: string;
+}
 
 export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -72,6 +81,8 @@ export default function TaskDetailPage() {
   const [wos, setWos] = React.useState<WoSummary[]>([]);
   const [projects, setProjects] = React.useState<ProjectRef[]>([]);
   const [woModalOpen, setWoModalOpen] = React.useState(false);
+  const [ocrLinks, setOcrLinks] = React.useState<OcrLink[]>([]);
+  const [ocrModalOpen, setOcrModalOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -97,6 +108,16 @@ export default function TaskDetailPage() {
         setWos(summaries.filter(Boolean) as WoSummary[]);
       } else {
         setWos([]);
+      }
+      // Phase 9 — load any OwnerContributionRequest cross-linked to
+      // this task. Quiet on 404 / empty — most tasks won't have one.
+      const ocrRes = await fetch(
+        `/api/pm/owner-contribution-requests?taskId=${d.id}`,
+      );
+      if (ocrRes.ok) {
+        setOcrLinks((await ocrRes.json()) as OcrLink[]);
+      } else {
+        setOcrLinks([]);
       }
       // Load project names for the chips.
       if (d.projectIds.length > 0) {
@@ -289,6 +310,62 @@ export default function TaskDetailPage() {
 
           <Card>
             <CardHeader>
+              <CardTitle>
+                Owner contributions ({ocrLinks.length})
+              </CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setOcrModalOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5" /> Request owner contribution
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {ocrLinks.length === 0 ? (
+                <p className="text-sm text-fg-muted">
+                  No contribution requests linked to this task.
+                </p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
+                    <tr>
+                      <th className="py-2">Status</th>
+                      <th>Due</th>
+                      <th className="text-right">Requested</th>
+                      <th className="text-right">Received</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ocrLinks.map((o) => (
+                      <tr key={o.id} className="border-b border-border/40">
+                        <td className="py-1">{o.status}</td>
+                        <td>{new Date(o.dueDate).toISOString().slice(0, 10)}</td>
+                        <td className="text-right tabular-nums">
+                          <CurrencyAmount cents={o.requestedAmount} />
+                        </td>
+                        <td className="text-right tabular-nums">
+                          <CurrencyAmount cents={o.receivedAmount} />
+                        </td>
+                        <td className="text-right">
+                          <Link
+                            href="/properties/accounting/bills/owner-contributions"
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            Open →
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Event history</CardTitle>
             </CardHeader>
             <CardContent>
@@ -344,7 +421,7 @@ export default function TaskDetailPage() {
         </TabsContent>
 
         <TabsContent value="communications" className="mt-4">
-          <ComingSoon title="Task communications" />
+          <CommunicationsTab relatedEntityType="Task" relatedEntityId={doc.id} />
         </TabsContent>
 
         <TabsContent value="files" className="mt-4">
@@ -364,6 +441,17 @@ export default function TaskDetailPage() {
           toast({ title: "Work order created", variant: "success" });
         }}
         presetTaskId={doc.id}
+      />
+
+      <RequestOwnerContributionModal
+        open={ocrModalOpen}
+        onClose={() => setOcrModalOpen(false)}
+        onSaved={async () => {
+          setOcrModalOpen(false);
+          await load();
+          toast({ title: "Contribution request created", variant: "success" });
+        }}
+        taskId={doc.id}
       />
     </div>
   );

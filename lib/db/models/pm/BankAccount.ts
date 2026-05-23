@@ -31,6 +31,12 @@ export interface IBankAccount {
    * modal nudges users to set it and JE/Deposit routes refuse to post when
    * the source bank account has no mapping. */
   chartOfAccountId?: Types.ObjectId | null;
+  /** Phase 9 — HOA per-association tag (BR-AC-20). Free-text label
+   *  ("Pine Ridge HOA", "Reserve") that the Financials matrix and
+   *  Company financials roll-up use to keep operating vs reserve funds
+   *  visually segregated. DECISIONS.md [BR-AC-20] defers a full
+   *  Association entity until a dedicated HOA module ships. */
+  associationName?: string | null;
   active: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -63,6 +69,12 @@ const BankAccountSchema = new Schema<IBankAccount>(
     chartOfAccountId: {
       type: Schema.Types.ObjectId,
       ref: 'PmChartOfAccount',
+      default: null,
+    },
+    associationName: {
+      type: String,
+      trim: true,
+      maxlength: 60,
       default: null,
     },
     active: { type: Boolean, default: true },

@@ -54,9 +54,22 @@ export async function POST(
     );
   }
 
+  // Phase 9 — any approver in the chain can reject; a single rejection
+  // ends the chain (BR-AC-19). The rejecting user is captured in
+  // `approvals[]` AND surfaced as `approverUserId` for backwards
+  // compatibility with the Phase 4 read shape.
   eft.status = 'Rejected';
   eft.approverUserId = new Types.ObjectId(ctx.userId);
   eft.rejectionReason = parsed.data.reason;
+  eft.approvals = [
+    ...(eft.approvals ?? []),
+    {
+      userId: new Types.ObjectId(ctx.userId),
+      decision: 'Rejected',
+      at: new Date(),
+      comment: parsed.data.reason,
+    },
+  ];
   await eft.save();
 
   await logActivity({

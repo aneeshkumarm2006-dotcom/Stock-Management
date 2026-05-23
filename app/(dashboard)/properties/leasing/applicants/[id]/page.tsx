@@ -1,6 +1,8 @@
 // /properties/leasing/applicants/[id] — Applicant detail with tabs.
-// Tabs: Summary | Application | Screening | Event history.
+// Tabs: Summary | Application | Screening | Communications | Event history.
 // Move-in CTA gated by [G-B-4] preconditions (server enforces).
+// Communications tab (Phase 6) queries EmailMessage rows with
+// relatedEntityType='Applicant'.
 "use client";
 
 import * as React from "react";
@@ -25,6 +27,7 @@ import { useToast } from "@/components/ui/toast";
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
+import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { ChecklistItemToggle } from "@/components/pm/ChecklistItemToggle";
 import {
   APPLICANT_STATUSES,
@@ -218,6 +221,7 @@ export default function ApplicantDetailPage() {
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="application">Application</TabsTrigger>
           <TabsTrigger value="screening">Screening</TabsTrigger>
+          <TabsTrigger value="communications">Communications</TabsTrigger>
           <TabsTrigger value="history">Event history</TabsTrigger>
         </TabsList>
 
@@ -411,6 +415,13 @@ export default function ApplicantDetailPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="communications" className="mt-4">
+          <CommunicationsTab
+            relatedEntityType="Applicant"
+            relatedEntityId={data.id}
+          />
         </TabsContent>
 
         <TabsContent value="history">

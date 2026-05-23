@@ -6,6 +6,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,35 @@ import {
 } from "@/components/ui/tabs";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { LEASE_STATUSES, type LeaseStatus } from "@/types/pm";
+
+// Dashboard widgets deep-link with these query params (PROPERTY_TODO.md
+// Phase 10 [G-B-12]). Both filters are client-side overlays on top of the
+// `daysRemaining` field the leases endpoint already returns.
+type ExpiringWindow = "0-30" | "31-60" | "61-90" | "all";
+type InsuranceWindow = "expired" | "0-30" | "31-60" | "61-90";
+const EXPIRING_WINDOWS = new Set<ExpiringWindow>([
+  "0-30",
+  "31-60",
+  "61-90",
+  "all",
+]);
+const INSURANCE_WINDOWS = new Set<InsuranceWindow>([
+  "expired",
+  "0-30",
+  "31-60",
+  "61-90",
+]);
+
+function inExpiringWindow(
+  daysRemaining: number | null,
+  win: ExpiringWindow,
+): boolean {
+  if (win === "all") return daysRemaining != null;
+  if (daysRemaining == null || daysRemaining < 0) return false;
+  if (win === "0-30") return daysRemaining <= 30;
+  if (win === "31-60") return daysRemaining > 30 && daysRemaining <= 60;
+  return daysRemaining > 60 && daysRemaining <= 90;
+}
 
 interface LeaseRow {
   id: string;
@@ -35,6 +65,20 @@ interface LeaseRow {
 }
 
 export default function RentRollPage() {
+  const searchParams = useSearchParams();
+  const expiringParam = searchParams.get("expiring");
+  const insuranceParam = searchParams.get("insurance");
+  const expiringWindow: ExpiringWindow | null = EXPIRING_WINDOWS.has(
+    expiringParam as ExpiringWindow,
+  )
+    ? (expiringParam as ExpiringWindow)
+    : null;
+  const insuranceWindow: InsuranceWindow | null = INSURANCE_WINDOWS.has(
+    insuranceParam as InsuranceWindow,
+  )
+    ? (insuranceParam as InsuranceWindow)
+    : null;
+
   const [rows, setRows] = React.useState<LeaseRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [statusFilter, setStatusFilter] =
@@ -55,20 +99,44 @@ export default function RentRollPage() {
   }, [load]);
 
   const filtered = React.useMemo(() => {
-    if (!search.trim()) return rows;
-    const q = search.toLowerCase();
-    return rows.filter(
-      (r) =>
-        String(r.leaseNumber).includes(q) ||
-        r.tenants.some(
-          (t) =>
+    let r = rows;
+    if (expiringWindow) {
+      r = r.filter((l) => inExpiringWindow(l.daysRemaining, expiringWindow));
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      r = r.filter(
+        (row) =>
+          String(row.leaseNumber).includes(q) ||
+          row.tenants.some((t) =>
             (t.firstName + " " + t.lastName).toLowerCase().includes(q),
-        ),
-    );
-  }, [rows, search]);
+          ),
+      );
+    }
+    return r;
+  }, [rows, search, expiringWindow]);
 
   return (
     <div className="space-y-4">
+      {(expiringWindow || insuranceWindow) && (
+        <div className="rounded border border-primary/40 bg-primary/5 px-4 py-2 text-xs text-fg">
+          Dashboard filter applied:
+          {expiringWindow && (
+            <span className="ml-2 font-bold">
+              Expiring {expiringWindow === "all" ? "(all windows)" : `${expiringWindow} days`}
+            </span>
+          )}
+          {insuranceWindow && (
+            <span className="ml-2 font-bold">
+              Insurance:{" "}
+              {insuranceWindow === "expired" ? "Expired" : `${insuranceWindow} days`}
+            </span>
+          )}
+          <Link href="/properties/rentals/rent-roll" className="ml-3 text-primary hover:underline">
+            Clear
+          </Link>
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Rent roll</CardTitle>

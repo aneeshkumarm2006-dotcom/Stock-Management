@@ -14,6 +14,11 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
 import { logActivity } from '@/lib/pm/activity';
+import { ApprovalRule } from '@/lib/db/models/pm/ApprovalRule';
+import {
+  isApprovalThresholdMet,
+  userCanApprove,
+} from '@/lib/pm/approvalRules';
 
 export const runtime = 'nodejs';
 
@@ -59,6 +64,78 @@ export async function POST(
       { error: `Cannot approve from status=${eft.status}` },
       { status: 409 },
     );
+  }
+
+  // Phase 9 multi-approver chain (BR-AC-19). Resolve the snapshotted
+  // ApprovalRule and check whether this user is in the required list.
+  // When no rule snapshot exists we fall back to single-approver
+  // (Phase 4 behaviour).
+  const rule = eft.appliedRuleId
+    ? await ApprovalRule.findOne({
+        _id: eft.appliedRuleId,
+        organizationId: orgObjectId,
+      }).lean<{
+        semantics: 'any-of' | 'all-of';
+        approverUserIds: Types.ObjectId[];
+      } | null>()
+    : null;
+
+  const requiredApprovers = rule?.approverUserIds ?? [];
+  if (
+    requiredApprovers.length > 0 &&
+    !userCanApprove(ctx.userId, requiredApprovers)
+  ) {
+    return NextResponse.json(
+      { error: 'You are not in the approver list for this EFT.' },
+      { status: 403 },
+    );
+  }
+  // Reject duplicate approval from the same user.
+  if (
+    eft.approvals?.some(
+      (a) => a.decision === 'Approved' && String(a.userId) === ctx.userId,
+    )
+  ) {
+    return NextResponse.json(
+      { error: 'You have already approved this EFT.' },
+      { status: 409 },
+    );
+  }
+
+  // Record this approval signature first.
+  const approvalEntry = {
+    userId: new Types.ObjectId(ctx.userId),
+    decision: 'Approved' as const,
+    at: new Date(),
+  };
+  eft.approvals = [...(eft.approvals ?? []), approvalEntry];
+
+  const chainComplete = isApprovalThresholdMet(
+    rule?.semantics,
+    requiredApprovers,
+    eft.approvals,
+  );
+
+  if (!chainComplete) {
+    await eft.save();
+    await logActivity({
+      orgId: ctx.orgId,
+      parentType: 'EftRequest',
+      parentId: eft._id,
+      eventType: 'EFT partial approval recorded',
+      actorUserId: ctx.userId,
+      payload: {
+        approvalsCount: eft.approvals.length,
+        requiredCount: requiredApprovers.length,
+      },
+    });
+    return NextResponse.json({
+      ok: true,
+      status: eft.status,
+      approvalsCount: eft.approvals.length,
+      requiredCount: requiredApprovers.length,
+      chainComplete: false,
+    });
   }
 
   try {

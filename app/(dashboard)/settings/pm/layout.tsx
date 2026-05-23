@@ -12,6 +12,7 @@ const TABS: { href: string; label: string }[] = [
   { href: "/settings/pm/vendor-categories", label: "Vendor categories" },
   { href: "/settings/pm/task-categories", label: "Task categories" },
   { href: "/settings/pm/project-types", label: "Project types" },
+  { href: "/settings/pm/mailboxes", label: "Mailboxes" },
 ];
 
 export default function PmSettingsLayout({

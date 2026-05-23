@@ -43,19 +43,9 @@ const TITLES: Record<string, string> = {
   "accounting/1099-tax-filings": "1099 tax filings",
   "maintenance/vendors": "Vendors",
   "maintenance/work-orders": "Work orders",
-  "maintenance/property-inspections": "Property inspections",
   "communication/emails": "Emails",
-  "communication/text-messages": "Text messages",
-  "communication/mailings": "Mailings",
-  "communication/announcements": "Announcements",
-  "communication/templates": "Mailing and email templates",
-  "communication/automated-email-settings": "Automated email settings",
-  "communication/resident-center-settings": "Resident Center settings",
-  "communication/public-site": "Public site",
   calendars: "Calendars",
   files: "Files",
-  reports: "Reports",
-  analytics: "Analytics Hub",
 };
 
 export default function PropertyManagementPlaceholder({

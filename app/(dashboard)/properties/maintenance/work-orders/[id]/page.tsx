@@ -17,7 +17,7 @@ import {
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
-import { ComingSoon } from "@/components/pm/ComingSoon";
+import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { useToast } from "@/components/ui/toast";
 
 interface PartsRow {
@@ -238,9 +238,9 @@ export default function WorkOrderDetailPage() {
         </TabsContent>
 
         <TabsContent value="communications" className="mt-4">
-          <ComingSoon
-            title="Work order communications"
-            description="Email + activity stream lands in Phase 6 alongside the EmailMessage entity."
+          <CommunicationsTab
+            relatedEntityType="WorkOrder"
+            relatedEntityId={doc.id}
           />
         </TabsContent>
 

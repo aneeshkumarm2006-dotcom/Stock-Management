@@ -15,10 +15,11 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { ComingSoon } from "@/components/pm/ComingSoon";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { fromCents } from "@/lib/pm/currency";
+import { ReconciliationWizard } from "@/components/pm/ReconciliationWizard";
+import { BankFeedTab } from "@/components/pm/BankFeedTab";
 import type { BankAccountType } from "@/types/pm";
 
 interface Detail {
@@ -152,6 +153,7 @@ export default function BankAccountDetailPage() {
         <TabsList>
           <TabsTrigger value="register">Register</TabsTrigger>
           <TabsTrigger value="reconciliation">Reconciliation</TabsTrigger>
+          <TabsTrigger value="bank-feed">Bank feed</TabsTrigger>
         </TabsList>
         <TabsContent value="register">
           {doc.chartOfAccountId ? (
@@ -170,10 +172,10 @@ export default function BankAccountDetailPage() {
           )}
         </TabsContent>
         <TabsContent value="reconciliation">
-          <ComingSoon
-            title="Reconciliation"
-            description="Bank-feed reconciliation wizard ships in Phase 9 (BR-AC-17)."
-          />
+          <ReconciliationsTab bankAccountId={doc.id} />
+        </TabsContent>
+        <TabsContent value="bank-feed">
+          <BankFeedTab bankAccountId={doc.id} />
         </TabsContent>
       </Tabs>
 
@@ -199,6 +201,112 @@ function Field({
       <dt className="text-xs uppercase tracking-widest text-fg-muted">{label}</dt>
       <dd className={"text-sm text-fg " + (mono ? "tabular-nums" : "")}>{value}</dd>
     </div>
+  );
+}
+
+interface ReconciliationRow {
+  id: string;
+  status: "In progress" | "Completed" | "Voided";
+  startDate: string;
+  endDate: string;
+  statementEndingBalance: number;
+  bookEndingBalance: number;
+  difference: number;
+  clearedCount: number;
+  completedAt: string | null;
+}
+
+function ReconciliationsTab({ bankAccountId }: { bankAccountId: string }) {
+  const [rows, setRows] = React.useState<ReconciliationRow[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [wizardOpen, setWizardOpen] = React.useState(false);
+  const [resumeId, setResumeId] = React.useState<string | undefined>(undefined);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    const r = await fetch(
+      `/api/pm/reconciliations?bankAccountId=${bankAccountId}`,
+    );
+    if (r.ok) setRows((await r.json()) as ReconciliationRow[]);
+    setLoading(false);
+  }, [bankAccountId]);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
+  const inProgress = rows.find((r) => r.status === "In progress");
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Reconciliations</CardTitle>
+        <Button
+          size="sm"
+          onClick={() => {
+            setResumeId(inProgress?.id);
+            setWizardOpen(true);
+          }}
+        >
+          {inProgress ? "Resume reconciliation" : "Reconcile"}
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {loading ? (
+          <p className="text-sm text-fg-muted">Loading…</p>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-fg-muted">
+            No reconciliations yet. Click <em>Reconcile</em> to start.
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
+              <tr>
+                <th className="py-2">Statement</th>
+                <th>Status</th>
+                <th className="text-right">Ending balance</th>
+                <th className="text-right">Difference</th>
+                <th className="text-right">Cleared lines</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-b border-border/40">
+                  <td className="py-2">
+                    {new Date(r.startDate).toISOString().slice(0, 10)} →{" "}
+                    {new Date(r.endDate).toISOString().slice(0, 10)}
+                  </td>
+                  <td>{r.status}</td>
+                  <td className="text-right tabular-nums">
+                    <CurrencyAmount cents={r.statementEndingBalance} />
+                  </td>
+                  <td className="text-right tabular-nums">
+                    <CurrencyAmount cents={r.difference} />
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {r.clearedCount}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </CardContent>
+      <ReconciliationWizard
+        open={wizardOpen}
+        bankAccountId={bankAccountId}
+        resumeReconciliationId={resumeId}
+        onClose={() => {
+          setWizardOpen(false);
+          setResumeId(undefined);
+        }}
+        onCommitted={async () => {
+          setWizardOpen(false);
+          setResumeId(undefined);
+          await load();
+        }}
+      />
+    </Card>
   );
 }
 

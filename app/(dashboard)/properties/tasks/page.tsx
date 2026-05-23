@@ -58,12 +58,17 @@ function TasksPageInner() {
   const initialSearchOption =
     (params.get("searchOption") as SearchOption | null) ?? "me";
   const initialTab = params.get("tab") === "analytics" ? "analytics" : "tasks";
+  // Dashboard Overdue widget deep-links here with `?overdue=1` (PROPERTY_TODO.md
+  // Phase 10 [G-B-12]). We persist the flag in state so URL sync below
+  // round-trips it.
+  const initialOverdue = params.get("overdue") === "1";
 
   const [searchOption, setSearchOption] = React.useState<SearchOption>(
     initialSearchOption,
   );
   const [tab, setTab] = React.useState<"tasks" | "analytics">(initialTab);
   const [includeTerminal, setIncludeTerminal] = React.useState(false);
+  const [overdueOnly, setOverdueOnly] = React.useState(initialOverdue);
   const [rows, setRows] = React.useState<TaskRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
@@ -89,8 +94,9 @@ function TasksPageInner() {
     const qs = new URLSearchParams();
     qs.set("searchOption", searchOption);
     if (searchOption === "all" && tab === "analytics") qs.set("tab", "analytics");
+    if (overdueOnly) qs.set("overdue", "1");
     router.replace(`/properties/tasks?${qs.toString()}`, { scroll: false });
-  }, [searchOption, tab, router]);
+  }, [searchOption, tab, overdueOnly, router]);
 
   // Live chip counters derive from the loaded set per filter rules.
   const counters = React.useMemo(() => {
@@ -138,6 +144,14 @@ function TasksPageInner() {
               />
               Include closed
             </label>
+            <label className="inline-flex items-center gap-1.5 text-xs text-loss">
+              <input
+                type="checkbox"
+                checked={overdueOnly}
+                onChange={(e) => setOverdueOnly(e.target.checked)}
+              />
+              Overdue only
+            </label>
             <div className="ml-auto w-full max-w-xs">
               <Input
                 value={search}
@@ -165,7 +179,10 @@ function TasksPageInner() {
           {searchOption === "all" && tab === "analytics" ? (
             <ComingSoon title="Tasks Analytics" />
           ) : (
-            <TaskTable rows={rows} loading={loading} />
+            <TaskTable
+              rows={overdueOnly ? rows.filter((r) => r.pastDue) : rows}
+              loading={loading}
+            />
           )}
         </CardContent>
       </Card>

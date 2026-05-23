@@ -1,7 +1,11 @@
 // /properties/rentals/properties/[id] — Property detail.
-// Tabs: Summary | Financials | Units | Tasks | Event history | Notes | Files
+// Tabs: Summary | Financials | Units | Tasks | Communications | Event
+// history | Notes | Files.
 // Tasks sub-tab (Phase 5) reuses the central Task store filtered by
 // propertyId (§9 Q5 — "filtered view of the same store").
+// Communications (Phase 6) queries EmailMessage rows with
+// relatedEntityType='Property'; sending to a Property scope blasts to
+// every active Tenant on the property (BR-CC-8 analogue).
 "use client";
 
 import * as React from "react";
@@ -28,6 +32,7 @@ import { useToast } from "@/components/ui/toast";
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
+import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
 import { PropertyVacancyWidget } from "@/components/pm/PropertyVacancyWidget";
@@ -203,6 +208,7 @@ export default function PropertyDetailPage() {
           <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="units">Units ({units.length})</TabsTrigger>
           <TabsTrigger value="tasks">Tasks</TabsTrigger>
+          <TabsTrigger value="communications">Communications</TabsTrigger>
           <TabsTrigger value="events">Event history</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
@@ -619,6 +625,13 @@ export default function PropertyDetailPage() {
 
         <TabsContent value="tasks" className="mt-4">
           <PropertyTasksTab propertyId={doc.id} />
+        </TabsContent>
+
+        <TabsContent value="communications" className="mt-4">
+          <CommunicationsTab
+            relatedEntityType="Property"
+            relatedEntityId={doc.id}
+          />
         </TabsContent>
 
         <TabsContent value="events" className="mt-4">

@@ -10,7 +10,12 @@
 //
 // Storage: integer cents.
 import { Schema, model, models, Types, type Model } from 'mongoose';
-import type { EftPayeeType, EftRequestStatus } from '@/types/pm';
+import type {
+  ApprovalDecision,
+  EftPayeeType,
+  EftRequestStatus,
+} from '@/types/pm';
+import { APPROVAL_DECISIONS } from '@/types/pm';
 
 export const EFT_REQUEST_STATUSES_DB: EftRequestStatus[] = [
   'Pending',
@@ -29,6 +34,16 @@ export interface IEftPayee {
   id: Types.ObjectId;
 }
 
+/** Phase 9 — one signed decision per approver in the chain (BR-AC-19).
+ *  Chain is evaluated left-to-right; a single `Rejected` decision ends
+ *  the chain with `EftRequest.status='Rejected'`. */
+export interface IEftApproval {
+  userId: Types.ObjectId;
+  decision: ApprovalDecision;
+  at: Date;
+  comment?: string;
+}
+
 export interface IEftRequest {
   _id: Types.ObjectId;
   organizationId: Types.ObjectId;
@@ -39,7 +54,17 @@ export interface IEftRequest {
   /** Optional free text capturing which property/-ies this hits. */
   propertiesScope?: string;
   status: EftRequestStatus;
+  /** Phase 4 single-approver pointer. Phase 9 multi-approver flow
+   *  (BR-AC-19) treats this as the "final approver" snapshot — the user
+   *  whose decision flipped the chain to terminal `Approved`. Empty
+   *  while a multi-approver chain is mid-flight. */
   approverUserId?: Types.ObjectId | null;
+  /** Phase 9 — ordered ledger of every approver decision in the chain.
+   *  Empty for legacy/single-approver requests. */
+  approvals: IEftApproval[];
+  /** Phase 9 — snapshot of the ApprovalRule that gated this request at
+   *  create time. Null when no rule matched (single-approver fallback). */
+  appliedRuleId?: Types.ObjectId | null;
   /** Cents. */
   amount: number;
   /** Set on approve. */
@@ -48,6 +73,22 @@ export interface IEftRequest {
   rejectionReason?: string;
   /** Linked Bill the EFT settles, if any. */
   billId?: Types.ObjectId | null;
+  /** Phase 9 — multi-approver chain (BR-AC-19, [G-S-31]).
+   *  Snapshot of the resolved ApprovalRule at create time so subsequent
+   *  edits to the rule don't change in-flight EFTs.
+   *  - `requiredApproverUserIds`: set the rule expects to sign.
+   *  - `receivedApprovals[]`: who has signed so far; `all-of` semantics
+   *    waits until every required approver appears here, `any-of` posts
+   *    as soon as one does.
+   *  Empty `requiredApproverUserIds` reverts to the Phase 4 single-approver
+   *  flow (anyone with `FinancialAdministrator` clicks Approve). */
+  approvalRuleId?: Types.ObjectId | null;
+  requiredApproverUserIds: Types.ObjectId[];
+  approvalSemantics?: 'any-of' | 'all-of' | null;
+  receivedApprovals: {
+    userId: Types.ObjectId;
+    approvedAt: Date;
+  }[];
   createdByUserId: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -57,6 +98,24 @@ const EftPayeeSchema = new Schema<IEftPayee>(
   {
     type: { type: String, enum: EFT_PAYEE_TYPES_DB, required: true },
     id: { type: Schema.Types.ObjectId, required: true },
+  },
+  { _id: false },
+);
+
+const EftApprovalSchema = new Schema<IEftApproval>(
+  {
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    decision: {
+      type: String,
+      enum: APPROVAL_DECISIONS,
+      required: true,
+    },
+    at: { type: Date, required: true, default: () => new Date() },
+    comment: { type: String, trim: true, maxlength: 2000 },
   },
   { _id: false },
 );
@@ -88,6 +147,12 @@ const EftRequestSchema = new Schema<IEftRequest>(
       ref: 'User',
       default: null,
     },
+    approvals: { type: [EftApprovalSchema], default: [] },
+    appliedRuleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmApprovalRule',
+      default: null,
+    },
     amount: { type: Number, required: true, min: 1 },
     journalEntryId: {
       type: Schema.Types.ObjectId,
@@ -96,6 +161,35 @@ const EftRequestSchema = new Schema<IEftRequest>(
     },
     rejectionReason: { type: String, trim: true, maxlength: 2000 },
     billId: { type: Schema.Types.ObjectId, ref: 'PmBill', default: null },
+    approvalRuleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmApprovalRule',
+      default: null,
+    },
+    requiredApproverUserIds: [
+      { type: Schema.Types.ObjectId, ref: 'User' },
+    ],
+    approvalSemantics: {
+      type: String,
+      enum: ['any-of', 'all-of', null],
+      default: null,
+    },
+    receivedApprovals: {
+      type: [
+        new Schema(
+          {
+            userId: {
+              type: Schema.Types.ObjectId,
+              ref: 'User',
+              required: true,
+            },
+            approvedAt: { type: Date, required: true, default: Date.now },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
     createdByUserId: {
       type: Schema.Types.ObjectId,
       ref: 'User',

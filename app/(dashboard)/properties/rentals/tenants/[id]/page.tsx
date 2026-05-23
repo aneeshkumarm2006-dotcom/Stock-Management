@@ -1,6 +1,7 @@
 // /properties/rentals/tenants/[id] — Tenant detail (skeleton).
-// Tabs: Summary | Event history | Notes | Files. Lease-binding card shows
-// `--` placeholders with a Phase 3 footnote.
+// Tabs: Summary | Communications | Event history | Notes | Files. Lease-
+// binding card shows `--` placeholders with a Phase 3 footnote.
+// Communications tab queries EmailMessage rows with relatedEntityType='Tenant'.
 "use client";
 
 import * as React from "react";
@@ -17,6 +18,7 @@ import {
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
+import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { useToast } from "@/components/ui/toast";
 
 interface Phone {
@@ -105,6 +107,7 @@ export default function TenantDetailPage() {
       <Tabs defaultValue="summary">
         <TabsList>
           <TabsTrigger value="summary">Summary</TabsTrigger>
+          <TabsTrigger value="communications">Communications</TabsTrigger>
           <TabsTrigger value="events">Event history</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
@@ -197,6 +200,12 @@ export default function TenantDetailPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="communications" className="mt-4">
+          <CommunicationsTab
+            relatedEntityType="Tenant"
+            relatedEntityId={doc.id}
+          />
+        </TabsContent>
         <TabsContent value="events" className="mt-4">
           <ActivityLog parentType="Tenant" parentId={doc.id} />
         </TabsContent>

@@ -29,6 +29,7 @@ interface BankSerializable {
   isCompanyCash: boolean;
   isDefault: boolean;
   chartOfAccountId: string | null;
+  associationName: string | null;
   active: boolean;
   balance: number;
   undepositedFunds: boolean;
@@ -53,6 +54,7 @@ function serialize(
     isCompanyCash: Boolean(d.isCompanyCash),
     isDefault: Boolean(d.isDefault),
     chartOfAccountId: d.chartOfAccountId ? String(d.chartOfAccountId) : null,
+    associationName: (d.associationName as string | null) ?? null,
     active: Boolean(d.active),
     balance: rollup.balance,
     undepositedFunds: rollup.undepositedFunds,
@@ -115,6 +117,7 @@ export async function POST(request: Request) {
     chartOfAccountId: parsed.data.chartOfAccountId
       ? new Types.ObjectId(parsed.data.chartOfAccountId)
       : null,
+    associationName: parsed.data.associationName ?? null,
   });
 
   await logActivity({

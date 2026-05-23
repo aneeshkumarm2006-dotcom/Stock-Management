@@ -11,6 +11,7 @@ import {
 import { eftRequestCreateSchema } from '@/lib/validation/pm/eftRequest';
 import { toCents } from '@/lib/pm/currency';
 import { logActivity } from '@/lib/pm/activity';
+import { resolveApprovalRule } from '@/lib/pm/approvalRules';
 
 export const runtime = 'nodejs';
 
@@ -25,6 +26,13 @@ interface EftLeanLike {
   approverUserId?: unknown;
   billId?: unknown;
   propertiesScope?: string;
+  appliedRuleId?: unknown;
+  approvals?: Array<{
+    userId: unknown;
+    decision: string;
+    at: Date;
+    comment?: string;
+  }>;
 }
 
 export async function GET(request: Request) {
@@ -56,6 +64,13 @@ export async function GET(request: Request) {
       approverUserId: r.approverUserId ? String(r.approverUserId) : null,
       billId: r.billId ? String(r.billId) : null,
       propertiesScope: r.propertiesScope ?? '',
+      appliedRuleId: r.appliedRuleId ? String(r.appliedRuleId) : null,
+      approvals: (r.approvals ?? []).map((a) => ({
+        userId: String(a.userId),
+        decision: a.decision,
+        at: a.at,
+        comment: a.comment ?? null,
+      })),
     })),
   );
 }
@@ -86,6 +101,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid date' }, { status: 400 });
   }
 
+  const amountCents = toCents(parsed.data.amount);
+  // Phase 9 — snapshot the active ApprovalRule onto the EFT so later
+  // approve/reject calls have a stable rule reference even if the rule
+  // is edited or deactivated post-create (BR-AC-19).
+  const rule = await resolveApprovalRule({
+    orgId: ctx.orgId,
+    amountCents,
+    billId: parsed.data.billId ?? null,
+  });
+
   const doc = await EftRequest.create({
     organizationId: new Types.ObjectId(ctx.orgId),
     date,
@@ -97,8 +122,10 @@ export async function POST(request: Request) {
     },
     propertiesScope: parsed.data.propertiesScope,
     status: 'Pending',
-    amount: toCents(parsed.data.amount),
+    amount: amountCents,
     billId: parsed.data.billId ? new Types.ObjectId(parsed.data.billId) : null,
+    appliedRuleId: rule?.ruleId ?? null,
+    approvals: [],
     createdByUserId: new Types.ObjectId(ctx.userId),
   });
 

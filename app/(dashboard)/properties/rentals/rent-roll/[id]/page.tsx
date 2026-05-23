@@ -1,8 +1,10 @@
 // /properties/rentals/rent-roll/[id] — Lease detail.
-// Tabs: Summary | Financials | Tenant | Event history.
+// Tabs: Summary | Financials | Tenant | Communications | Event history.
 // Includes EVICTION PENDING overlay (BR-LL-3), 90-day chip (BR-LL-5),
 // renters insurance + pets sections, and the Renew lease button gated by
-// [G-B-8].
+// [G-B-8]. Communications tab (Phase 6) queries EmailMessage rows with
+// relatedEntityType='Lease'; sending to a Lease scope blasts to every
+// tenant on that lease.
 "use client";
 
 import * as React from "react";
@@ -27,6 +29,7 @@ import { useToast } from "@/components/ui/toast";
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
+import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { EvictionToggleDialog } from "@/components/pm/EvictionToggleDialog";
 import { RentersInsuranceModal } from "@/components/pm/RentersInsuranceModal";
@@ -242,6 +245,7 @@ export default function LeaseDetailPage() {
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="tenant">Tenant</TabsTrigger>
+          <TabsTrigger value="communications">Communications</TabsTrigger>
           <TabsTrigger value="history">Event history</TabsTrigger>
         </TabsList>
 
@@ -569,6 +573,13 @@ export default function LeaseDetailPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="communications" className="mt-4">
+          <CommunicationsTab
+            relatedEntityType="Lease"
+            relatedEntityId={data.id}
+          />
         </TabsContent>
 
         <TabsContent value="history">

@@ -170,6 +170,34 @@ export function EditRecurringCheckModal({
     );
   }
 
+  async function deleteRule() {
+    if (mode !== "edit" || !recurringId) return;
+    if (
+      !confirm(
+        "Delete this recurring rule? Already-posted occurrences are kept; no new postings will fire.",
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    const res = await fetch(`/api/pm/recurring-transactions/${recurringId}`, {
+      method: "DELETE",
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      toast({
+        title: "Delete failed",
+        description: err.error,
+        variant: "error",
+      });
+      return;
+    }
+    toast({ title: "Recurring rule deleted", variant: "success" });
+    onClose();
+    await onSaved();
+  }
+
   async function save() {
     if (type !== "Journal entry" && !payeeId) {
       toast({ title: "Payee is required for Check / Bill", variant: "error" });
@@ -490,6 +518,16 @@ export function EditRecurringCheckModal({
           </div>
         </div>
         <DialogFooter>
+          {mode === "edit" && (
+            <Button
+              variant="outline"
+              onClick={deleteRule}
+              disabled={saving}
+              className="mr-auto border-error text-error hover:bg-error/10"
+            >
+              Delete
+            </Button>
+          )}
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>

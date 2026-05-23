@@ -16,7 +16,7 @@ import {
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
-import { ComingSoon } from "@/components/pm/ComingSoon";
+import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { useToast } from "@/components/ui/toast";
 
 interface BillLine {
@@ -207,10 +207,7 @@ export default function BillDetailPage() {
         </TabsContent>
 
         <TabsContent value="communications" className="mt-4">
-          <ComingSoon
-            title="Bill communications"
-            description="Vendor email thread on this bill lands in Phase 6 Communications."
-          />
+          <CommunicationsTab relatedEntityType="Bill" relatedEntityId={doc.id} />
         </TabsContent>
 
         <TabsContent value="files" className="mt-4">

@@ -1,6 +1,7 @@
 // /properties/rentals/rental-owners/[id] — detail page.
-// Tabs: Summary | Properties owned | Event history | Notes | Files.
+// Tabs: Summary | Properties owned | Communications | Event history | Notes | Files.
 // `Properties owned` is derived from the Property.rentalOwners[] junction.
+// Communications tab queries EmailMessage rows with relatedEntityType='RentalOwner'.
 "use client";
 
 import * as React from "react";
@@ -18,6 +19,7 @@ import {
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
+import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
 import { useToast } from "@/components/ui/toast";
 import type { TaxIdentityType } from "@/types/pm";
@@ -158,6 +160,7 @@ export default function RentalOwnerDetailPage() {
         <TabsList>
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="properties">Properties owned</TabsTrigger>
+          <TabsTrigger value="communications">Communications</TabsTrigger>
           <TabsTrigger value="events">Event history</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
@@ -354,6 +357,12 @@ export default function RentalOwnerDetailPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="communications" className="mt-4">
+          <CommunicationsTab
+            relatedEntityType="RentalOwner"
+            relatedEntityId={doc.id}
+          />
+        </TabsContent>
         <TabsContent value="events" className="mt-4">
           <ActivityLog parentType="RentalOwner" parentId={doc.id} />
         </TabsContent>

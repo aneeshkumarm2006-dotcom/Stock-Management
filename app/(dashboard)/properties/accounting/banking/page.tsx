@@ -256,6 +256,7 @@ function AddBankAccountModal({
     isCompanyCash: false,
     isDefault: false,
     chartOfAccountId: "",
+    associationName: "",
   });
   const [saving, setSaving] = React.useState(false);
   const [coas, setCoas] = React.useState<CoaOption[]>([]);
@@ -289,6 +290,7 @@ function AddBankAccountModal({
       isCompanyCash: false,
       isDefault: false,
       chartOfAccountId: "",
+      associationName: "",
     });
   }
 
@@ -307,6 +309,7 @@ function AddBankAccountModal({
         purpose: form.purpose.trim() || undefined,
         accountNumberMasked: form.accountNumberMasked.trim(),
         chartOfAccountId: form.chartOfAccountId || null,
+        associationName: form.associationName.trim() || null,
       }),
     });
     setSaving(false);
@@ -441,6 +444,23 @@ function AddBankAccountModal({
               />
               Default for management fees
             </label>
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="ba-association">Association name (HOA only)</Label>
+            <Input
+              id="ba-association"
+              value={form.associationName}
+              onChange={(e) =>
+                setForm({ ...form, associationName: e.target.value })
+              }
+              maxLength={60}
+              placeholder='e.g. "Pine Ridge HOA — Reserve"'
+            />
+            <p className="text-xs text-fg-muted">
+              Tag HOA bank accounts so operating vs reserve funds segregate in
+              Financials reports (BR-AC-20).
+            </p>
           </div>
         </div>
         <DialogFooter>

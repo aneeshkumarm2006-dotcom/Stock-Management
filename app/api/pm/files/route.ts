@@ -1,5 +1,6 @@
 // Polymorphic File ingestion. POST accepts JSON metadata (Phase 0 ships the
-// catalog only — Phase 8 layers real blob storage on top). The endpoint
+// catalog only — Phase 8 layers the central read surface, multi-filter list,
+// search, and user/location display resolution on top). The endpoint
 // records the row, bumps the category `inUseCount`, and writes an
 // ActivityLogEntry on the parent.
 //
@@ -7,11 +8,26 @@
 // types whose collections don't exist yet (BR-FI-3 — "create a File against
 // any parentType+parentId placeholder without FK errors"). Phase 1+ entities
 // register themselves in `FK_VALIDATED_LOCATION_TYPES` to opt in.
+//
+// Phase 8 GET adds:
+//   - q                      free-text search over title + originalFilename
+//   - sharing                Internal / Resident / Owner / PublicLink
+//   - uploadedFrom/To        ISO dates (filters createdAt)
+//   - modifiedFrom/To        ISO dates (filters lastModifiedAt)
+//   - sort                   `lastModifiedAt | uploadedAt | title`  (default lastModifiedAt desc)
+//   - dir                    `asc | desc`                          (default desc)
+//   - expand=display         resolves user names (BR-FI-1: name preserved
+//                            even when the uploader's OrgMembership is
+//                            inactive — User.name persists) and location
+//                            display strings.
+// `total` is returned alongside `rows` so the page can render BR-CX-2's
+// "matches" counter against post-filter row count.
 import { NextResponse } from 'next/server';
 import mongoose, { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { PmFile } from '@/lib/db/models/pm/PmFile';
 import { FileCategory } from '@/lib/db/models/pm/FileCategory';
+import { User } from '@/lib/db/models/User';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -23,8 +39,11 @@ import {
   FK_VALIDATED_LOCATION_TYPES,
   isParentType,
 } from '@/lib/pm/parentTypes';
+import { resolveLocationDisplays } from '@/lib/pm/locationDisplay';
 
 export const runtime = 'nodejs';
+
+const FILE_SORT_FIELDS = new Set(['lastModifiedAt', 'uploadedAt', 'title']);
 
 function serialize(d: Record<string, unknown>) {
   return {
@@ -45,6 +64,16 @@ function serialize(d: Record<string, unknown>) {
   };
 }
 
+function parseDate(s: string | null): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export async function GET(request: Request) {
   const ctx = await getPmContext();
   if (!ctx) return unauthorizedResponse();
@@ -53,6 +82,18 @@ export async function GET(request: Request) {
   const locationType = searchParams.get('locationType');
   const locationId = searchParams.get('locationId');
   const categoryId = searchParams.get('categoryId');
+  const sharing = searchParams.get('sharing');
+  const q = searchParams.get('q')?.trim() ?? '';
+  const uploadedFrom = parseDate(searchParams.get('uploadedFrom'));
+  const uploadedTo = parseDate(searchParams.get('uploadedTo'));
+  const modifiedFrom = parseDate(searchParams.get('modifiedFrom'));
+  const modifiedTo = parseDate(searchParams.get('modifiedTo'));
+  const sortFieldRaw = searchParams.get('sort') ?? 'lastModifiedAt';
+  const sortField = FILE_SORT_FIELDS.has(sortFieldRaw)
+    ? sortFieldRaw
+    : 'lastModifiedAt';
+  const sortDir = searchParams.get('dir') === 'asc' ? 1 : -1;
+  const expandDisplay = searchParams.get('expand') === 'display';
 
   await connectToDatabase();
   const filter: Record<string, unknown> = {
@@ -65,13 +106,68 @@ export async function GET(request: Request) {
   if (categoryId && Types.ObjectId.isValid(categoryId)) {
     filter.categoryId = new Types.ObjectId(categoryId);
   }
+  if (sharing && ['Internal', 'Resident', 'Owner', 'PublicLink'].includes(sharing)) {
+    filter.sharing = sharing;
+  }
+  if (q) {
+    const re = new RegExp(escapeRegex(q), 'i');
+    filter.$or = [{ title: re }, { originalFilename: re }];
+  }
+  const uploadedRange: Record<string, Date> = {};
+  if (uploadedFrom) uploadedRange.$gte = uploadedFrom;
+  if (uploadedTo) uploadedRange.$lte = uploadedTo;
+  if (Object.keys(uploadedRange).length) filter.createdAt = uploadedRange;
+  const modifiedRange: Record<string, Date> = {};
+  if (modifiedFrom) modifiedRange.$gte = modifiedFrom;
+  if (modifiedTo) modifiedRange.$lte = modifiedTo;
+  if (Object.keys(modifiedRange).length) filter.lastModifiedAt = modifiedRange;
 
+  // Translate the sort alias `uploadedAt` to the underlying `createdAt`.
+  const sortKey = sortField === 'uploadedAt' ? 'createdAt' : sortField;
   const rows = await PmFile.find(filter)
-    .sort({ lastModifiedAt: -1 })
+    .sort({ [sortKey]: sortDir })
     .limit(500)
-    .lean();
+    .lean<Array<Record<string, unknown>>>();
 
-  return NextResponse.json(rows.map(serialize));
+  const total = await PmFile.countDocuments(filter);
+  const serialized = rows.map(serialize);
+
+  // Plain-list response when no display expansion requested (preserves
+  // back-compat for child detail pages built in Phase 1–7).
+  if (!expandDisplay) {
+    return NextResponse.json(serialized);
+  }
+
+  // Resolve user names + location display strings in one round-trip each.
+  const userIds = new Set<string>();
+  const locations: { locationType: string; locationId: string | null }[] = [];
+  for (const r of serialized) {
+    userIds.add(r.uploadedByUserId);
+    userIds.add(r.lastModifiedByUserId);
+    locations.push({ locationType: r.locationType as string, locationId: r.locationId });
+  }
+  const userObjectIds = Array.from(userIds)
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+  const userDocs = await User.find({ _id: { $in: userObjectIds } })
+    .select('_id name')
+    .lean<Array<{ _id: Types.ObjectId; name: string }>>();
+  const userById = Object.fromEntries(
+    userDocs.map((u) => [String(u._id), u.name]),
+  );
+  const locDisplays = await resolveLocationDisplays(locations, ctx.orgId);
+
+  const enriched = serialized.map((r) => ({
+    ...r,
+    uploadedByName: userById[r.uploadedByUserId] ?? '(former user)',
+    lastModifiedByName: userById[r.lastModifiedByUserId] ?? '(former user)',
+    locationDisplay:
+      r.locationType === 'Account' || !r.locationId
+        ? null
+        : locDisplays[r.locationId] ?? null,
+  }));
+
+  return NextResponse.json({ rows: enriched, total });
 }
 
 export async function POST(request: Request) {

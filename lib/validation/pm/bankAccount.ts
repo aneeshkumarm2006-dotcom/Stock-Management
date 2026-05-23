@@ -27,6 +27,7 @@ export const bankAccountCreateSchema = z.object({
   isCompanyCash: z.boolean().optional(),
   isDefault: z.boolean().optional(),
   chartOfAccountId: objectIdString.nullable().optional(),
+  associationName: z.string().max(60).nullable().optional(),
 });
 
 export const bankAccountUpdateSchema = z
@@ -40,6 +41,7 @@ export const bankAccountUpdateSchema = z
     isCompanyCash: z.boolean().optional(),
     isDefault: z.boolean().optional(),
     chartOfAccountId: objectIdString.nullable().optional(),
+    associationName: z.string().max(60).nullable().optional(),
     active: z.boolean().optional(),
     lastReconciliationDate: z.string().datetime().nullable().optional(),
   })

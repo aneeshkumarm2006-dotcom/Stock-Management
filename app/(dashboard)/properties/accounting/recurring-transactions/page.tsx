@@ -23,7 +23,11 @@ interface RtRow {
   memo: string;
   active: boolean;
   postedCount: number;
+  queueForPrinting?: boolean;
+  lastPostedDate?: string | null;
 }
+
+type PrintQueueFilter = "all" | "queued";
 
 export default function RecurringTransactionsPage() {
   const { toast } = useToast();
@@ -31,6 +35,7 @@ export default function RecurringTransactionsPage() {
   const [loading, setLoading] = React.useState(true);
   const [editing, setEditing] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
+  const [printFilter, setPrintFilter] = React.useState<PrintQueueFilter>("all");
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -69,6 +74,27 @@ export default function RecurringTransactionsPage() {
             <Button size="sm" variant="outline" onClick={runCron}>
               Run poster now
             </Button>
+            <div className="ml-auto flex gap-1.5">
+              {(
+                [
+                  ["all", "All"],
+                  ["queued", "Queued for printing"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setPrintFilter(key)}
+                  className={
+                    "rounded-full border px-2.5 py-0.5 text-xs " +
+                    (printFilter === key
+                      ? "border-primary bg-primary text-primary-fg"
+                      : "border-border text-fg-muted hover:text-fg")
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -99,7 +125,13 @@ export default function RecurringTransactionsPage() {
                   </td>
                 </tr>
               )}
-              {rows.map((r) => (
+              {rows
+                .filter((r) =>
+                  printFilter === "queued"
+                    ? Boolean(r.queueForPrinting) && r.type === "Check"
+                    : true,
+                )
+                .map((r) => (
                 <tr key={r.id} className="border-b border-border/40">
                   <td className="py-2 text-fg">{r.type}</td>
                   <td className="text-fg-muted">{r.frequency}</td>

@@ -87,6 +87,12 @@ const SYSTEM_ACCOUNTS: SystemAccountSeed[] = [
     defaultFor: 'Management Fee Income',
     cashFlowClassification: 'Operating activities',
   },
+  {
+    name: 'Interest Income',
+    type: 'Income',
+    defaultFor: 'Interest Income',
+    cashFlowClassification: 'Operating activities',
+  },
   // Expenses
   {
     name: 'Repairs',
@@ -99,6 +105,25 @@ const SYSTEM_ACCOUNTS: SystemAccountSeed[] = [
     type: 'Operating Expense',
     defaultFor: 'Bank Fees',
     cashFlowClassification: 'Operating activities',
+  },
+  {
+    name: 'Bank Service Charges',
+    type: 'Operating Expense',
+    defaultFor: 'Bank Service Charges',
+    cashFlowClassification: 'Operating activities',
+  },
+  {
+    name: 'Management Fee Expense',
+    type: 'Operating Expense',
+    defaultFor: 'Management Fee Expense',
+    cashFlowClassification: 'Operating activities',
+  },
+  // Equity
+  {
+    name: 'Owner Contributions',
+    type: 'Equity',
+    defaultFor: 'Owner Contribution',
+    cashFlowClassification: 'Financing activities',
   },
 ];
 

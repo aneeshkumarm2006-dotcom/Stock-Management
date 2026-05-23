@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { RecordBillModal } from "@/components/pm/RecordBillModal";
 import { PayBillsModal } from "@/components/pm/PayBillsModal";
+import { RequestOwnerContributionModal } from "@/components/pm/RequestOwnerContributionModal";
 
 interface BillRow {
   id: string;
@@ -37,6 +38,7 @@ export default function BillsPage() {
   const [filter, setFilter] = React.useState<StatusFilter>("open");
   const [recordOpen, setRecordOpen] = React.useState(false);
   const [payOpen, setPayOpen] = React.useState(false);
+  const [ocrOpen, setOcrOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -93,17 +95,16 @@ export default function BillsPage() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() =>
-                toast({
-                  title: "Owner contribution request",
-                  description:
-                    "OwnerContributionRequest full surface ships with Phase 9 (BR-AC-19).",
-                  variant: "success",
-                })
-              }
+              onClick={() => setOcrOpen(true)}
             >
               Request owner contribution
             </Button>
+            <Link
+              href="/properties/accounting/bills/owner-contributions"
+              className="inline-flex items-center text-xs font-bold uppercase tracking-widest text-blue-600 hover:underline"
+            >
+              Owner contributions →
+            </Link>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -201,6 +202,14 @@ export default function BillsPage() {
         open={payOpen}
         onClose={() => setPayOpen(false)}
         onSaved={load}
+      />
+      <RequestOwnerContributionModal
+        open={ocrOpen}
+        onClose={() => setOcrOpen(false)}
+        onSaved={async () => {
+          setOcrOpen(false);
+          toast({ title: "Contribution request created", variant: "success" });
+        }}
       />
     </div>
   );

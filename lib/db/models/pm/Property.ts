@@ -15,9 +15,11 @@ import type {
   ResidentialSubType,
   CommercialSubType,
   UsState,
+  ManagementFeeBillingFrequency,
 } from '@/types/pm';
 import {
   COMMERCIAL_SUBTYPES,
+  MANAGEMENT_FEE_BILLING_FREQUENCIES,
   RESIDENTIAL_SUBTYPES,
 } from '@/types/pm';
 
@@ -52,6 +54,23 @@ export interface IPropertyResidentCenterRequests {
   showEntryQuestions: boolean;
 }
 
+/** Per-property management-fee agreement (PDR §3.27, BR-AC-16).
+ *  DECISIONS.md [G-S-38] resolves the location as an embedded subdoc on
+ *  Property — a full ManagementFeeAgreement entity with historical
+ *  versioning is deferred until a dedicated fee module ships.
+ *  Exactly one of `feePercent` or `feeFlatCents` must be set when the
+ *  agreement is active. `lastCollectedDate` makes
+ *  `collectManagementFees` idempotent per Property × period. */
+export interface IPropertyManagementFeeAgreement {
+  active: boolean;
+  feePercent?: number | null;
+  feeFlatCents?: number | null;
+  billingFrequency: ManagementFeeBillingFrequency;
+  startDate?: Date | null;
+  endDate?: Date | null;
+  lastCollectedDate?: Date | null;
+}
+
 export interface IProperty {
   _id: Types.ObjectId;
   organizationId: Types.ObjectId;
@@ -73,6 +92,7 @@ export interface IProperty {
   residentCenterForums: boolean;
   rentersInsuranceMinLiability3rdParty?: number | null;
   rentersInsuranceMinLiabilityMSI?: number | null;
+  managementFeeAgreement?: IPropertyManagementFeeAgreement | null;
   customFields: Map<string, unknown>;
   active: boolean;
   createdAt: Date;
@@ -108,6 +128,24 @@ const ResidentRequestsSchema = new Schema<IPropertyResidentCenterRequests>(
   {
     enabled: { type: Boolean, default: false },
     showEntryQuestions: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+const ManagementFeeAgreementSchema = new Schema<IPropertyManagementFeeAgreement>(
+  {
+    active: { type: Boolean, default: false },
+    feePercent: { type: Number, default: null, min: 0, max: 100 },
+    feeFlatCents: { type: Number, default: null, min: 0 },
+    billingFrequency: {
+      type: String,
+      enum: MANAGEMENT_FEE_BILLING_FREQUENCIES,
+      required: true,
+      default: 'Monthly',
+    },
+    startDate: { type: Date, default: null },
+    endDate: { type: Date, default: null },
+    lastCollectedDate: { type: Date, default: null },
   },
   { _id: false },
 );
@@ -156,6 +194,10 @@ const PropertySchema = new Schema<IProperty>(
     residentCenterForums: { type: Boolean, default: false },
     rentersInsuranceMinLiability3rdParty: { type: Number, default: null, min: 0 },
     rentersInsuranceMinLiabilityMSI: { type: Number, default: null, min: 0 },
+    managementFeeAgreement: {
+      type: ManagementFeeAgreementSchema,
+      default: null,
+    },
     customFields: { type: Map, of: Schema.Types.Mixed, default: () => new Map() },
     active: { type: Boolean, default: true },
   },
@@ -206,6 +248,26 @@ PropertySchema.pre('save', function (next) {
         `propertySubType "${subType}" is not valid for Commercial properties`,
       ),
     );
+  }
+
+  // 3. ManagementFeeAgreement (BR-AC-16, [G-S-38]) — exactly one of
+  //    feePercent / feeFlatCents must be set when active.
+  const mfa = this.managementFeeAgreement;
+  if (mfa && mfa.active) {
+    const hasPct = mfa.feePercent != null && mfa.feePercent > 0;
+    const hasFlat = mfa.feeFlatCents != null && mfa.feeFlatCents > 0;
+    if (hasPct === hasFlat) {
+      return next(
+        new Error(
+          'Active managementFeeAgreement requires exactly one of feePercent or feeFlatCents.',
+        ),
+      );
+    }
+    if (mfa.endDate && mfa.startDate && mfa.endDate < mfa.startDate) {
+      return next(
+        new Error('managementFeeAgreement.endDate must be on or after startDate.'),
+      );
+    }
   }
 
   next();

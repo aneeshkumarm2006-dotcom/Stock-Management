@@ -18,6 +18,7 @@ import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
 import { Property } from '@/lib/db/models/pm/Property';
 import { Organization } from '@/lib/db/models/pm/Organization';
+import { BankAccount } from '@/lib/db/models/pm/BankAccount';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -103,6 +104,21 @@ export async function GET(request: Request) {
     cells.set(k, (cells.get(k) ?? 0) + signedNet);
   }
 
+  // Phase 9 (BR-AC-20) — surface HOA per-association groupings. Pull
+  // associationName per active BankAccount; the page can use this to
+  // render an "Associations" sub-total row. Only emitted when at least
+  // one tag is set, so non-HOA orgs see no change.
+  const banks = await BankAccount.find(
+    { organizationId: orgObjectId, active: true },
+    { _id: 1, associationName: 1 },
+  ).lean<
+    Array<{ _id: Types.ObjectId; associationName?: string | null }>
+  >();
+  const tagged = banks.filter((b) => b.associationName);
+  const associationNames = Array.from(
+    new Set(tagged.map((b) => b.associationName as string)),
+  ).sort();
+
   return NextResponse.json({
     accountingMode: org?.accountingMode ?? 'accrual',
     accounts: accounts.map((a) => ({
@@ -121,5 +137,6 @@ export async function GET(request: Request) {
       const [accountId, propertyId] = k.split('|');
       return { accountId, propertyId, amount: v };
     }),
+    associations: associationNames,
   });
 }

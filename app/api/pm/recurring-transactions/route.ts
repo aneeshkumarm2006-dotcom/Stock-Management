@@ -26,6 +26,8 @@ interface RtLeanLike {
   postedCount: number;
   occurrenceCount?: number | null;
   memo?: string;
+  queueForPrinting?: boolean;
+  lastPostedDate?: Date | null;
 }
 
 export async function GET(request: Request) {
@@ -64,6 +66,8 @@ export async function GET(request: Request) {
       memo: r.memo ?? '',
       active: r.active,
       postedCount: r.postedCount,
+      queueForPrinting: Boolean(r.queueForPrinting),
+      lastPostedDate: r.lastPostedDate ?? null,
     })),
   );
 }

@@ -47,6 +47,7 @@ import {
   UserCircle,
   Globe,
   FolderKanban,
+  Puzzle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -205,6 +206,7 @@ const PM_NAV: NavNode[] = [
   { href: "/properties/files", label: "Files", icon: FolderOpen },
   { href: "/properties/reports", label: "Reports", icon: BarChart3 },
   { href: "/properties/analytics", label: "Analytics Hub", icon: PieChart },
+  { href: "/properties/add-ons", label: "Add-ons", icon: Puzzle },
   { href: "/settings/pm", label: "Settings", icon: Settings },
 ];
 

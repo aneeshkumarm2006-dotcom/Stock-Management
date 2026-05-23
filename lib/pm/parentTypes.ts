@@ -54,6 +54,22 @@ export const PARENT_TYPES = [
   "Project",
   "RecurringTask",
   "OwnerContributionRequest",
+  // Phase 6 — Communications. EmailMessage owns activity-log entries for
+  // its own send/schedule/draft lifecycle; EmailTemplate + EmailThread
+  // ship as skeletons (full surface in later phases). Notes/Files are not
+  // attached to these directly — attachments live on EmailMessage as
+  // PmFile rows with locationType='EmailMessage'.
+  "EmailMessage",
+  "EmailTemplate",
+  "EmailThread",
+  // Phase 9 — Accounting reports + ancillary. Budgets own the FY plan,
+  // Reconciliation drives the bank-recon wizard, BankFeedTransaction is
+  // the CSV/OFX import row, and ApprovalRule is the multi-approver rule
+  // referenced by EftRequest.appliedRuleId.
+  "Budget",
+  "Reconciliation",
+  "BankFeedTransaction",
+  "ApprovalRule",
 ] as const;
 
 /**
@@ -109,6 +125,15 @@ export const FK_VALIDATED_LOCATION_TYPES = new Set<string>([
   'Project',
   'RecurringTask',
   'OwnerContributionRequest',
+  // Phase 6 — Communications
+  'EmailMessage',
+  'EmailTemplate',
+  'EmailThread',
+  // Phase 9 — Accounting reports + ancillary
+  'Budget',
+  'Reconciliation',
+  'BankFeedTransaction',
+  'ApprovalRule',
 ]);
 
 /**
@@ -146,6 +171,15 @@ export const COLLECTION_BY_LOCATION_TYPE: Record<string, string> = {
   Project: 'pm_projects',
   RecurringTask: 'pm_recurring_tasks',
   OwnerContributionRequest: 'pm_owner_contribution_requests',
+  // Phase 6
+  EmailMessage: 'pm_email_messages',
+  EmailTemplate: 'pm_email_templates',
+  EmailThread: 'pm_email_threads',
+  // Phase 9
+  Budget: 'pm_budgets',
+  Reconciliation: 'pm_reconciliations',
+  BankFeedTransaction: 'pm_bank_feed_transactions',
+  ApprovalRule: 'pm_approval_rules',
 };
 
 /** Type guard for runtime checks. */

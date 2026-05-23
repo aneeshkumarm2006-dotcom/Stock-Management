@@ -1,16 +1,13 @@
-// Property Management workspace landing (PDR §6 — Dashboard). Placeholder
-// until the operational dashboard widgets land.
-import { ComingSoon } from "@/components/pm/ComingSoon";
+// Property Management Dashboard landing page (PROPERTY_TODO.md Phase 10,
+// PDR_MASTER §2 / §8 Phase 10). 3-column widget grid aggregating signals
+// across every prior phase. Layout is per-user customizable via the
+// CustomizeDashboardModal launched from the header.
+import { DashboardGrid } from "@/components/pm/dashboard/DashboardGrid";
 
 export const metadata = {
   title: "Property Management",
 };
 
 export default function PropertyManagementHome() {
-  return (
-    <ComingSoon
-      title="Property Management"
-      description="Your operational dashboard, rentals, and leasing pipeline will live here. The full module is being built in phases — navigation is already in place so you can preview the structure."
-    />
-  );
+  return <DashboardGrid />;
 }

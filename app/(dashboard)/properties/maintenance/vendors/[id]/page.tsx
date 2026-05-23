@@ -4,8 +4,8 @@
 //   - Summary: contact + tax + insurance + portal opt-in (BR-MV-3, BR-MV-12).
 //   - Financials: Transactions sub-tab reads JE rows where the vendor is
 //     payee; ePay placeholder.
-//   - Communications: renders ComingSoon — Phase 6 wires the
-//     `/communication/activity/vendor/{id}` route (BR-MV-11).
+//   - Communications: polymorphic CommunicationsTab queries EmailMessage
+//     rows where relatedEntityType='Vendor' (BR-MV-11).
 //   - Files / Notes: shared polymorphic panels with parentType='Vendor'.
 "use client";
 
@@ -23,7 +23,7 @@ import {
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
-import { ComingSoon } from "@/components/pm/ComingSoon";
+import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
 import { VendorPortalActions } from "@/components/pm/VendorPortalActions";
 import { useToast } from "@/components/ui/toast";
@@ -350,9 +350,9 @@ export default function VendorDetailPage() {
         </TabsContent>
 
         <TabsContent value="communications" className="mt-4">
-          <ComingSoon
-            title="Vendor communications"
-            description="Email + activity stream lands in Phase 6 at /communication/activity/vendor/{id} (BR-MV-11)."
+          <CommunicationsTab
+            relatedEntityType="Vendor"
+            relatedEntityId={doc.id}
           />
         </TabsContent>
 

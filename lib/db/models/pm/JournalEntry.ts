@@ -57,6 +57,14 @@ export interface IJournalLine {
   description?: string;
   debit: number; // cents
   credit: number; // cents
+  /** Phase 9 — reconciliation tag (BR-AC-17). Set by the
+   *  reconciliation wizard commit OR by the Bank Feed matcher when a
+   *  feed row is matched to this line. Reports treat cleared/uncleared
+   *  the same; reconciliation lock keys on the underlying JE date, not
+   *  this flag. */
+  cleared?: boolean;
+  clearedDate?: Date | null;
+  reconciliationId?: Types.ObjectId | null;
 }
 
 export interface IJournalEntry {
@@ -106,6 +114,13 @@ const JournalLineSchema = new Schema<IJournalLine>(
     description: { type: String, trim: true, maxlength: 500 },
     debit: { type: Number, default: 0, min: 0 },
     credit: { type: Number, default: 0, min: 0 },
+    cleared: { type: Boolean, default: false },
+    clearedDate: { type: Date, default: null },
+    reconciliationId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmReconciliation',
+      default: null,
+    },
   },
   { _id: true },
 );

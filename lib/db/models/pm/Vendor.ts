@@ -56,6 +56,11 @@ export interface IVendor {
   comments?: string;
   taxIdentityType?: TaxIdentityType | null;
   taxpayerIdLast4?: string;
+  /** Phase 9 — full TIN required for 1099 generation (DECISIONS.md
+   *  [G-S-30]). Stored plaintext under admin-only read; field-level
+   *  encryption is a follow-up. Empty when only the masked last-4 is on
+   *  file — the 1099 page surfaces a "TIN missing" warning. */
+  taxpayerIdFull?: string;
   use1099AlternateName: boolean;
   alternativeName1099?: string;
   use1099AlternateAddress: boolean;
@@ -154,6 +159,14 @@ const VendorSchema = new Schema<IVendor>(
       validate: {
         validator: (v?: string) => !v || /^\d{4}$/.test(v),
         message: 'taxpayerIdLast4 must be exactly 4 digits',
+      },
+    },
+    taxpayerIdFull: {
+      type: String,
+      trim: true,
+      validate: {
+        validator: (v?: string) => !v || /^[\d-]{9,11}$/.test(v),
+        message: 'taxpayerIdFull must be 9 digits (with optional dashes)',
       },
     },
     use1099AlternateName: { type: Boolean, default: false },

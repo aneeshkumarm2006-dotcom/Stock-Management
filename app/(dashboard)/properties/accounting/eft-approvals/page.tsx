@@ -20,6 +20,18 @@ interface EftRow {
   approverUserId: string | null;
   billId: string | null;
   propertiesScope: string;
+  appliedRuleId: string | null;
+  approvals: Array<{
+    userId: string;
+    decision: "Approved" | "Rejected";
+    at: string;
+  }>;
+}
+
+interface ApprovalRuleSummary {
+  id: string;
+  approverUserIds: string[];
+  semantics: "any-of" | "all-of";
 }
 
 type Filter = "pending" | "approved" | "rejected" | "all";
@@ -27,6 +39,7 @@ type Filter = "pending" | "approved" | "rejected" | "all";
 export default function EftApprovalsPage() {
   const { toast } = useToast();
   const [rows, setRows] = React.useState<EftRow[]>([]);
+  const [rules, setRules] = React.useState<ApprovalRuleSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [filter, setFilter] = React.useState<Filter>("pending");
 
@@ -36,6 +49,25 @@ export default function EftApprovalsPage() {
     if (r.ok) setRows((await r.json()) as EftRow[]);
     setLoading(false);
   }, []);
+
+  React.useEffect(() => {
+    fetch("/api/pm/approval-rules").then(async (r) => {
+      if (r.ok) {
+        const data = (await r.json()) as Array<{
+          id: string;
+          approverUserIds: string[];
+          semantics: "any-of" | "all-of";
+          active: boolean;
+        }>;
+        setRules(data.filter((x) => x.active));
+      }
+    });
+  }, []);
+
+  const ruleById = React.useMemo(
+    () => Object.fromEntries(rules.map((r) => [r.id, r] as const)),
+    [rules],
+  );
 
   React.useEffect(() => {
     load();
@@ -99,58 +131,73 @@ export default function EftApprovalsPage() {
                 <th>Payee type</th>
                 <th>Amount</th>
                 <th>Status</th>
+                <th>Chain</th>
                 <th />
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-fg-muted">
+                  <td colSpan={7} className="py-4 text-fg-muted">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && visible.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-fg-muted">
+                  <td colSpan={7} className="py-4 text-fg-muted">
                     No EFT requests match.
                   </td>
                 </tr>
               )}
-              {visible.map((e) => (
-                <tr key={e.id} className="border-b border-border/40">
-                  <td className="py-2 text-fg-muted">
-                    {new Date(e.date).toLocaleDateString()}
-                  </td>
-                  <td className="text-fg">{e.paidToName}</td>
-                  <td className="text-fg-muted">{e.payee.type}</td>
-                  <td className="tabular-nums font-bold text-fg">
-                    ${(e.amount / 100).toFixed(2)}
-                  </td>
-                  <td>
-                    <StatusChip status={e.status} />
-                  </td>
-                  <td className="text-right">
-                    {e.status === "Pending" && (
-                      <div className="flex justify-end gap-1.5">
-                        <Button
-                          size="sm"
-                          onClick={() => act(e.id, "approve")}
-                        >
-                          <Check className="h-3.5 w-3.5" /> Approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => act(e.id, "reject")}
-                        >
-                          <X className="h-3.5 w-3.5" /> Reject
-                        </Button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {visible.map((e) => {
+                const rule = e.appliedRuleId ? ruleById[e.appliedRuleId] : null;
+                const required = rule?.approverUserIds.length ?? 0;
+                const approvedCount = e.approvals.filter(
+                  (a) => a.decision === "Approved",
+                ).length;
+                return (
+                  <tr key={e.id} className="border-b border-border/40">
+                    <td className="py-2 text-fg-muted">
+                      {new Date(e.date).toLocaleDateString()}
+                    </td>
+                    <td className="text-fg">{e.paidToName}</td>
+                    <td className="text-fg-muted">{e.payee.type}</td>
+                    <td className="tabular-nums font-bold text-fg">
+                      ${(e.amount / 100).toFixed(2)}
+                    </td>
+                    <td>
+                      <StatusChip status={e.status} />
+                    </td>
+                    <td className="text-xs text-fg-muted">
+                      {rule
+                        ? `${approvedCount} of ${required} ${rule.semantics}`
+                        : e.approvals.length > 0
+                          ? `${approvedCount} approval(s)`
+                          : "Single approver"}
+                    </td>
+                    <td className="text-right">
+                      {e.status === "Pending" && (
+                        <div className="flex justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            onClick={() => act(e.id, "approve")}
+                          >
+                            <Check className="h-3.5 w-3.5" /> Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => act(e.id, "reject")}
+                          >
+                            <X className="h-3.5 w-3.5" /> Reject
+                          </Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </CardContent>
