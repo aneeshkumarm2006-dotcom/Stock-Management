@@ -8,7 +8,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { MoreHorizontal } from "lucide-react";
+import { ChevronRight, MoreHorizontal } from "lucide-react";
 import {
   getNavForWorkspace,
   getWorkspaceForPath,
@@ -47,6 +47,21 @@ function sectionize(
   return sections;
 }
 
+const COLLAPSE_STORAGE_KEY = "sidebar:open-sections";
+
+function loadOpenSections(): Set<string> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(COLLAPSE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return new Set(parsed.filter((s): s is string => typeof s === "string"));
+  } catch {
+    return null;
+  }
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const workspace = getWorkspaceForPath(pathname);
@@ -56,6 +71,73 @@ export function Sidebar() {
   const user = session?.user;
   const userInitial = (user?.name ?? user?.email ?? "?").charAt(0).toUpperCase();
 
+  const [openSections, setOpenSections] = React.useState<Set<string>>(
+    () => new Set(),
+  );
+  const hydratedRef = React.useRef(false);
+
+  // Hydrate from localStorage on mount, then auto-open the section that
+  // contains the active route so the user always sees their current location.
+  React.useEffect(() => {
+    const stored = loadOpenSections();
+    const next = stored ?? new Set<string>();
+    for (const section of sections) {
+      if (
+        section.title &&
+        section.items.some((item) => isActivePath(pathname, item.href))
+      ) {
+        next.add(section.title);
+      }
+    }
+    setOpenSections(next);
+    hydratedRef.current = true;
+    // Run once on mount — subsequent route changes are handled below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // On route change, ensure the active route's section is open without
+  // disturbing the user's other choices.
+  React.useEffect(() => {
+    if (!hydratedRef.current) return;
+    setOpenSections((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const section of sections) {
+        if (
+          section.title &&
+          !next.has(section.title) &&
+          section.items.some((item) => isActivePath(pathname, item.href))
+        ) {
+          next.add(section.title);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [pathname, sections]);
+
+  // Persist user choices.
+  React.useEffect(() => {
+    if (!hydratedRef.current) return;
+    try {
+      window.localStorage.setItem(
+        COLLAPSE_STORAGE_KEY,
+        JSON.stringify(Array.from(openSections)),
+      );
+    } catch {
+      // localStorage may be unavailable (private mode); silently ignore.
+    }
+  }, [openSections]);
+
+  const toggleSection = React.useCallback((title: string) => {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      return next;
+    });
+  }, []);
+
   return (
     <aside className="fixed left-0 top-0 z-50 hidden h-screen w-[232px] flex-col border-r border-border bg-surface-high md:flex">
       {/* Brand block — clicking opens the workspace switcher. */}
@@ -63,24 +145,46 @@ export function Sidebar() {
         <WorkspaceSwitcher />
       </div>
 
-      {/* Grouped nav. */}
+      {/* Grouped nav. Titled sections collapse; untitled (leading/trailing
+          leaves like Dashboard / Settings) always render their items. */}
       <nav className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
-        {sections.map((section, i) => (
-          <div key={section.title ?? `untitled-${i}`} className="mt-[10px]">
-            {section.title && (
-              <div className="px-[10px] pb-1 pt-[6px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-fg-muted">
-                {section.title}
-              </div>
-            )}
-            {section.items.map((item) => (
-              <SidebarItem
-                key={item.href}
-                item={item}
-                pathname={pathname}
-              />
-            ))}
-          </div>
-        ))}
+        {sections.map((section, i) => {
+          const isCollapsible = section.title !== null;
+          const isOpen = isCollapsible && openSections.has(section.title!);
+          const sectionId = `sidebar-section-${section.title ?? `untitled-${i}`}`;
+          return (
+            <div key={section.title ?? `untitled-${i}`} className="mt-[10px]">
+              {isCollapsible && (
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section.title!)}
+                  aria-expanded={isOpen}
+                  aria-controls={sectionId}
+                  className="flex w-full items-center gap-1 rounded-[5px] px-[10px] pb-1 pt-[6px] text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-fg-muted transition-colors hover:text-fg"
+                >
+                  <ChevronRight
+                    className={cn(
+                      "h-3 w-3 shrink-0 transition-transform",
+                      isOpen && "rotate-90",
+                    )}
+                  />
+                  <span className="flex-1 truncate">{section.title}</span>
+                </button>
+              )}
+              {(!isCollapsible || isOpen) && (
+                <div id={isCollapsible ? sectionId : undefined}>
+                  {section.items.map((item) => (
+                    <SidebarItem
+                      key={item.href}
+                      item={item}
+                      pathname={pathname}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
 
       {/* User footer. */}
