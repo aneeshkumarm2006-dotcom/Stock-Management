@@ -1,22 +1,14 @@
 "use client";
 
-// Client-side wrapper around the dashboard content. Adjusts the left padding
-// when the sidebar collapses so the page reflows in lockstep with the rail.
+// Client-side wrapper around the dashboard content. Lattice design uses a
+// fixed 232px sidebar with no collapse, so we just offset the main column to
+// match (≥ md). On mobile the sidebar is hidden and the bottom MobileTabBar
+// takes over, so no left padding is applied.
 import * as React from "react";
-import { useUiStore } from "@/store/useUiStore";
-import { cn } from "@/lib/utils/cn";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const collapsed = useUiStore((s) => s.sidebarCollapsed);
   return (
-    <div
-      className={cn(
-        "flex min-h-screen flex-col transition-[padding] duration-150",
-        collapsed ? "md:pl-16" : "md:pl-64",
-      )}
-    >
-      {children}
-    </div>
+    <div className="flex min-h-screen flex-col md:pl-[232px]">{children}</div>
   );
 }
 

@@ -64,7 +64,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             $setOnInsert: {
               userId: user.id,
               defaultCurrency: 'USD',
-              theme: 'dark',
+              theme: 'light',
               numberFormat: '1,234.56',
             },
           },

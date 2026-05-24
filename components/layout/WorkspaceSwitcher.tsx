@@ -1,21 +1,22 @@
 "use client";
 
-// Top-of-sidebar switcher that toggles between the Stocks workspace and the
-// Property Management workspace (PDR §1.4). The active workspace is derived
-// from the URL — picking the other workspace just navigates to its landing
-// route, which causes the sidebar to re-render with that workspace's nav tree.
+// Top-of-sidebar workspace identity block (Lattice design). Renders the brand
+// glyph + product name + active-workspace subtitle. Clicking opens a dropdown
+// to switch between Stocks and Property Management — picking the other
+// workspace navigates to its landing route, which causes the sidebar to
+// re-render with that workspace's nav tree (PDR §1.4).
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronsUpDown, Check } from "lucide-react";
+import { ChevronDown, Check } from "lucide-react";
 import { WORKSPACES, getWorkspaceForPath, type Workspace } from "./nav";
 import { cn } from "@/lib/utils/cn";
+
+const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "Portfolio";
 
 export function WorkspaceSwitcher() {
   const pathname = usePathname();
   const activeId = getWorkspaceForPath(pathname);
-  // WORKSPACES is non-empty at compile time, so the fallback is just for the
-  // type checker under noUncheckedIndexedAccess — never observable at runtime.
   const active =
     WORKSPACES.find((w) => w.id === activeId) ?? (WORKSPACES[0] as Workspace);
 
@@ -40,7 +41,7 @@ export function WorkspaceSwitcher() {
     };
   }, [open]);
 
-  const ActiveIcon = active.icon;
+  const initial = APP_NAME.charAt(0).toUpperCase();
 
   return (
     <div ref={ref} className="relative">
@@ -49,26 +50,29 @@ export function WorkspaceSwitcher() {
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-2 rounded border border-border bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-high"
+        className="flex w-full items-center gap-[9px] px-1 py-0 text-left transition-colors"
       >
-        <span className="flex min-w-0 items-center gap-2.5">
-          <ActiveIcon className="h-4 w-4 shrink-0 text-primary" />
-          <span className="flex min-w-0 flex-col">
-            <span className="text-[10px] font-medium uppercase tracking-wider text-fg-muted">
-              Workspace
-            </span>
-            <span className="truncate text-sm font-semibold text-fg">
-              {active.label}
-            </span>
+        <span
+          aria-hidden
+          className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-primary-container text-[12px] font-bold tracking-tight text-primary-fg"
+        >
+          {initial}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate text-[13.5px] font-semibold tracking-tight text-fg">
+            {APP_NAME}
+          </span>
+          <span className="truncate text-[10.5px] font-medium text-fg-muted">
+            {active.label}
           </span>
         </span>
-        <ChevronsUpDown className="h-4 w-4 shrink-0 text-fg-muted" />
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
       </button>
 
       {open && (
         <div
           role="listbox"
-          className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-md border border-border bg-surface-high py-1 shadow-lg animate-fade-in"
+          className="absolute left-0 right-0 z-50 mt-2 overflow-hidden rounded-md border border-border bg-surface py-1 shadow-lg animate-fade-in"
         >
           {WORKSPACES.map((ws) => {
             const Icon = ws.icon;
@@ -81,13 +85,13 @@ export function WorkspaceSwitcher() {
                 aria-selected={isActive}
                 onClick={() => setOpen(false)}
                 className={cn(
-                  "flex items-center gap-2.5 px-3 py-2 text-sm transition-colors hover:bg-surface-highest",
-                  isActive ? "text-primary" : "text-fg",
+                  "flex items-center gap-2.5 px-3 py-2 text-[12.5px] transition-colors hover:bg-surface-lowest",
+                  isActive ? "text-primary font-semibold" : "text-fg",
                 )}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className="h-3.5 w-3.5 shrink-0" />
                 <span className="flex-1 truncate font-medium">{ws.label}</span>
-                {isActive && <Check className="h-4 w-4 shrink-0" />}
+                {isActive && <Check className="h-3.5 w-3.5 shrink-0" />}
               </Link>
             );
           })}

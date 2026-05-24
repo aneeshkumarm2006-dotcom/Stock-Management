@@ -5,16 +5,15 @@
 import { DisplayPreferences } from "@/components/settings/DisplayPreferences";
 import { DataManagement } from "@/components/settings/DataManagement";
 import { ApiStatusPanel } from "@/components/settings/ApiStatusPanel";
+import { PageHead } from "@/components/layout/PageHead";
 
 export default function SettingsPage() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-fg">Settings</h1>
-        <p className="mt-1 text-sm text-fg-muted">
-          Display preferences, import/export, and live API usage.
-        </p>
-      </div>
+    <div className="space-y-[18px]">
+      <PageHead
+        title="Settings"
+        subtitle="Display preferences, import / export, and live API usage"
+      />
 
       <DisplayPreferences />
       <DataManagement />

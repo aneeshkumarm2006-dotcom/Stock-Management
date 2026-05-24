@@ -1,11 +1,20 @@
 "use client";
 
-// Diversification metrics (PDR §5.6): unique sectors held, top position
-// weight %, and the concentration score (normalized Herfindahl–Hirschman
-// Index of position weights, 0 = diversified … 100 = single holding).
-// All three come straight from computePortfolio.diversification (PDR §9).
-import { Layers, Crown, Gauge } from "lucide-react";
+// Analytics top strip (PDR §5.6). Layout follows the design reference:
+//   1. Diversification score — Herfindahl-derived 0-100 with a progress bar
+//      and a qualitative band (Well diversified / Moderately concentrated /
+//      Highly concentrated).
+//   2. Invested — total cost basis, display currency.
+//   3. Value — current market value, with the total-return % as a subtitle
+//      so the gain/loss reads alongside the headline figure.
+// Every monetary figure is the display-currency aggregate from
+// computePortfolio (PDR §9). Concentration score uses normalized HHI of
+// position weights, so 0 = perfectly diversified, 100 = single holding.
+import { Gauge } from "lucide-react";
 import type { PortfolioSummary } from "@/lib/utils/portfolioMath";
+import { formatCurrency } from "@/lib/utils/formatCurrency";
+import { formatPercent } from "@/lib/utils/formatNumber";
+import { useSettingsStore } from "@/store/useSettingsStore";
 import { cn } from "@/lib/utils/cn";
 
 function bandFor(score: number): { label: string; color: string } {
@@ -15,31 +24,30 @@ function bandFor(score: number): { label: string; color: string } {
   return { label: "Highly concentrated", color: "text-loss" };
 }
 
-function Metric({
-  icon,
+function MoneyCard({
   label,
   value,
   sub,
   subClass,
 }: {
-  icon: React.ReactNode;
   label: string;
   value: string;
-  sub: string;
+  sub?: string;
   subClass?: string;
 }) {
   return (
     <div className="rounded-md border border-border bg-surface-high p-5">
-      <div className="mb-3 flex items-center gap-2 text-fg-muted">
-        {icon}
-        <p className="text-[11px] font-bold uppercase tracking-widest">
-          {label}
-        </p>
-      </div>
-      <p className="font-display text-3xl font-bold text-fg">{value}</p>
-      <p className={cn("mt-1 text-xs font-medium text-fg-muted", subClass)}>
-        {sub}
+      <p className="text-[11px] font-bold uppercase tracking-widest text-fg-muted">
+        {label}
       </p>
+      <p className="mt-3 font-display text-3xl font-bold text-fg tabular-nums">
+        {value}
+      </p>
+      {sub && (
+        <p className={cn("mt-1 text-xs font-medium text-fg-muted", subClass)}>
+          {sub}
+        </p>
+      )}
     </div>
   );
 }
@@ -49,47 +57,47 @@ export function DiversificationCards({
 }: {
   summary: PortfolioSummary;
 }) {
-  const { uniqueSectors, topWeightPct, concentrationScore } =
-    summary.diversification;
-  const band = bandFor(concentrationScore);
+  const numberFormat = useSettingsStore((s) => s.numberFormat);
+  const cur = summary.displayCurrency;
+  const money = (v: number) =>
+    formatCurrency(v, cur, { format: numberFormat });
+  const pct = (v: number) => formatPercent(v, { format: numberFormat });
+
+  // The reference shows a "score" that reads as good when high. Our internal
+  // concentrationScore is the inverse (HHI: 0 = diversified, 100 = single
+  // holding), so flip it for the display so the band reads naturally.
+  const concentration = summary.diversification.concentrationScore;
+  const diversificationScore = Math.round(100 - concentration);
+  const band = bandFor(concentration);
+
+  const pnlUp = summary.totalPnl >= 0;
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <Metric
-        icon={<Layers className="h-4 w-4" />}
-        label="Unique Sectors"
-        value={String(uniqueSectors)}
-        sub={`Across ${summary.positionCount} position${summary.positionCount === 1 ? "" : "s"}`}
-      />
-      <Metric
-        icon={<Crown className="h-4 w-4" />}
-        label="Top Position Weight"
-        value={`${topWeightPct.toFixed(1)}%`}
-        sub="Largest single holding"
-      />
+      {/* Diversification score */}
       <div className="rounded-md border border-border bg-surface-high p-5">
-        <div className="mb-3 flex items-center gap-2 text-fg-muted">
-          <Gauge className="h-4 w-4" />
+        <div className="flex items-center justify-between gap-2 text-fg-muted">
           <p className="text-[11px] font-bold uppercase tracking-widest">
-            Concentration Score
+            Diversification score
           </p>
+          <Gauge className="h-4 w-4" />
         </div>
-        <p className="font-display text-3xl font-bold text-fg">
-          {concentrationScore.toFixed(0)}
-          <span className="text-base font-medium text-fg-muted">/100</span>
+        <p className="mt-3 font-display text-3xl font-bold text-fg tabular-nums">
+          {diversificationScore}
+          <span className="text-base font-medium text-fg-muted"> / 100</span>
         </p>
         <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-surface-highest">
           <div
             className={cn(
               "h-full rounded-full",
-              concentrationScore < 33
+              concentration < 33
                 ? "bg-gain"
-                : concentrationScore < 66
+                : concentration < 66
                   ? "bg-primary"
                   : "bg-loss",
             )}
             style={{
-              width: `${Math.max(2, Math.min(100, concentrationScore))}%`,
+              width: `${Math.max(2, Math.min(100, diversificationScore))}%`,
             }}
           />
         </div>
@@ -97,6 +105,15 @@ export function DiversificationCards({
           {band.label}
         </p>
       </div>
+
+      <MoneyCard label="Invested" value={money(summary.totalInvested)} />
+
+      <MoneyCard
+        label="Value"
+        value={money(summary.totalValue)}
+        sub={`${pct(summary.totalPnlPct)} total return`}
+        subClass={pnlUp ? "text-gain" : "text-loss"}
+      />
     </div>
   );
 }

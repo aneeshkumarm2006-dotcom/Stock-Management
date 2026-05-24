@@ -1,15 +1,15 @@
 import type { Config } from "tailwindcss";
 
 /*
- * Theme: "Portfolio Neutral" design system, theme-switchable.
+ * Theme: "Lattice" design system, theme-switchable.
  *
- *  - Primary  #38BDF8 (sky)      - Secondary #94A3B8 (slate)
- *  - Tertiary #F1A02B (amber)    - Neutral   #72787C (outline seed)
+ *  - Primary  #2F56D9 (brand blue) - Secondary #52525B (text-secondary slate)
+ *  - Tertiary #A16207 (amber)      - Neutral   warm #FAFAF9 / #18181B
  *
  * Tokens are exposed as CSS variables (`--c-*` holding space-separated RGB
  * triples) so the same Tailwind utilities resolve to a different palette
- * when `html.dark` vs. `html.light` is set. See `app/globals.css` for the
- * concrete palettes.
+ * when `html.light` (default) vs. `html.dark` is set. See `app/globals.css`
+ * for the concrete palettes.
  *
  * Two complementary naming layers, same values:
  *  1. Semantic tokens (preferred in app code): bg, surface.*, border,
@@ -17,12 +17,11 @@ import type { Config } from "tailwindcss";
  *  2. Stitch tonal aliases (surface-container-*, on-surface*, outline-variant,
  *     tertiary, *-container) — kept so existing markup stays 1:1.
  *
- * Note: `primary` is the BRAND sky-blue used for links, active nav, primary
- * buttons, and focus rings. In dark mode it is bright on dark surfaces, so
- * text/icons ON primary use the dark `primary.fg`. In light mode the swatch
- * is darker (#0284C7) for AA contrast on white, and `primary.fg` flips to
- * white. Gain/loss stay green/red — never use the blue primary to indicate
- * a gain (mandatory P&L semantics).
+ * Note: `primary` is the BRAND blue used for links, active nav, primary
+ * buttons, and focus rings. In light mode (the design's native variant) it
+ * is #2F56D9 on white; in dark mode it is lifted (#718AF0) for contrast and
+ * `primary.fg` flips to deep navy. Gain/loss stay green/red — never use the
+ * blue primary to indicate a gain (mandatory P&L semantics).
  */
 const rgb = (token: string) => `rgb(var(--c-${token}) / <alpha-value>)`;
 
@@ -100,18 +99,34 @@ const config: Config = {
         "on-primary": rgb("primary-fg"),
       },
       fontFamily: {
-        display: ["var(--font-display)", "Hanken Grotesk", "sans-serif"],
-        headline: ["var(--font-display)", "Hanken Grotesk", "sans-serif"],
-        sans: ["var(--font-sans)", "Inter", "ui-sans-serif", "system-ui"],
-        body: ["var(--font-sans)", "Inter", "ui-sans-serif", "system-ui"],
+        display: ["var(--font-display)", "Onest", "Geist", "sans-serif"],
+        headline: ["var(--font-display)", "Onest", "Geist", "sans-serif"],
+        sans: [
+          "var(--font-sans)",
+          "Onest",
+          "Geist",
+          "Inter",
+          "ui-sans-serif",
+          "system-ui",
+        ],
+        body: [
+          "var(--font-sans)",
+          "Onest",
+          "Geist",
+          "Inter",
+          "ui-sans-serif",
+          "system-ui",
+        ],
         mono: [
           "var(--font-mono)",
+          "Geist Mono",
           "JetBrains Mono",
           "ui-monospace",
           "monospace",
         ],
         label: [
           "var(--font-mono)",
+          "Geist Mono",
           "JetBrains Mono",
           "ui-monospace",
           "monospace",
@@ -119,10 +134,10 @@ const config: Config = {
       },
       borderRadius: {
         sm: "0.25rem",
-        DEFAULT: "0.5rem",
-        md: "0.75rem",
-        lg: "1rem",
-        xl: "1.5rem",
+        DEFAULT: "0.375rem",
+        md: "0.5rem",
+        lg: "0.75rem",
+        xl: "1rem",
         full: "9999px",
       },
       keyframes: {

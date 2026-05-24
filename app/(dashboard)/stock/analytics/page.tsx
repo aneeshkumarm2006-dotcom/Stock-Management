@@ -21,6 +21,7 @@ import {
 } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { COUNTRY_LABEL, CURRENCY_LABEL } from "@/components/analytics/chartTheme";
+import { PageHead } from "@/components/layout/PageHead";
 
 function AnalyticsError({
   message,
@@ -56,14 +57,11 @@ export default function AnalyticsPage() {
   } = useDashboardData();
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-2xl font-bold text-fg">Analytics</h1>
-        <p className="mt-1 text-sm text-fg-muted">
-          Allocation, diversification and performance breakdown — all values in{" "}
-          {displayCurrency}.
-        </p>
-      </div>
+    <div className="space-y-[18px]">
+      <PageHead
+        title="Analytics"
+        subtitle={`Allocation, diversification, and performance breakdown · ${displayCurrency}`}
+      />
 
       {positionsError ? (
         <AnalyticsError

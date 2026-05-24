@@ -1,22 +1,29 @@
 import type { Metadata } from "next";
-import { Inter, Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Onest, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers/Providers";
 
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-sans",
-});
-
-const hankenGrotesk = Hanken_Grotesk({
+// Onest serves both sans body copy and display headings — same approach as the
+// Lattice design bundle (a single warm humanist sans across the whole shell).
+const onest = Onest({
   subsets: ["latin"],
   display: "swap",
   weight: ["400", "500", "600", "700"],
+  variable: "--font-sans",
+});
+
+const onestDisplay = Onest({
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["500", "600", "700"],
   variable: "--font-display",
 });
 
-const jetbrainsMono = JetBrains_Mono({
+// Geist Mono (the design's authored monospace) isn't shipped by Next 14.2's
+// next/font/google; JetBrains Mono is a close substitute and the Tailwind
+// font-mono stack still lists "Geist Mono" first so locally-installed copies
+// win when available.
+const monoFont = JetBrains_Mono({
   subsets: ["latin"],
   display: "swap",
   weight: ["400", "500", "600"],
@@ -29,14 +36,15 @@ export const metadata: Metadata = {
     "Multi-user stock portfolio tracker for US (NYSE/NASDAQ) and Canadian (TSX) markets.",
 };
 
-// Runs before React hydrates so a saved "light" preference doesn't flash dark
-// on the first paint. Reads the persisted Settings store (see
-// store/useSettingsStore.ts, key `spm-settings`) and swaps the `dark`/`light`
-// class on <html>. Default stays dark when nothing is stored or parsing fails.
+// Runs before React hydrates so a saved preference doesn't flash the wrong
+// theme on the first paint. Reads the persisted Settings store (see
+// store/useSettingsStore.ts, key `spm-settings`) and swaps the `light`/`dark`
+// class on <html>. Default is light to match the Lattice design's native
+// variant; users can still flip to dark via Settings.
 const themeBootScript = `(() => {
   try {
     var raw = localStorage.getItem('spm-settings');
-    var theme = 'dark';
+    var theme = 'light';
     if (raw) {
       var parsed = JSON.parse(raw);
       var stored = parsed && parsed.state && parsed.state.theme;
@@ -56,7 +64,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${inter.variable} ${hankenGrotesk.variable} ${jetbrainsMono.variable}`}
+      className={`light ${onest.variable} ${onestDisplay.variable} ${monoFont.variable}`}
       suppressHydrationWarning
     >
       <head>

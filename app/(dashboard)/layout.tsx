@@ -21,7 +21,7 @@ export default function DashboardLayout({
       <Sidebar />
       <DashboardShell>
         <TopBar />
-        <main className="flex-1 px-4 pb-24 pt-6 md:px-6 md:pb-8">
+        <main className="flex-1 px-4 pb-24 pt-[22px] md:px-[28px] md:pb-[28px]">
           {children}
         </main>
       </DashboardShell>

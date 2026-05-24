@@ -3,111 +3,116 @@
 @tailwind utilities;
 
 /*
- * Portfolio theme tokens. Two palettes share the same semantic names so every
- * Tailwind utility (defined in tailwind.config.ts as `rgb(var(--c-*) /
- * <alpha-value>)`) re-resolves when `<html>` switches between `.dark` and
- * `.light`. Values are space-separated RGB triples to support Tailwind's
- * `<alpha-value>` opacity modifiers (e.g. `border-border/40`).
+ * Portfolio theme tokens — values are space-separated RGB triples so every
+ * Tailwind utility defined in tailwind.config.ts as `rgb(var(--c-*) /
+ * <alpha-value>)` re-resolves when `<html>` switches between `.light` and
+ * `.dark`.
  *
- * Refs: PDR §12, tokens.md, useSettings.ts (theme class is set on <html>).
+ * Palette is sourced from the Lattice property-management design bundle
+ * (warm neutrals, brand blue #2f56d9, semantic green/red/amber). Light is
+ * the authored variant; dark is a harmonized counterpart sharing accents.
  */
 @layer base {
   :root,
+  html.light {
+    color-scheme: light;
+
+    /* Warm neutrals (#fafaf9 base, #ffffff surfaces, #f7f7f5 sunken). */
+    --c-bg: 250 250 249;
+    --c-surface: 255 255 255;
+    --c-surface-high: 251 251 249;
+    --c-surface-highest: 241 241 238;
+    --c-surface-low: 247 247 245;
+    --c-surface-lowest: 244 244 241;
+
+    --c-border: 231 231 227;
+    --c-outline: 216 216 211;
+
+    --c-fg: 24 24 27;
+    --c-fg-muted: 139 139 143;
+
+    /* Brand blue #2f56d9 with darker hover and soft container. */
+    --c-primary: 47 86 217;
+    --c-primary-container: 36 71 184;
+    --c-primary-fg: 255 255 255;
+
+    --c-secondary: 82 82 91;
+    --c-secondary-container: 236 240 254;
+
+    --c-tertiary: 161 98 7;
+    --c-tertiary-container: 253 244 216;
+    --c-tertiary-fg: 24 24 27;
+
+    /* P&L semantics — never use primary blue for gain/loss. */
+    --c-gain: 21 128 61;
+    --c-gain-bright: 22 199 132;
+
+    --c-loss: 185 28 28;
+    --c-loss-bright: 239 68 68;
+
+    --c-heat-neg: 254 202 202;
+    --c-heat-mid: 241 241 238;
+    --c-heat-pos: 187 247 208;
+
+    --c-error: 185 28 28;
+    --c-error-container: 251 234 234;
+    --c-error-fg: 153 27 27;
+
+    --c-chart-grid: 231 231 227;
+    --c-chart-cursor: 24 24 27;
+    --c-chart-cursor-alpha: 0.04;
+    --c-scrollbar-track: 247 247 245;
+    --c-scrollbar-thumb: 216 216 211;
+  }
+
   html.dark {
     color-scheme: dark;
 
-    --c-bg: 12 13 16;
-    --c-surface: 22 24 29;
-    --c-surface-high: 29 31 38;
-    --c-surface-highest: 36 39 47;
-    --c-surface-low: 16 18 22;
-    --c-surface-lowest: 0 0 0;
+    /* Warm-charcoal counterpart to the light palette. */
+    --c-bg: 15 15 16;
+    --c-surface: 22 22 23;
+    --c-surface-high: 28 28 30;
+    --c-surface-highest: 35 35 37;
+    --c-surface-low: 19 19 20;
+    --c-surface-lowest: 8 8 10;
 
-    --c-border: 43 46 55;
-    --c-outline: 114 120 124;
+    --c-border: 42 42 44;
+    --c-outline: 70 70 74;
 
-    --c-fg: 230 232 236;
-    --c-fg-muted: 148 163 184;
+    --c-fg: 250 250 249;
+    --c-fg-muted: 139 139 143;
 
-    --c-primary: 56 189 248;
-    --c-primary-container: 14 165 233;
-    --c-primary-fg: 8 33 49;
+    /* Lifted brand blue for dark backgrounds. */
+    --c-primary: 113 138 240;
+    --c-primary-container: 47 86 217;
+    --c-primary-fg: 8 17 30;
 
-    --c-secondary: 148 163 184;
-    --c-secondary-container: 42 51 64;
+    --c-secondary: 161 161 170;
+    --c-secondary-container: 29 37 72;
 
-    --c-tertiary: 241 160 43;
+    --c-tertiary: 217 119 6;
     --c-tertiary-container: 122 78 18;
-    --c-tertiary-fg: 12 13 16;
+    --c-tertiary-fg: 250 250 249;
 
     --c-gain: 22 199 132;
     --c-gain-bright: 101 253 181;
 
-    --c-loss: 239 68 68;
+    --c-loss: 248 113 113;
     --c-loss-bright: 250 116 111;
 
     --c-heat-neg: 127 29 29;
-    --c-heat-mid: 31 35 43;
+    --c-heat-mid: 35 35 37;
     --c-heat-pos: 20 83 45;
 
-    --c-error: 250 116 111;
+    --c-error: 248 113 113;
     --c-error-container: 135 31 33;
     --c-error-fg: 255 153 147;
 
-    /* Chart / scrollbar colors consumed by inline SVG styles. */
-    --c-chart-grid: 42 49 66;
-    --c-chart-cursor: 255 255 255;
-    --c-chart-cursor-alpha: 0.03;
-    --c-scrollbar-track: 12 13 16;
-    --c-scrollbar-thumb: 43 46 55;
-  }
-
-  html.light {
-    color-scheme: light;
-
-    --c-bg: 248 250 252;
-    --c-surface: 255 255 255;
-    --c-surface-high: 255 255 255;
-    --c-surface-highest: 241 245 249;
-    --c-surface-low: 241 245 249;
-    --c-surface-lowest: 226 232 240;
-
-    --c-border: 203 213 225;
-    --c-outline: 100 116 139;
-
-    --c-fg: 15 23 42;
-    --c-fg-muted: 71 85 105;
-
-    --c-primary: 2 132 199;
-    --c-primary-container: 14 165 233;
-    --c-primary-fg: 255 255 255;
-
-    --c-secondary: 71 85 105;
-    --c-secondary-container: 226 232 240;
-
-    --c-tertiary: 180 83 9;
-    --c-tertiary-container: 253 230 138;
-    --c-tertiary-fg: 15 23 42;
-
-    --c-gain: 21 128 61;
-    --c-gain-bright: 22 199 132;
-
-    --c-loss: 220 38 38;
-    --c-loss-bright: 239 68 68;
-
-    --c-heat-neg: 254 202 202;
-    --c-heat-mid: 241 245 249;
-    --c-heat-pos: 187 247 208;
-
-    --c-error: 220 38 38;
-    --c-error-container: 254 226 226;
-    --c-error-fg: 153 27 27;
-
-    --c-chart-grid: 203 213 225;
-    --c-chart-cursor: 15 23 42;
+    --c-chart-grid: 42 42 44;
+    --c-chart-cursor: 250 250 249;
     --c-chart-cursor-alpha: 0.04;
-    --c-scrollbar-track: 241 245 249;
-    --c-scrollbar-thumb: 203 213 225;
+    --c-scrollbar-track: 15 15 16;
+    --c-scrollbar-thumb: 42 42 44;
   }
 
   html {
@@ -116,17 +121,22 @@
 
   body {
     @apply bg-bg text-fg;
-    font-family: var(--font-sans), Inter, ui-sans-serif, system-ui, sans-serif;
+    font-family: var(--font-sans), "Onest", "Geist", Inter, ui-sans-serif,
+      system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+    letter-spacing: -0.005em;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11", "ss01";
   }
 
   ::selection {
-    background-color: rgb(var(--c-primary-container));
-    color: rgb(var(--c-primary-fg));
+    background-color: rgb(var(--c-secondary-container));
+    color: rgb(var(--c-primary));
   }
 
-  /* Thin terminal-style scrollbars (matches Stitch references). */
+  /* Thin scrollbars matching the design. */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

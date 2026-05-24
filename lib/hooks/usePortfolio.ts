@@ -20,6 +20,7 @@ import { fetchJson } from "@/lib/utils/apiFetch";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import {
   computePortfolio,
+  type PortfolioSummary,
   type PositionInput,
   type PositionMetrics,
   type Exchange,
@@ -100,6 +101,8 @@ function deriveCountry(p: ApiPosition): Country {
 export interface PortfolioData {
   rows: PortfolioRow[];
   stats: PortfolioStats;
+  /** Currency-aware portfolio aggregates, or null until rows compute. */
+  summary: PortfolioSummary | null;
   /** Distinct sectors present (for the filter dropdown). */
   sectors: string[];
   displayCurrency: Currency;
@@ -147,7 +150,7 @@ export function usePortfolio(): PortfolioData {
   const isFetchingQuotes = quoteResults.some((q) => q.isLoading);
   const hasStaleQuotes = quoteResults.some((q) => q.data?.stale === true);
 
-  const { rows, stats, sectors } = useMemo(() => {
+  const { rows, stats, sectors, summary } = useMemo(() => {
     if (positions.length === 0) {
       return {
         rows: [] as PortfolioRow[],
@@ -158,6 +161,7 @@ export function usePortfolio(): PortfolioData {
           largestWeight: null,
         } as PortfolioStats,
         sectors: [] as string[],
+        summary: null as PortfolioSummary | null,
       };
     }
 
@@ -242,12 +246,13 @@ export function usePortfolio(): PortfolioData {
       new Set(built.map((r) => r.sector?.trim()).filter(Boolean) as string[]),
     ).sort();
 
-    return { rows: built, stats: statsValue, sectors: sectorList };
+    return { rows: built, stats: statsValue, sectors: sectorList, summary: computed };
   }, [positions, quoteByKey, displayCurrency, usdToCad]);
 
   return {
     rows,
     stats,
+    summary,
     sectors,
     displayCurrency,
     hasPositions: positions.length > 0,

@@ -4,17 +4,15 @@
 
 import { EmailsSubtabs } from "@/components/pm/EmailsSubtabs";
 import { EmailThreadsListView } from "@/components/pm/EmailThreadsListView";
+import { PageHead } from "@/components/layout/PageHead";
 
 export default function EmailsThreadsPage() {
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="font-display text-2xl font-bold text-fg">Email threads</h1>
-        <p className="text-sm text-fg-muted">
-          Conversations grouped by subject + participants ([G-S-42]). Inbound
-          replies arrive via the /api/pm/emails/ingest stub.
-        </p>
-      </header>
+    <div className="space-y-[18px]">
+      <PageHead
+        title="Email threads"
+        subtitle="Conversations grouped by subject + participants ([G-S-42]). Inbound replies arrive via the /api/pm/emails/ingest stub."
+      />
       <EmailsSubtabs active="threads" />
       <EmailThreadsListView />
     </div>

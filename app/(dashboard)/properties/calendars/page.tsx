@@ -21,6 +21,7 @@ import { Plus, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
+import { PageHead } from "@/components/layout/PageHead";
 import {
   CalendarEventModal,
   type CalendarEventInitial,
@@ -392,35 +393,32 @@ function CalendarsPageInner() {
         : fmtMonth(anchor);
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-fg">Calendars</h1>
-          <p className="text-sm text-fg-muted">
-            Community calendar — single-property scope per event (BR-CC-6).
-            Auto-publishes to Resident Center on save (BR-CC-10).
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportIcs}>
-            <Download className="mr-1 h-4 w-4" /> .ics export
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditing(null);
-              setCreatePreset({
-                propertyId: selectedPropertyIds[0] ?? properties[0]?.id,
-                start: new Date(),
-              });
-              setModalOpen(true);
-            }}
-            disabled={properties.length === 0}
-          >
-            <Plus className="mr-1 h-4 w-4" /> Add event
-          </Button>
-        </div>
-      </header>
+    <div className="space-y-[18px]">
+      <PageHead
+        title="Calendars"
+        subtitle="Community calendar — single-property scope per event (BR-CC-6). Auto-publishes to Resident Center on save (BR-CC-10)."
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={exportIcs}>
+              <Download className="h-[13px] w-[13px]" /> .ics export
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditing(null);
+                setCreatePreset({
+                  propertyId: selectedPropertyIds[0] ?? properties[0]?.id,
+                  start: new Date(),
+                });
+                setModalOpen(true);
+              }}
+              disabled={properties.length === 0}
+            >
+              <Plus className="h-[13px] w-[13px]" /> Add event
+            </Button>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-3">

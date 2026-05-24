@@ -1,5 +1,6 @@
-// Card surface — one tonal step lighter than the canvas + a 1px border, no
-// drop shadow (tokens.md §Elevation). Default radius is the card radius (md).
+// Card surface — Lattice design: white-on-canvas, 8px radius, 1px border, no
+// drop shadow. Card head has a hairline bottom border, the title is 13.5px /
+// semibold / sentence case (NOT uppercase). Body padding is 16px.
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
 
@@ -10,7 +11,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-md border border-border bg-surface-high",
+        "overflow-hidden rounded-lg border border-border bg-surface",
         className,
       )}
       {...props}
@@ -25,7 +26,7 @@ export function CardHeader({
   return (
     <div
       className={cn(
-        "flex items-center justify-between border-b border-border p-5",
+        "flex items-center justify-between gap-3 border-b border-border px-4 py-3",
         className,
       )}
       {...props}
@@ -40,7 +41,7 @@ export function CardTitle({
   return (
     <h3
       className={cn(
-        "font-display text-sm font-bold uppercase tracking-wider text-fg",
+        "text-[13.5px] font-semibold tracking-[-0.01em] text-fg",
         className,
       )}
       {...props}
@@ -52,5 +53,5 @@ export function CardContent({
   className,
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("p-5", className)} {...props} />;
+  return <div className={cn("p-4", className)} {...props} />;
 }

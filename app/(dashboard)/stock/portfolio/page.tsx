@@ -22,12 +22,15 @@ import { PortfolioStatCards } from "@/components/portfolio/PortfolioStatCards";
 import {
   PortfolioFilters,
   DEFAULT_FILTER,
+  DEFAULT_OPTIONAL_COLUMNS,
   type HoldingsFilter,
+  type OptionalColumn,
 } from "@/components/portfolio/PortfolioFilters";
 import { HoldingsTable } from "@/components/portfolio/HoldingsTable";
 import { DeletePositionDialog } from "@/components/portfolio/DeletePositionDialog";
 import { AddPositionPanel } from "@/components/panels/AddPositionPanel";
 import { EditPositionPanel } from "@/components/panels/EditPositionPanel";
+import { PageHead } from "@/components/layout/PageHead";
 
 function PortfolioError({
   message,
@@ -53,7 +56,7 @@ function PortfolioError({
 export default function PortfolioPage() {
   const {
     rows,
-    stats,
+    summary,
     sectors,
     displayCurrency,
     hasPositions,
@@ -66,6 +69,8 @@ export default function PortfolioPage() {
 
   const openAddPanel = useUiStore((s) => s.openAddPanel);
   const [filter, setFilter] = useState<HoldingsFilter>(DEFAULT_FILTER);
+  const [optionalColumns, setOptionalColumns] =
+    useState<Record<OptionalColumn, boolean>>(DEFAULT_OPTIONAL_COLUMNS);
   const [toDelete, setToDelete] = useState<PortfolioRow | null>(null);
 
   const filtered = useMemo(() => {
@@ -88,23 +93,37 @@ export default function PortfolioPage() {
     });
   }, [rows, filter]);
 
+  // Per-exchange counts for the filter pills — derived from the unfiltered
+  // row set so the pills always reflect the user's true distribution.
+  const exchangeCounts = useMemo(() => {
+    const counts = { NYSE: 0, NASDAQ: 0, TSX: 0 } as Record<
+      "NYSE" | "NASDAQ" | "TSX",
+      number
+    >;
+    for (const r of rows) counts[r.exchange] += 1;
+    return counts;
+  }, [rows]);
+
+  const distinctExchanges = (["NASDAQ", "NYSE", "TSX"] as const).filter(
+    (id) => exchangeCounts[id] > 0,
+  ).length;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <p className="mb-1 text-[11px] font-bold uppercase tracking-widest text-fg-muted">
-            Terminal / Portfolio
-          </p>
-          <h1 className="font-display text-2xl font-bold text-fg">
-            Holdings Management
-          </h1>
-        </div>
-        <Button onClick={() => openAddPanel()}>
-          <Plus className="h-4 w-4" />
-          Add Position
-        </Button>
-      </div>
+    <div className="space-y-[18px]">
+      <PageHead
+        title="Portfolio"
+        subtitle={
+          rows.length > 0
+            ? `${rows.length} active ${rows.length === 1 ? "holding" : "holdings"}${distinctExchanges > 0 ? ` · across ${distinctExchanges} ${distinctExchanges === 1 ? "exchange" : "exchanges"}` : ""}`
+            : "Filter, sort, edit, and value every position in your portfolio"
+        }
+        actions={
+          <Button onClick={() => openAddPanel()}>
+            <Plus className="h-[13px] w-[13px]" />
+            Add holding
+          </Button>
+        }
+      />
 
       {positionsError ? (
         <PortfolioError
@@ -116,7 +135,7 @@ export default function PortfolioPage() {
           <StatStripSkeleton count={4} />
           <TableSkeleton rows={6} columns={8} />
         </>
-      ) : !hasPositions ? (
+      ) : !hasPositions || !summary ? (
         <EmptyPortfolio />
       ) : (
         <>
@@ -133,21 +152,22 @@ export default function PortfolioPage() {
             </p>
           )}
 
-          <PortfolioStatCards
-            stats={stats}
-            displayCurrency={displayCurrency}
-          />
+          <PortfolioStatCards summary={summary} />
 
           <PortfolioFilters
             filter={filter}
             onChange={setFilter}
             sectors={sectors}
+            exchangeCounts={exchangeCounts}
+            optionalColumns={optionalColumns}
+            onOptionalColumnsChange={setOptionalColumns}
           />
 
           <HoldingsTable
             rows={filtered}
             totalRowCount={rows.length}
             displayCurrency={displayCurrency}
+            optionalColumns={optionalColumns}
             onDelete={setToDelete}
           />
         </>

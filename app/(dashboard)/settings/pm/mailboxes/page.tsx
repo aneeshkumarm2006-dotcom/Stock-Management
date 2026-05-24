@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { PageHead } from "@/components/layout/PageHead";
 
 interface OverrideRow {
   propertyId: string;
@@ -108,16 +109,11 @@ export default function MailboxesSettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="font-display text-2xl font-bold text-fg">
-          Sender mailboxes
-        </h1>
-        <p className="text-sm text-fg-muted">
-          Set the From address used by Compose Email (BR-CC-5). Per-property
-          overrides apply when an email is scoped to that property.
-        </p>
-      </header>
+    <div className="space-y-[18px]">
+      <PageHead
+        title="Sender mailboxes"
+        subtitle="Set the From address used by Compose Email (BR-CC-5). Per-property overrides apply when an email is scoped to that property."
+      />
 
       <Card>
         <CardHeader>

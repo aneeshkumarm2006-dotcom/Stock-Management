@@ -1,130 +1,147 @@
 "use client";
 
-// Fixed desktop sidebar (≥ md). Renders the nav tree for the active workspace
-// (PDR §1.4, §4.1): Stocks gets a flat list; Property Management gets nested
-// Rentals/Leasing groups plus disabled future modules.
-// Collapse: when collapsed, the sidebar shrinks to a 64px icon rail. The
-// preference is persisted per-user via useUiStore (DECISIONS.md [G-B-11]).
+// Fixed desktop sidebar (≥ md). Lattice design layout: 232px-wide rail with
+// a brand block (workspace switcher), a static "Quick find" affordance, the
+// workspace-specific nav tree grouped by section, and a user footer.
+// The active workspace is derived from the URL (PDR §1.4, §4.1).
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut } from "next-auth/react";
-import {
-  HelpCircle,
-  LogOut,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { useSession, signOut } from "next-auth/react";
+import { MoreHorizontal } from "lucide-react";
 import {
   getNavForWorkspace,
   getWorkspaceForPath,
-  isActiveGroup,
   isActivePath,
   isNavGroup,
-  type NavGroup,
   type NavItem,
+  type NavNode,
 } from "./nav";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
+import { Dropdown, DropdownItem } from "@/components/ui/dropdown";
 import { cn } from "@/lib/utils/cn";
-import { useUiStore } from "@/store/useUiStore";
+
+/**
+ * Splits the flat nav list (a mix of leaves and groups) into the design's
+ * grouped layout: top-level leaves become an unnamed group at the top, each
+ * `NavGroup` becomes a titled section, and any trailing leaves (e.g. a final
+ * "Settings") become their own untitled tail group.
+ */
+function sectionize(
+  nodes: readonly NavNode[],
+): Array<{ title: string | null; items: NavItem[] }> {
+  const sections: Array<{ title: string | null; items: NavItem[] }> = [];
+  let leading: NavItem[] = [];
+  for (const node of nodes) {
+    if (isNavGroup(node)) {
+      if (leading.length) {
+        sections.push({ title: null, items: leading });
+        leading = [];
+      }
+      sections.push({ title: node.label, items: node.children });
+    } else {
+      leading.push(node);
+    }
+  }
+  if (leading.length) sections.push({ title: null, items: leading });
+  return sections;
+}
 
 export function Sidebar() {
   const pathname = usePathname();
   const workspace = getWorkspaceForPath(pathname);
   const nav = getNavForWorkspace(workspace);
-  const collapsed = useUiStore((s) => s.sidebarCollapsed);
-  const toggle = useUiStore((s) => s.toggleSidebarCollapsed);
+  const sections = React.useMemo(() => sectionize(nav), [nav]);
+  const { data: session } = useSession();
+  const user = session?.user;
+  const userInitial = (user?.name ?? user?.email ?? "?").charAt(0).toUpperCase();
 
   return (
-    <aside
-      data-collapsed={collapsed || undefined}
-      className={cn(
-        "fixed left-0 top-0 z-50 hidden h-screen flex-col border-r border-border bg-surface-low py-6 transition-[width] duration-150 md:flex",
-        collapsed ? "w-16 px-2" : "w-64 px-4",
-      )}
-    >
-      <div className="mb-4 flex items-center gap-2">
-        {!collapsed && (
-          <div className="min-w-0 flex-1">
-            <WorkspaceSwitcher />
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={toggle}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className={cn(
-            "flex h-8 w-8 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-high hover:text-fg",
-            collapsed && "mx-auto",
-          )}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-        </button>
+    <aside className="fixed left-0 top-0 z-50 hidden h-screen w-[232px] flex-col border-r border-border bg-surface-high md:flex">
+      {/* Brand block — clicking opens the workspace switcher. */}
+      <div className="border-b border-border px-[14px] pb-3 pt-[14px]">
+        <WorkspaceSwitcher />
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto pr-1">
-        {nav.map((node) =>
-          isNavGroup(node) ? (
-            <SidebarGroup
-              key={node.id}
-              group={node}
-              pathname={pathname}
-              collapsed={collapsed}
-            />
-          ) : (
-            <SidebarLeaf
-              key={node.href}
-              item={node}
-              pathname={pathname}
-              collapsed={collapsed}
-            />
-          ),
-        )}
+      {/* Grouped nav. */}
+      <nav className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
+        {sections.map((section, i) => (
+          <div key={section.title ?? `untitled-${i}`} className="mt-[10px]">
+            {section.title && (
+              <div className="px-[10px] pb-1 pt-[6px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-fg-muted">
+                {section.title}
+              </div>
+            )}
+            {section.items.map((item) => (
+              <SidebarItem
+                key={item.href}
+                item={item}
+                pathname={pathname}
+              />
+            ))}
+          </div>
+        ))}
       </nav>
 
-      <div className="mt-auto space-y-1 border-t border-border pt-4">
-        <Link
-          href="/settings"
-          title="Support"
-          className={cn(
-            "flex items-center gap-3 rounded text-sm font-medium text-fg-muted transition-colors hover:bg-surface-high hover:text-fg",
-            collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5",
-          )}
+      {/* User footer. */}
+      <div className="flex items-center gap-[9px] border-t border-border px-3 py-[10px]">
+        <Dropdown
+          align="start"
+          trigger={
+            <span className="grid h-[26px] w-[26px] place-items-center overflow-hidden rounded-full bg-gradient-to-br from-tertiary to-tertiary-container text-[11px] font-semibold text-tertiary-fg">
+              {user?.image ? (
+                // eslint-disable-next-line @next/next/no-img-element -- external Google avatar; next/image not worth the loader config here
+                <img
+                  src={user.image}
+                  alt={user?.name ?? "Account"}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                userInitial
+              )}
+            </span>
+          }
         >
-          <HelpCircle className="h-5 w-5" />
-          {!collapsed && <span>Support</span>}
-        </Link>
-        <button
-          type="button"
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          title="Logout"
-          className={cn(
-            "flex w-full items-center gap-3 rounded text-sm font-medium text-error transition-colors hover:bg-surface-high",
-            collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5",
+          <div className="border-b border-border px-3 py-2">
+            <p className="truncate text-sm font-semibold text-fg">
+              {user?.name ?? "Account"}
+            </p>
+            {user?.email && (
+              <p className="truncate text-xs text-fg-muted">{user.email}</p>
+            )}
+          </div>
+          <Link href="/settings">
+            <DropdownItem>Settings</DropdownItem>
+          </Link>
+          <DropdownItem
+            className="text-error hover:text-error"
+            onClick={() => signOut({ callbackUrl: "/login" })}
+          >
+            Logout
+          </DropdownItem>
+        </Dropdown>
+        <div className="min-w-0 flex-1 leading-[1.25]">
+          <div className="truncate text-[12px] font-semibold text-fg">
+            {user?.name ?? "Account"}
+          </div>
+          {user?.email && (
+            <div className="truncate text-[10.5px] text-fg-muted">
+              {user.email}
+            </div>
           )}
-        >
-          <LogOut className="h-5 w-5" />
-          {!collapsed && <span>Logout</span>}
-        </button>
+        </div>
+        <MoreHorizontal className="h-3.5 w-3.5 text-fg-muted" />
       </div>
     </aside>
   );
 }
 
-function SidebarLeaf({
+function SidebarItem({
   item,
   pathname,
-  collapsed,
 }: {
   item: NavItem;
   pathname: string;
-  collapsed: boolean;
 }) {
   const Icon = item.icon;
   const active = !item.disabled && isActivePath(pathname, item.href);
@@ -133,14 +150,11 @@ function SidebarLeaf({
     return (
       <span
         aria-disabled="true"
-        title={collapsed ? `${item.label} (coming soon)` : "Coming soon"}
-        className={cn(
-          "flex cursor-not-allowed items-center gap-3 rounded text-sm font-medium text-fg-muted opacity-50",
-          collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5",
-        )}
+        title="Coming soon"
+        className="my-[1px] flex cursor-not-allowed items-center gap-[9px] whitespace-nowrap rounded-[5px] px-[10px] py-[5px] text-[12.5px] font-medium text-fg-muted opacity-50"
       >
-        <Icon className="h-5 w-5" />
-        {!collapsed && <span>{item.label}</span>}
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <span>{item.label}</span>
       </span>
     );
   }
@@ -149,108 +163,16 @@ function SidebarLeaf({
     <Link
       href={item.href}
       aria-current={active ? "page" : undefined}
-      title={collapsed ? item.label : undefined}
       className={cn(
-        "flex items-center gap-3 rounded text-sm font-medium transition-colors",
-        collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5",
+        "my-[1px] flex items-center gap-[9px] whitespace-nowrap rounded-[5px] px-[10px] py-[5px] text-[12.5px] font-medium transition-colors",
         active
-          ? "border-r-2 border-primary bg-secondary-container/30 font-bold text-primary"
-          : "text-fg-muted hover:bg-surface-high hover:text-fg",
+          ? "bg-secondary-container font-semibold text-primary"
+          : "text-fg-muted hover:bg-surface-lowest hover:text-fg",
       )}
     >
-      <Icon className="h-5 w-5" />
-      {!collapsed && <span>{item.label}</span>}
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span className="flex-1 truncate">{item.label}</span>
     </Link>
   );
 }
 
-function SidebarGroup({
-  group,
-  pathname,
-  collapsed,
-}: {
-  group: NavGroup;
-  pathname: string;
-  collapsed: boolean;
-}) {
-  const activeChild = isActiveGroup(pathname, group);
-  // Groups auto-open when one of their children is active; the user can still
-  // collapse them, but if they navigate into a child it re-opens.
-  const [open, setOpen] = React.useState(activeChild);
-  React.useEffect(() => {
-    if (activeChild) setOpen(true);
-  }, [activeChild]);
-
-  const Icon = group.icon;
-
-  // In collapsed mode, render the group as a compact icon that links to the
-  // first child instead of expanding inline (saves vertical space).
-  if (collapsed) {
-    const firstChild = group.children[0];
-    if (!firstChild) return null;
-    const ChildIcon = group.icon;
-    return (
-      <Link
-        href={firstChild.href}
-        title={group.label}
-        className={cn(
-          "flex items-center justify-center rounded px-2 py-2.5 text-sm transition-colors",
-          activeChild
-            ? "text-primary"
-            : "text-fg-muted hover:bg-surface-high hover:text-fg",
-        )}
-      >
-        <ChildIcon className="h-5 w-5" />
-      </Link>
-    );
-  }
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className={cn(
-          "flex w-full items-center gap-3 rounded px-3 py-2.5 text-sm font-medium transition-colors",
-          activeChild
-            ? "text-fg"
-            : "text-fg-muted hover:bg-surface-high hover:text-fg",
-        )}
-      >
-        <Icon className="h-5 w-5" />
-        <span className="flex-1 text-left">{group.label}</span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 transition-transform",
-            open ? "rotate-0" : "-rotate-90",
-          )}
-        />
-      </button>
-      {open && (
-        <div className="ml-3 mt-1 space-y-0.5 border-l border-border pl-3">
-          {group.children.map((child) => {
-            const ChildIcon = child.icon;
-            const active = isActivePath(pathname, child.href);
-            return (
-              <Link
-                key={child.href}
-                href={child.href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-2.5 rounded px-2.5 py-2 text-[13px] transition-colors",
-                  active
-                    ? "bg-secondary-container/30 font-semibold text-primary"
-                    : "text-fg-muted hover:bg-surface-high hover:text-fg",
-                )}
-              >
-                <ChildIcon className="h-4 w-4" />
-                {child.label}
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}

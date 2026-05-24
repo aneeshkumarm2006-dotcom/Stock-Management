@@ -5,17 +5,15 @@
 
 import { EmailsSubtabs } from "@/components/pm/EmailsSubtabs";
 import { EmailsListView } from "@/components/pm/EmailsListView";
+import { PageHead } from "@/components/layout/PageHead";
 
 export default function EmailsLandingPage() {
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="font-display text-2xl font-bold text-fg">Emails</h1>
-        <p className="text-sm text-fg-muted">
-          Sent + scheduled + drafts. Compose from the floating button or any
-          detail page Communications tab.
-        </p>
-      </header>
+    <div className="space-y-[18px]">
+      <PageHead
+        title="Emails"
+        subtitle="Sent + scheduled + drafts. Compose from the floating button or any detail page Communications tab."
+      />
       <EmailsSubtabs active="list" />
       <EmailsListView mode="sent" />
     </div>

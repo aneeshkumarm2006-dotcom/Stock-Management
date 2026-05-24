@@ -1,6 +1,7 @@
-// Dense data-table primitives matching the saved Stitch references: uppercase
-// muted headers, hover-highlight rows, hairline dividers. Numeric columns are
-// right-aligned by callers (tokens.md typography conventions).
+// Dense data-table primitives — Lattice design: 11px uppercase muted headers
+// over a surface-low band, 12.5px body cells with tabular numerals, hairline
+// dividers, hover-highlight rows. Numeric columns are right-aligned by the
+// caller via `text-right`.
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
 
@@ -12,7 +13,7 @@ export function Table({
     <div className="w-full overflow-x-auto">
       <table
         className={cn(
-          "w-full border-collapse text-left text-[13px]",
+          "w-full border-collapse text-left text-[12.5px] tabular-nums",
           className,
         )}
         {...props}
@@ -27,7 +28,7 @@ export function THead({
 }: React.HTMLAttributes<HTMLTableSectionElement>) {
   return (
     <thead
-      className={cn("border-b border-border bg-surface/40", className)}
+      className={cn("bg-surface-low", className)}
       {...props}
     />
   );
@@ -38,10 +39,7 @@ export function TBody({
   ...props
 }: React.HTMLAttributes<HTMLTableSectionElement>) {
   return (
-    <tbody
-      className={cn("divide-y divide-border", className)}
-      {...props}
-    />
+    <tbody className={cn("divide-y divide-border", className)} {...props} />
   );
 }
 
@@ -51,10 +49,7 @@ export function TR({
 }: React.HTMLAttributes<HTMLTableRowElement>) {
   return (
     <tr
-      className={cn(
-        "transition-colors hover:bg-surface-high/60",
-        className,
-      )}
+      className={cn("transition-colors hover:bg-surface-low", className)}
       {...props}
     />
   );
@@ -68,7 +63,7 @@ export function TH({
     <th
       scope="col"
       className={cn(
-        "px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-fg-muted",
+        "whitespace-nowrap border-b border-border px-[14px] py-[9px] text-left text-[11px] font-semibold uppercase tracking-[0.04em] text-fg-muted",
         className,
       )}
       {...props}
@@ -82,7 +77,7 @@ export function TD({
 }: React.TdHTMLAttributes<HTMLTableCellElement>) {
   return (
     <td
-      className={cn("px-5 py-4 text-xs text-fg", className)}
+      className={cn("px-[14px] py-[10px] align-middle text-fg", className)}
       {...props}
     />
   );

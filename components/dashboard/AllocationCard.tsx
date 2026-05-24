@@ -13,7 +13,7 @@ import {
   Tooltip,
 } from "recharts";
 import type { PortfolioSummary, AllocationSlice } from "@/lib/utils/portfolioMath";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useChartTheme } from "@/components/analytics/chartTheme";
@@ -74,11 +74,9 @@ export function AllocationCard({ summary }: { summary: PortfolioSummary }) {
 
   return (
     <Card className="flex flex-col">
-      <div className="flex items-center justify-between border-b border-border p-5">
-        <h3 className="font-display text-sm font-bold uppercase tracking-wider text-fg">
-          Asset Allocation
-        </h3>
-        <div className="flex rounded border border-border bg-surface-low p-0.5">
+      <CardHeader>
+        <CardTitle>Asset allocation</CardTitle>
+        <div className="flex rounded-md border border-border bg-surface p-[2px]">
           {DIMS.map((d) => (
             <button
               key={d.id}
@@ -86,9 +84,9 @@ export function AllocationCard({ summary }: { summary: PortfolioSummary }) {
               onClick={() => setDim(d.id)}
               aria-pressed={dim === d.id}
               className={cn(
-                "rounded px-3 py-1 text-[10px] font-bold transition-colors",
+                "rounded px-[10px] py-[2px] text-[11px] font-semibold transition-colors",
                 dim === d.id
-                  ? "bg-surface-highest text-fg"
+                  ? "bg-secondary-container text-primary"
                   : "text-fg-muted hover:text-fg",
               )}
             >
@@ -96,7 +94,7 @@ export function AllocationCard({ summary }: { summary: PortfolioSummary }) {
             </button>
           ))}
         </div>
-      </div>
+      </CardHeader>
 
       <CardContent className="flex flex-1 flex-col items-center justify-center">
         {slices.length === 0 ? (
@@ -133,20 +131,20 @@ export function AllocationCard({ summary }: { summary: PortfolioSummary }) {
                 </PieChart>
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-                <span className="text-[10px] font-bold uppercase text-fg-muted">
+                <span className="text-[11px] font-medium text-fg-muted">
                   Holdings
                 </span>
-                <span className="font-display text-2xl font-bold text-fg">
+                <span className="text-[22px] font-[650] tracking-[-0.018em] text-fg tabular-nums">
                   {summary.positionCount}
                 </span>
               </div>
             </div>
 
-            <div className="mt-8 w-full space-y-3">
+            <div className="mt-6 w-full space-y-[9px]">
               {slices.map((s, i) => (
                 <div
                   key={s.key}
-                  className="flex items-center justify-between"
+                  className="flex items-center justify-between text-[12.5px]"
                 >
                   <div className="flex items-center gap-2">
                     <span
@@ -155,14 +153,14 @@ export function AllocationCard({ summary }: { summary: PortfolioSummary }) {
                     />
                     <span
                       className={cn(
-                        "text-xs font-bold",
-                        s.key === "Others" && "text-fg-muted",
+                        "font-medium",
+                        s.key === "Others" ? "text-fg-muted" : "text-fg",
                       )}
                     >
                       {labelFor(s.key)}
                     </span>
                   </div>
-                  <span className="font-display text-xs font-medium text-fg-muted">
+                  <span className="font-medium tabular-nums text-fg-muted">
                     {s.pct.toFixed(1)}%
                   </span>
                 </div>

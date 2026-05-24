@@ -3,6 +3,8 @@
 // Empty-portfolio state (PDR §11): shown when the user holds no positions.
 // The CTA routes to the Portfolio page where the Add Position panel lives
 // (Stage 9); useUiStore.openAddPanel is primed so it opens on arrival.
+// Visual treatment mirrors the Lattice design's "Coming soon" empty pattern:
+// neutral icon tile, 20px / 650 title, muted 13px copy, brand-tonal CTA.
 import Link from "next/link";
 import { Plus, Briefcase } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -13,21 +15,23 @@ export function EmptyPortfolio() {
   const openAddPanel = useUiStore((s) => s.openAddPanel);
 
   return (
-    <Card className="flex flex-col items-center justify-center px-6 py-20 text-center">
-      <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-full border border-border bg-surface-highest">
-        <Briefcase className="h-7 w-7 text-fg-muted" />
+    <Card className="flex min-h-[500px] flex-col items-center justify-center gap-4 px-10 py-[60px] text-center">
+      <div className="grid h-16 w-16 place-items-center rounded-lg border border-border bg-surface-low">
+        <Briefcase className="h-7 w-7 text-fg-muted" strokeWidth={1.5} />
       </div>
-      <h2 className="font-display text-lg font-bold text-fg">
-        Your portfolio is empty
-      </h2>
-      <p className="mt-2 max-w-sm text-sm text-fg-muted">
-        Add your first holding to see live valuation, allocation and P&amp;L
-        across your US and Canadian positions.
-      </p>
-      <Link href="/stock/portfolio" className="mt-6">
+      <div>
+        <h2 className="text-[20px] font-[650] tracking-[-0.018em] text-fg">
+          Your portfolio is empty
+        </h2>
+        <p className="mt-2 max-w-[360px] text-[13px] leading-[1.5] text-fg-muted">
+          Add your first holding to see live valuation, allocation and P&amp;L
+          across your US and Canadian positions.
+        </p>
+      </div>
+      <Link href="/stock/portfolio" className="mt-2">
         <Button onClick={() => openAddPanel()}>
-          <Plus className="h-4 w-4" />
-          Add Your First Position
+          <Plus className="h-[13px] w-[13px]" />
+          Add your first position
         </Button>
       </Link>
     </Card>

@@ -1,13 +1,18 @@
 "use client";
 
-// Minimal accessible tabs (segmented control look from the Stitch references).
-// Controlled or uncontrolled via `value` / `defaultValue`.
+// Accessible tabs. Lattice design uses an underline pattern (bottom border on
+// the active tab, no chip background) which is now the default. The original
+// segmented "pill" look is still available via `variant="segmented"` on the
+// list — kept for callers that prefer the legacy treatment.
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
+
+type Variant = "underline" | "segmented";
 
 interface TabsCtx {
   value: string;
   setValue: (v: string) => void;
+  variant: Variant;
 }
 const Ctx = React.createContext<TabsCtx | null>(null);
 
@@ -23,12 +28,14 @@ export function Tabs({
   onValueChange,
   className,
   children,
+  variant = "underline",
 }: {
   value?: string;
   defaultValue?: string;
   onValueChange?: (v: string) => void;
   className?: string;
   children: React.ReactNode;
+  variant?: Variant;
 }) {
   const [internal, setInternal] = React.useState(defaultValue ?? "");
   const current = value ?? internal;
@@ -40,7 +47,7 @@ export function Tabs({
     [value, onValueChange],
   );
   return (
-    <Ctx.Provider value={{ value: current, setValue }}>
+    <Ctx.Provider value={{ value: current, setValue, variant }}>
       <div className={className}>{children}</div>
     </Ctx.Provider>
   );
@@ -53,11 +60,25 @@ export function TabsList({
   className?: string;
   children: React.ReactNode;
 }) {
+  const { variant } = useTabs();
+  if (variant === "segmented") {
+    return (
+      <div
+        role="tablist"
+        className={cn(
+          "inline-flex gap-0.5 rounded-md border border-border bg-surface p-[2px]",
+          className,
+        )}
+      >
+        {children}
+      </div>
+    );
+  }
   return (
     <div
       role="tablist"
       className={cn(
-        "inline-flex gap-0.5 rounded border border-border bg-surface-low p-0.5",
+        "mb-4 flex gap-0 border-b border-border",
         className,
       )}
     >
@@ -75,8 +96,27 @@ export function TabsTrigger({
   className?: string;
   children: React.ReactNode;
 }) {
-  const { value: active, setValue } = useTabs();
+  const { value: active, setValue, variant } = useTabs();
   const selected = active === value;
+  if (variant === "segmented") {
+    return (
+      <button
+        type="button"
+        role="tab"
+        aria-selected={selected}
+        onClick={() => setValue(value)}
+        className={cn(
+          "rounded px-3 py-1 text-[11px] font-semibold transition-colors",
+          selected
+            ? "bg-secondary-container text-primary"
+            : "text-fg-muted hover:text-fg",
+          className,
+        )}
+      >
+        {children}
+      </button>
+    );
+  }
   return (
     <button
       type="button"
@@ -84,10 +124,10 @@ export function TabsTrigger({
       aria-selected={selected}
       onClick={() => setValue(value)}
       className={cn(
-        "rounded px-3 py-1 text-[10px] font-bold transition-colors",
+        "-mb-px flex items-center gap-[7px] border-b-2 px-[14px] py-[9px] text-[12.5px] font-medium transition-colors",
         selected
-          ? "bg-surface-highest text-fg"
-          : "text-fg-muted hover:text-fg",
+          ? "border-primary font-semibold text-fg"
+          : "border-transparent text-fg-muted hover:text-fg",
         className,
       )}
     >

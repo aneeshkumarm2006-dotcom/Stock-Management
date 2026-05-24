@@ -21,7 +21,7 @@ const SettingsSchema = new Schema<ISettings>(
       enum: ['USD', 'CAD'],
       default: 'USD',
     },
-    theme: { type: String, enum: ['dark', 'light'], default: 'dark' },
+    theme: { type: String, enum: ['dark', 'light'], default: 'light' },
     numberFormat: {
       type: String,
       enum: ['1,234.56', '1.234,56', '1234.56'],

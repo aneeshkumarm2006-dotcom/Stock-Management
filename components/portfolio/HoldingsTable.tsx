@@ -1,35 +1,39 @@
 "use client";
 
-// Full holdings table (PDR §5.3): logo+ticker, name, exchange badge, sector,
-// avg buy, qty, invested, live price, current value, unrealized P&L ($ & %),
-// native-currency flag, row actions (edit/delete). Any numeric column is
-// sortable. Price + avg buy are shown in the row's NATIVE currency (PDR §9 —
-// rows stay transparent about the listing currency); invested / value / P&L
-// are the display-currency aggregates from computePortfolio.
+// Full holdings table (PDR §5.3). Layout follows the design reference: a
+// compact row per position with Ticker · Name · Exchange · Shares · Cost
+// basis · Current value · P&L · P&L % · Weight (with inline bar) · row
+// actions (kebab menu). Sector, Live price, and Currency are optional
+// columns toggleable via the toolbar Columns popover. Cost basis and value
+// are display-currency aggregates from computePortfolio; native-currency
+// figures appear only when the user opts the Live price column back in
+// (PDR §9 — listing currency stays explicit when shown).
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowUp, ArrowDown, Pencil, Trash2 } from "lucide-react";
+import { ArrowUp, ArrowDown, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import type { PortfolioRow } from "@/lib/hooks/usePortfolio";
 import type { Currency } from "@/lib/utils/convertCurrency";
 import { Card } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Dropdown, DropdownItem } from "@/components/ui/dropdown";
 import { TickerLogo } from "@/components/dashboard/TickerLogo";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { formatNumber, formatPercent } from "@/lib/utils/formatNumber";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useUiStore } from "@/store/useUiStore";
 import { cn } from "@/lib/utils/cn";
+import type { OptionalColumn } from "./PortfolioFilters";
 
 type SortKey =
   | "ticker"
-  | "avgBuyPrice"
   | "quantity"
   | "invested"
   | "price"
   | "currentValue"
   | "pnl"
-  | "pnlPct";
+  | "pnlPct"
+  | "weight";
 
 const FLAG: Record<"US" | "CA", string> = { US: "🇺🇸", CA: "🇨🇦" };
 
@@ -37,8 +41,6 @@ function valueFor(row: PortfolioRow, key: SortKey): number | string {
   switch (key) {
     case "ticker":
       return row.ticker;
-    case "avgBuyPrice":
-      return row.avgBuyPrice;
     case "quantity":
       return row.quantity;
     case "invested":
@@ -51,6 +53,8 @@ function valueFor(row: PortfolioRow, key: SortKey): number | string {
       return row.metrics.pnl;
     case "pnlPct":
       return row.metrics.pnlPct;
+    case "weight":
+      return row.metrics.weightPct;
   }
 }
 
@@ -58,11 +62,13 @@ export function HoldingsTable({
   rows,
   totalRowCount,
   displayCurrency,
+  optionalColumns,
   onDelete,
 }: {
   rows: PortfolioRow[];
   totalRowCount: number;
   displayCurrency: Currency;
+  optionalColumns: Record<OptionalColumn, boolean>;
   onDelete: (row: PortfolioRow) => void;
 }) {
   const numberFormat = useSettingsStore((s) => s.numberFormat);
@@ -96,7 +102,22 @@ export function HoldingsTable({
     );
   }
 
-  const exchanges = new Set(rows.map((r) => r.exchange)).size;
+  const maxWeight = useMemo(
+    () => rows.reduce((m, r) => Math.max(m, r.metrics.weightPct), 0),
+    [rows],
+  );
+
+  const showSector = optionalColumns.sector;
+  const showLivePrice = optionalColumns.livePrice;
+  const showCurrency = optionalColumns.currency;
+
+  const baseCols = 9; // ticker, name, exchange, shares, cost basis, value, pnl, pnl%, weight
+  const colSpan =
+    baseCols +
+    (showSector ? 1 : 0) +
+    (showLivePrice ? 1 : 0) +
+    (showCurrency ? 1 : 0) +
+    1; // actions
 
   function SortTH({
     label,
@@ -132,33 +153,53 @@ export function HoldingsTable({
 
   return (
     <Card className="overflow-hidden">
-      <Table className="min-w-[1100px]">
+      <Table className="min-w-[960px]">
         <THead>
           <TR className="hover:bg-transparent">
             <SortTH label="Ticker" sortKey="ticker" />
             <TH>Name</TH>
-            <TH className="text-center">Exch</TH>
-            <TH>Sector</TH>
-            <SortTH label="Avg Buy" sortKey="avgBuyPrice" className="text-right" />
-            <SortTH label="Qty" sortKey="quantity" className="text-right" />
-            <SortTH label="Invested" sortKey="invested" className="text-right" />
-            <SortTH label="Live Price" sortKey="price" className="text-right" />
-            <SortTH label="Value" sortKey="currentValue" className="text-right" />
-            <SortTH label="Unrealized P&amp;L" sortKey="pnl" className="text-right" />
-            <TH className="text-center">Cur</TH>
-            <TH className="text-right">Actions</TH>
+            <TH>Exchange</TH>
+            {showSector && <TH>Sector</TH>}
+            <SortTH label="Shares" sortKey="quantity" className="text-right" />
+            <SortTH
+              label="Cost Basis"
+              sortKey="invested"
+              className="text-right"
+            />
+            {showLivePrice && (
+              <SortTH
+                label="Live Price"
+                sortKey="price"
+                className="text-right"
+              />
+            )}
+            <SortTH
+              label="Current Value"
+              sortKey="currentValue"
+              className="text-right"
+            />
+            <SortTH label="P&amp;L" sortKey="pnl" className="text-right" />
+            <SortTH label="P&amp;L %" sortKey="pnlPct" className="text-right" />
+            <SortTH label="Weight" sortKey="weight" className="text-right" />
+            {showCurrency && <TH className="text-center">Cur</TH>}
+            <TH className="w-10" aria-label="Actions" />
           </TR>
         </THead>
         <TBody>
           {sorted.length === 0 ? (
             <TR className="hover:bg-transparent">
-              <TD colSpan={12} className="py-12 text-center text-fg-muted">
+              <TD colSpan={colSpan} className="py-12 text-center text-fg-muted">
                 No holdings match the current filters.
               </TD>
             </TR>
           ) : (
             sorted.map((r) => {
               const up = r.metrics.pnl >= 0;
+              const weightPct = r.metrics.weightPct;
+              const barWidth =
+                maxWeight > 0
+                  ? Math.max(6, Math.round((weightPct / maxWeight) * 100))
+                  : 0;
               return (
                 <TR key={r.id} className="group">
                   <TD>
@@ -176,18 +217,15 @@ export function HoldingsTable({
                       </span>
                     </Link>
                   </TD>
-                  <TD className="max-w-[180px] truncate font-medium">
+                  <TD className="max-w-[200px] truncate font-medium">
                     {r.name ?? "—"}
                   </TD>
-                  <TD className="text-center">
+                  <TD>
                     <Badge variant="exchange">{r.exchange}</Badge>
                   </TD>
-                  <TD className="text-fg-muted">{r.sector ?? "—"}</TD>
-                  <TD className="text-right font-display">
-                    {formatCurrency(r.avgBuyPrice, r.nativeCurrency, {
-                      format: numberFormat,
-                    })}
-                  </TD>
+                  {showSector && (
+                    <TD className="text-fg-muted">{r.sector ?? "—"}</TD>
+                  )}
                   <TD className="text-right font-display">
                     {formatNumber(r.quantity, {
                       format: numberFormat,
@@ -199,13 +237,15 @@ export function HoldingsTable({
                       format: numberFormat,
                     })}
                   </TD>
-                  <TD className="text-right font-display">
-                    {r.price == null
-                      ? "—"
-                      : formatCurrency(r.price, r.nativeCurrency, {
-                          format: numberFormat,
-                        })}
-                  </TD>
+                  {showLivePrice && (
+                    <TD className="text-right font-display text-fg-muted">
+                      {r.price == null
+                        ? "—"
+                        : formatCurrency(r.price, r.nativeCurrency, {
+                            format: numberFormat,
+                          })}
+                    </TD>
+                  )}
                   <TD className="text-right font-display font-bold">
                     {formatCurrency(r.metrics.currentValue, displayCurrency, {
                       format: numberFormat,
@@ -213,65 +253,92 @@ export function HoldingsTable({
                   </TD>
                   <TD className="text-right">
                     {r.metrics.hasQuote ? (
-                      <>
-                        <div
-                          className={cn(
-                            "text-xs font-bold",
-                            up ? "text-gain" : "text-loss",
-                          )}
-                        >
-                          {formatCurrency(r.metrics.pnl, displayCurrency, {
-                            format: numberFormat,
-                            signed: true,
-                          })}
-                        </div>
-                        <div
-                          className={cn(
-                            "text-[10px]",
-                            up ? "text-gain/80" : "text-loss/80",
-                          )}
-                        >
-                          {formatPercent(r.metrics.pnlPct, {
-                            format: numberFormat,
-                          })}
-                        </div>
-                      </>
+                      <span
+                        className={cn(
+                          "font-display text-xs font-bold",
+                          up ? "text-gain" : "text-loss",
+                        )}
+                      >
+                        {formatCurrency(r.metrics.pnl, displayCurrency, {
+                          format: numberFormat,
+                          signed: true,
+                        })}
+                      </span>
                     ) : (
                       <span className="text-xs text-fg-muted">—</span>
                     )}
                   </TD>
-                  {/* Native listing currency — authoritative and shown
-                      explicitly so the TSX-listed-USD edge (country CA but
-                      held in USD) stays transparent (PDR §9). The country
-                      flag is a secondary cue only. */}
-                  <TD
-                    className="text-center"
-                    title={`Listed in ${r.nativeCurrency} on ${r.exchange}`}
-                  >
-                    <span className="inline-flex items-center gap-1 font-display text-[11px] font-bold text-fg">
-                      <span aria-hidden>{FLAG[r.country]}</span>
-                      {r.nativeCurrency}
-                    </span>
+                  <TD className="text-right">
+                    {r.metrics.hasQuote ? (
+                      <span
+                        className={cn(
+                          "font-display text-xs font-bold",
+                          up ? "text-gain" : "text-loss",
+                        )}
+                      >
+                        {formatPercent(r.metrics.pnlPct, {
+                          format: numberFormat,
+                          signed: true,
+                        })}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-fg-muted">—</span>
+                    )}
                   </TD>
                   <TD className="text-right">
-                    <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                      <button
-                        type="button"
-                        aria-label={`Edit ${r.ticker}`}
-                        onClick={() => openEditPanel(r.id)}
-                        className="rounded p-1.5 text-fg-muted transition-colors hover:bg-surface-highest hover:text-primary"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Delete ${r.ticker}`}
-                        onClick={() => onDelete(r)}
-                        className="rounded p-1.5 text-fg-muted transition-colors hover:bg-surface-highest hover:text-error"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-low">
+                        <div
+                          className={cn(
+                            "h-full rounded-full",
+                            up ? "bg-primary" : "bg-fg-muted/60",
+                          )}
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </div>
+                      <span className="w-12 text-right font-display text-[11.5px] font-semibold tabular-nums text-fg">
+                        {formatPercent(weightPct, {
+                          format: numberFormat,
+                          signed: false,
+                        })}
+                      </span>
                     </div>
+                  </TD>
+                  {showCurrency && (
+                    <TD
+                      className="text-center"
+                      title={`Listed in ${r.nativeCurrency} on ${r.exchange}`}
+                    >
+                      <span className="inline-flex items-center gap-1 font-display text-[11px] font-bold text-fg">
+                        <span aria-hidden>{FLAG[r.country]}</span>
+                        {r.nativeCurrency}
+                      </span>
+                    </TD>
+                  )}
+                  <TD className="text-right">
+                    <Dropdown
+                      align="end"
+                      trigger={
+                        <span
+                          className="flex h-7 w-7 items-center justify-center rounded text-fg-muted transition-colors hover:bg-surface-highest hover:text-fg"
+                          aria-label={`Actions for ${r.ticker}`}
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </span>
+                      }
+                    >
+                      <DropdownItem onClick={() => openEditPanel(r.id)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit position
+                      </DropdownItem>
+                      <DropdownItem
+                        onClick={() => onDelete(r)}
+                        className="hover:text-error"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete position
+                      </DropdownItem>
+                    </Dropdown>
                   </TD>
                 </TR>
               );
@@ -280,14 +347,14 @@ export function HoldingsTable({
         </TBody>
       </Table>
 
-      <div className="flex items-center justify-between border-t border-border bg-surface/40 px-6 py-4">
-        <span className="text-xs text-fg-muted">
-          Showing {sorted.length} of {totalRowCount}{" "}
-          {totalRowCount === 1 ? "holding" : "holdings"}
-          {exchanges > 0 &&
-            ` across ${exchanges} ${exchanges === 1 ? "exchange" : "exchanges"}`}
-        </span>
-      </div>
+      {sorted.length > 0 && sorted.length !== totalRowCount && (
+        <div className="flex items-center justify-between border-t border-border bg-surface/40 px-6 py-3">
+          <span className="text-xs text-fg-muted">
+            Showing {sorted.length} of {totalRowCount}{" "}
+            {totalRowCount === 1 ? "holding" : "holdings"}
+          </span>
+        </div>
+      )}
     </Card>
   );
 }

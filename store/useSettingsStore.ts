@@ -38,7 +38,7 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       displayCurrency: "USD",
-      theme: "dark",
+      theme: "light",
       numberFormat: "1,234.56",
       fxUsdToCad: 1,
       fxFetchedAt: null,

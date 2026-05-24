@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
 
 const DEFAULTS = {
   defaultCurrency: 'USD',
-  theme: 'dark',
+  theme: 'light',
   numberFormat: '1,234.56',
 } as const;
 

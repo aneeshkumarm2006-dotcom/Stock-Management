@@ -1,3 +1,6 @@
+// Text input matching the Lattice design's `.search` / form field metrics:
+// 30px tall, 6px radius, 12px label, white-surface background with hairline
+// border. Focus ring uses the brand blue.
 import * as React from "react";
 import { cn } from "@/lib/utils/cn";
 
@@ -9,8 +12,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
       ref={ref}
       type={type}
       className={cn(
-        "flex h-10 w-full rounded border border-border bg-surface-highest px-3 py-2 text-sm text-fg placeholder:text-fg-muted/60 transition-colors",
-        "focus-visible:outline-none focus-visible:border-primary focus-visible:ring-1 focus-visible:ring-primary",
+        "flex h-[30px] w-full rounded-md border border-border bg-surface px-[10px] text-[12px] text-fg placeholder:text-fg-muted/70 transition-colors",
+        "focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
         "disabled:cursor-not-allowed disabled:opacity-50",
         "aria-[invalid=true]:border-error aria-[invalid=true]:focus-visible:ring-error",
         className,

@@ -1,9 +1,10 @@
 // Shared placeholder for every Property Management route while the module is
 // still being built. The sidebar nav exposes the full Buildium-inspired IA
 // (PDR §6–§8) ahead of time so the client can navigate the shell; each child
-// route lands here until its real screen is implemented.
-import { Construction } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+// route lands here until its real screen is implemented. Visual treatment
+// matches the Lattice design's `.coming-soon` block.
+import { Sparkles } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface ComingSoonProps {
   title?: string;
@@ -15,23 +16,19 @@ export function ComingSoon({
   description = "This section is being built. The navigation is in place so you can preview the structure; the screens themselves will land in upcoming releases.",
 }: ComingSoonProps) {
   return (
-    <div className="mx-auto flex max-w-2xl flex-col items-center py-16">
-      <Card className="w-full">
-        <CardContent className="flex flex-col items-center gap-5 py-12 text-center">
-          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-secondary-container/40 text-primary">
-            <Construction className="h-7 w-7" />
-          </span>
-          <div className="space-y-2">
-            <h1 className="font-display text-2xl font-bold text-fg">{title}</h1>
-            <p className="text-sm leading-relaxed text-fg-muted">
-              {description}
-            </p>
-          </div>
-          <span className="inline-flex items-center rounded-full border border-border bg-surface px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-fg-muted">
-            Coming soon
-          </span>
-        </CardContent>
-      </Card>
+    <div className="flex min-h-[500px] flex-col items-center justify-center gap-4 px-10 py-[60px] text-center">
+      <div className="grid h-16 w-16 place-items-center rounded-lg border border-border bg-surface-low text-fg-muted">
+        <Sparkles className="h-7 w-7" strokeWidth={1.5} />
+      </div>
+      <div>
+        <h1 className="text-[20px] font-[650] tracking-[-0.018em] text-fg">
+          {title}
+        </h1>
+        <p className="mt-2 max-w-[360px] text-[13px] leading-[1.5] text-fg-muted">
+          {description}
+        </p>
+      </div>
+      <Badge variant="brand">Coming in Phase 11</Badge>
     </div>
   );
 }
