@@ -38,7 +38,7 @@ const taskInlineCreateSchema = z.object({
 
 const baseFields = {
   subject: z.string().min(1).max(200),
-  vendorId: objectIdSchema, // BR-MV-6
+  vendorId: objectIdSchema.nullable().optional(),
   status: z
     .enum(WORK_ORDER_STATUSES as readonly [string, ...string[]])
     .optional(),
@@ -50,7 +50,7 @@ const baseFields = {
   taskNew: taskInlineCreateSchema.optional(),
   taskType: z.string().max(60).optional(),
   taskCategoryId: objectIdSchema.nullable().optional(),
-  assignedToUserId: objectIdSchema, // BR-MV-6
+  assignedToUserId: objectIdSchema.nullable().optional(),
   collaborators: z.array(objectIdSchema).optional(),
   workToBePerformed: z.string().max(4000).optional(),
   vendorNotes: z.string().max(4000).optional(),

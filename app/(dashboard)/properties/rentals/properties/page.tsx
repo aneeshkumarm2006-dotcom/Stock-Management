@@ -44,6 +44,7 @@ interface PropertyRow {
   ownerCount: number;
   active: boolean;
   propertyReserve: number;
+  operatingAccountId: string | null;
 }
 
 const RES_SUBTYPES: ResidentialSubType[] = [
@@ -180,6 +181,11 @@ export default function PropertiesListPage() {
                     >
                       {p.propertyName}
                     </Link>
+                    {!p.operatingAccountId && (
+                      <span className="ml-2 text-xs font-medium text-amber-600">
+                        Setup needed
+                      </span>
+                    )}
                   </td>
                   <td className="text-fg-muted">
                     {p.propertyClass}
@@ -315,10 +321,6 @@ function AddPropertyModal({
       toast({ title: "Address line 1 / city / state / zip required", variant: "error" });
       return;
     }
-    if (!operatingAccountId) {
-      toast({ title: "Operating account required (BR-PU-4)", variant: "error" });
-      return;
-    }
     if (owners.length > 0) {
       const sum = owners.reduce(
         (a, r) => a + (Number.isFinite(r.ownershipPct) ? r.ownershipPct : 0),
@@ -441,20 +443,25 @@ function AddPropertyModal({
 
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="p-op">Operating account *</Label>
+              <Label htmlFor="p-op">Operating account</Label>
               <select
                 id="p-op"
                 value={operatingAccountId}
                 onChange={(e) => setOperatingAccountId(e.target.value)}
                 className="h-10 w-full rounded border border-border bg-surface-highest px-3 text-sm text-fg"
               >
-                <option value="">Choose…</option>
+                <option value="">— (Set up later)</option>
                 {banks.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name} {b.accountNumberMasked}
                   </option>
                 ))}
               </select>
+              {!operatingAccountId && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  No operating account selected — payments won&apos;t be processed until one is configured in Property Settings.
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label htmlFor="p-trust">Deposit trust account</Label>

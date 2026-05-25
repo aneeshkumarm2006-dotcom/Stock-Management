@@ -105,7 +105,7 @@ export async function GET(request: Request) {
     rows.map((r) => ({
       id: String(r._id),
       subject: r.subject,
-      vendorId: String(r.vendorId),
+      vendorId: r.vendorId ? String(r.vendorId) : null,
       status: r.status,
       priority: r.priority,
       dueDate: r.dueDate ?? null,
@@ -147,8 +147,9 @@ export async function POST(request: Request) {
   await connectToDatabase();
   const orgObjectId = new Types.ObjectId(ctx.orgId);
 
-  // BR-MV-6: vendor + staff existence checks.
+  // BR-MV-6: vendor existence check — only when a vendor is provided.
   if (
+    parsed.data.vendorId &&
     !(await Vendor.countDocuments({
       _id: new Types.ObjectId(parsed.data.vendorId),
       organizationId: orgObjectId,
@@ -207,8 +208,8 @@ export async function POST(request: Request) {
         ? new Types.ObjectId(tNew.propertyId)
         : null,
       unitId: tNew.unitId ? new Types.ObjectId(tNew.unitId) : null,
-      vendors: [new Types.ObjectId(parsed.data.vendorId)],
-      assignees: [new Types.ObjectId(parsed.data.assignedToUserId)],
+      vendors: parsed.data.vendorId ? [new Types.ObjectId(parsed.data.vendorId)] : [],
+      assignees: parsed.data.assignedToUserId ? [new Types.ObjectId(parsed.data.assignedToUserId)] : [],
       collaborators: (parsed.data.collaborators ?? []).map(
         (c) => new Types.ObjectId(c),
       ),
@@ -244,7 +245,7 @@ export async function POST(request: Request) {
   const wo = await WorkOrder.create({
     organizationId: orgObjectId,
     subject: parsed.data.subject,
-    vendorId: new Types.ObjectId(parsed.data.vendorId),
+    vendorId: parsed.data.vendorId ? new Types.ObjectId(parsed.data.vendorId) : null,
     status: parsed.data.status ?? 'New',
     priority: parsed.data.priority ?? 'Normal',
     dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
@@ -253,7 +254,7 @@ export async function POST(request: Request) {
     taskCategoryId: parsed.data.taskCategoryId
       ? new Types.ObjectId(parsed.data.taskCategoryId)
       : null,
-    assignedToUserId: new Types.ObjectId(parsed.data.assignedToUserId),
+    assignedToUserId: parsed.data.assignedToUserId ? new Types.ObjectId(parsed.data.assignedToUserId) : null,
     collaborators: (parsed.data.collaborators ?? []).map(
       (c) => new Types.ObjectId(c),
     ),

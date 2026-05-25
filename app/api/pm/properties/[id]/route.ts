@@ -105,13 +105,15 @@ export async function GET(
       ownershipPct: j.ownershipPct,
       displayName: ownerMap.get(String(j.rentalOwnerId)) ?? '(unknown)',
     })),
-    operatingAccount: {
-      id: String(doc.operatingAccountId),
-      ...(bankMap.get(String(doc.operatingAccountId)) ?? {
-        name: '(unknown)',
-        accountNumberMasked: '',
-      }),
-    },
+    operatingAccount: doc.operatingAccountId
+      ? {
+          id: String(doc.operatingAccountId),
+          ...(bankMap.get(String(doc.operatingAccountId)) ?? {
+            name: '(unknown)',
+            accountNumberMasked: '',
+          }),
+        }
+      : null,
     depositTrustAccount: doc.depositTrustAccountId
       ? {
           id: String(doc.depositTrustAccountId),

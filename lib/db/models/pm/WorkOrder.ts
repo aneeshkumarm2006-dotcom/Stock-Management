@@ -149,7 +149,7 @@ const WorkOrderSchema = new Schema<IWorkOrder>(
     vendorId: {
       type: Schema.Types.ObjectId,
       ref: 'PmVendor',
-      required: true,
+      default: null,
     },
     status: {
       type: String,
@@ -178,7 +178,7 @@ const WorkOrderSchema = new Schema<IWorkOrder>(
     assignedToUserId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      default: null,
     },
     collaborators: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     workToBePerformed: { type: String, trim: true, maxlength: 4000 },

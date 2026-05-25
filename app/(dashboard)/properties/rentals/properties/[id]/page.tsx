@@ -70,7 +70,7 @@ interface PropertyDetail {
   photo: string | null;
   propertyManagerUserId: string | null;
   rentalOwners: OwnerRef[];
-  operatingAccount: BankRef;
+  operatingAccount: BankRef | null;
   depositTrustAccount: BankRef | null;
   propertyReserve: number;
   listingDescription: string;
@@ -351,15 +351,24 @@ export default function PropertyDetailPage() {
                 <Field
                   label="Operating"
                   value={
-                    <Link
-                      href={`/properties/accounting/banking/${doc.operatingAccount.id}`}
-                      className="hover:underline"
-                    >
-                      {doc.operatingAccount.name}{" "}
-                      <span className="tabular-nums text-fg-muted">
-                        {doc.operatingAccount.accountNumberMasked}
+                    doc.operatingAccount ? (
+                      <Link
+                        href={`/properties/accounting/banking/${doc.operatingAccount.id}`}
+                        className="hover:underline"
+                      >
+                        {doc.operatingAccount.name}{" "}
+                        <span className="tabular-nums text-fg-muted">
+                          {doc.operatingAccount.accountNumberMasked}
+                        </span>
+                      </Link>
+                    ) : (
+                      <span className="text-amber-600">
+                        Not configured —{" "}
+                        <Link href="/properties/accounting/banking" className="underline">
+                          Set up
+                        </Link>
                       </span>
-                    </Link>
+                    )
                   }
                 />
                 <Field

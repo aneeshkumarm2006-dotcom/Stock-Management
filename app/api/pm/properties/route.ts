@@ -26,6 +26,7 @@ interface PropertyLeanLike {
   rentalOwners?: Array<{ rentalOwnerId: unknown; ownershipPct: number }>;
   active: boolean;
   propertyReserve?: number;
+  operatingAccountId?: unknown;
 }
 
 function listSerialize(p: PropertyLeanLike) {
@@ -41,6 +42,7 @@ function listSerialize(p: PropertyLeanLike) {
     ownerCount: p.rentalOwners?.length ?? 0,
     active: p.active,
     propertyReserve: p.propertyReserve ?? 0,
+    operatingAccountId: p.operatingAccountId ? String(p.operatingAccountId) : null,
   };
 }
 
@@ -124,7 +126,10 @@ export async function POST(request: Request) {
   await connectToDatabase();
 
   // FK existence checks scoped to this org (BR-PU-4 + owner-junction integrity).
-  if (!(await ensureBankAccountInOrg(parsed.data.operatingAccountId, ctx.orgId))) {
+  if (
+    parsed.data.operatingAccountId &&
+    !(await ensureBankAccountInOrg(parsed.data.operatingAccountId, ctx.orgId))
+  ) {
     return NextResponse.json(
       { error: 'operatingAccountId does not reference a bank account in this org' },
       { status: 400 },
@@ -164,7 +169,9 @@ export async function POST(request: Request) {
       rentalOwnerId: new Types.ObjectId(j.rentalOwnerId),
       ownershipPct: j.ownershipPct,
     })),
-    operatingAccountId: new Types.ObjectId(parsed.data.operatingAccountId),
+    operatingAccountId: parsed.data.operatingAccountId
+      ? new Types.ObjectId(parsed.data.operatingAccountId)
+      : null,
     depositTrustAccountId: parsed.data.depositTrustAccountId
       ? new Types.ObjectId(parsed.data.depositTrustAccountId)
       : null,

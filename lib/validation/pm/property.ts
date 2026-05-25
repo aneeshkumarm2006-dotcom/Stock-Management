@@ -50,7 +50,7 @@ const baseFields = {
   photo: objectIdString.nullable().optional(),
   propertyManagerUserId: objectIdString.nullable().optional(),
   rentalOwners: z.array(ownerJunctionSchema).optional(),
-  operatingAccountId: objectIdString,
+  operatingAccountId: objectIdString.nullable().optional(),
   depositTrustAccountId: objectIdString.nullable().optional(),
   propertyReserve: z.number().min(0).optional(),
   listingDescription: z.string().max(8000).optional(),

@@ -180,8 +180,6 @@ export function AddWorkOrderModal({
 
   function valid(): string | null {
     if (!subject.trim()) return "Subject is required";
-    if (!vendorId) return "Vendor is required (BR-MV-6)";
-    if (!assignedToUserId) return "Staff assignee is required (BR-MV-6)";
     if (taskMode === "existing" && !taskId) return "Pick a task";
     if (taskMode === "new" && !taskTitle.trim() && !subject.trim()) {
       return "Task title or subject required";
@@ -261,29 +259,39 @@ export function AddWorkOrderModal({
 
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="wo-vendor">Vendor * (BR-MV-6)</Label>
+              <Label htmlFor="wo-vendor">Vendor</Label>
               <select
                 id="wo-vendor"
                 className="w-full rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg"
                 value={vendorId}
                 onChange={(e) => setVendorId(e.target.value)}
               >
-                <option value="">Choose vendor…</option>
+                <option value="">— (Assign later)</option>
                 {vendors.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.displayName}
                   </option>
                 ))}
               </select>
+              {!vendorId && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  No vendor assigned — assign one from the work order detail page.
+                </p>
+              )}
             </div>
             <div className="space-y-1">
-              <Label htmlFor="wo-assignee">Staff assignee *</Label>
+              <Label htmlFor="wo-assignee">Staff assignee</Label>
               <Input
                 id="wo-assignee"
                 placeholder="Paste User ID (multi-user picker lands Phase 5)"
                 value={assignedToUserId}
                 onChange={(e) => setAssignedToUserId(e.target.value)}
               />
+              {!assignedToUserId && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  No staff assignee — assign one from the work order detail page.
+                </p>
+              )}
             </div>
           </div>
 

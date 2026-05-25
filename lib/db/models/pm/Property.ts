@@ -171,7 +171,7 @@ const PropertySchema = new Schema<IProperty>(
     operatingAccountId: {
       type: Schema.Types.ObjectId,
       ref: 'PmBankAccount',
-      required: true,
+      default: null,
     },
     depositTrustAccountId: {
       type: Schema.Types.ObjectId,

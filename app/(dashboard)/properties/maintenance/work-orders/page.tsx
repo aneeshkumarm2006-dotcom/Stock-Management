@@ -15,7 +15,7 @@ import { AddWorkOrderModal } from "@/components/pm/AddWorkOrderModal";
 interface WoRow {
   id: string;
   subject: string;
-  vendorId: string;
+  vendorId: string | null;
   status: string;
   priority: string;
   dueDate: string | null;
@@ -145,7 +145,9 @@ export default function WorkOrdersPage() {
                     </Link>
                   </td>
                   <td className="text-fg-muted">
-                    {vendorById[w.vendorId] || "—"}
+                    {w.vendorId && vendorById[w.vendorId]
+                      ? vendorById[w.vendorId]
+                      : <span className="text-amber-600 font-medium">Unassigned</span>}
                   </td>
                   <td>
                     <StatusPill status={w.status} />
