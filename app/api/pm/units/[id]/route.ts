@@ -10,6 +10,7 @@ import { Unit } from '@/lib/db/models/pm/Unit';
 import { Property } from '@/lib/db/models/pm/Property';
 import { Lease } from '@/lib/db/models/pm/Lease';
 import { ActivityLogEntry } from '@/lib/db/models/pm/ActivityLogEntry';
+import { PmFile } from '@/lib/db/models/pm/PmFile';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -77,6 +78,39 @@ export async function GET(
       isCosigner: t.isCosigner,
     })) ?? [];
 
+  // Hydrate image gallery (preserve order).
+  const imageIds = (doc.images ?? []).filter(Boolean) as Types.ObjectId[];
+  const imageDocs =
+    imageIds.length === 0
+      ? []
+      : await PmFile.find({
+          _id: { $in: imageIds },
+          organizationId: doc.organizationId,
+        })
+          .select({
+            _id: 1,
+            title: 1,
+            storageUrl: 1,
+            mimeType: 1,
+            originalFilename: 1,
+          })
+          .lean();
+  const imageMap = new Map<string, (typeof imageDocs)[number]>();
+  for (const f of imageDocs) imageMap.set(String(f._id), f);
+  const images = imageIds
+    .map((id) => {
+      const f = imageMap.get(String(id));
+      if (!f) return null;
+      return {
+        id: String(f._id),
+        url: f.storageUrl ?? '',
+        title: f.title ?? '',
+        mimeType: f.mimeType ?? '',
+        originalFilename: f.originalFilename ?? '',
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
   return NextResponse.json({
     id: String(doc._id),
     propertyId: String(doc.propertyId),
@@ -88,6 +122,7 @@ export async function GET(
     sizeSqft: doc.sizeSqft ?? null,
     description: doc.description ?? '',
     amenities: doc.amenities ?? [],
+    images,
     currentTenants,
     activeLease: activeLease
       ? {
@@ -132,7 +167,11 @@ export async function PATCH(
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  Object.assign(doc, parsed.data);
+  const { images: nextImages, ...restPatch } = parsed.data;
+  Object.assign(doc, restPatch);
+  if (nextImages !== undefined) {
+    doc.images = nextImages.map((id) => new Types.ObjectId(id));
+  }
   try {
     await doc.save();
   } catch (err: unknown) {

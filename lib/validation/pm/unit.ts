@@ -10,6 +10,7 @@ export const unitCreateSchema = z.object({
   sizeSqft: z.number().int().min(0).optional(),
   description: z.string().max(4000).optional(),
   amenities: z.array(z.string().max(80)).optional(),
+  images: z.array(objectIdString).max(100).optional(),
 });
 
 export const unitUpdateSchema = z
@@ -20,6 +21,7 @@ export const unitUpdateSchema = z
     sizeSqft: z.number().int().min(0).optional(),
     description: z.string().max(4000).optional(),
     amenities: z.array(z.string().max(80)).optional(),
+    images: z.array(objectIdString).max(100).optional(),
   })
   .refine((d) => Object.keys(d).length > 0, {
     message: 'No fields to update',

@@ -25,6 +25,10 @@ import { useToast } from "@/components/ui/toast";
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
+import {
+  EntityImageGallery,
+  type GalleryImage,
+} from "@/components/pm/EntityImageGallery";
 
 interface UnitDetail {
   id: string;
@@ -42,6 +46,7 @@ interface UnitDetail {
   sizeSqft: number | null;
   description: string;
   amenities: string[];
+  images: GalleryImage[];
   currentTenants: Array<{ id: string; displayName: string }>;
   mostRecentEvent: { eventType: string; createdAt: string } | null;
 }
@@ -168,6 +173,21 @@ export default function UnitDetailPage() {
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Photos</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <EntityImageGallery
+                entityType="Unit"
+                entityId={doc.id}
+                images={doc.images}
+                parentEndpoint={`/api/pm/units/${doc.id}`}
+                onChanged={load}
+              />
             </CardContent>
           </Card>
 

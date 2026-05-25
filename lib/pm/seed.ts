@@ -197,6 +197,19 @@ export async function seedDefaults(
       },
       { upsert: true },
     ),
+    FileCategory.updateOne(
+      { organizationId, name: 'Photos' },
+      {
+        $setOnInsert: {
+          organizationId,
+          name: 'Photos',
+          systemSeeded: true,
+          inUseCount: 0,
+          active: true,
+        },
+      },
+      { upsert: true },
+    ),
     VendorCategory.updateOne(
       { organizationId, class: 'Uncategorized', subCategory: '' },
       {

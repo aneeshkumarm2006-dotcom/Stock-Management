@@ -9,6 +9,7 @@ import { connectToDatabase } from '@/lib/db/mongoose';
 import { Property } from '@/lib/db/models/pm/Property';
 import { BankAccount } from '@/lib/db/models/pm/BankAccount';
 import { RentalOwner } from '@/lib/db/models/pm/RentalOwner';
+import { PmFile } from '@/lib/db/models/pm/PmFile';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -81,6 +82,40 @@ export async function GET(
   const securityDepositsHeld = 0;
   const availableCash = cashBalance - securityDepositsHeld - (doc.propertyReserve ?? 0);
 
+  // Hydrate image gallery — keep declaration order (newest at end of array
+  // unless the user has explicitly reordered).
+  const imageIds = (doc.images ?? []).filter(Boolean) as Types.ObjectId[];
+  const imageDocs =
+    imageIds.length === 0
+      ? []
+      : await PmFile.find({
+          _id: { $in: imageIds },
+          organizationId: doc.organizationId,
+        })
+          .select({
+            _id: 1,
+            title: 1,
+            storageUrl: 1,
+            mimeType: 1,
+            originalFilename: 1,
+          })
+          .lean();
+  const imageMap = new Map<string, (typeof imageDocs)[number]>();
+  for (const f of imageDocs) imageMap.set(String(f._id), f);
+  const images = imageIds
+    .map((id) => {
+      const f = imageMap.get(String(id));
+      if (!f) return null;
+      return {
+        id: String(f._id),
+        url: f.storageUrl ?? '',
+        title: f.title ?? '',
+        mimeType: f.mimeType ?? '',
+        originalFilename: f.originalFilename ?? '',
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
   const customFields: Record<string, unknown> = {};
   if (doc.customFields instanceof Map) {
     doc.customFields.forEach((v, k) => {
@@ -97,6 +132,7 @@ export async function GET(
     propertySubType: doc.propertySubType,
     address: doc.address,
     photo: doc.photo ? String(doc.photo) : null,
+    images,
     propertyManagerUserId: doc.propertyManagerUserId
       ? String(doc.propertyManagerUserId)
       : null,
@@ -224,6 +260,7 @@ export async function PATCH(
     depositTrustAccountId,
     propertyManagerUserId,
     photo,
+    images,
     customFields,
     ...rest
   } = parsed.data;
@@ -251,6 +288,16 @@ export async function PATCH(
   }
   if (photo !== undefined) {
     doc.photo = photo ? new Types.ObjectId(photo) : null;
+  }
+  if (images !== undefined) {
+    doc.images = images.map((id) => new Types.ObjectId(id));
+    // Keep `photo` (cover) in sync: clear it when removed from gallery; default
+    // it to the first image when none is set yet.
+    const inGallery = new Set(images);
+    if (doc.photo && !inGallery.has(String(doc.photo))) doc.photo = null;
+    if (!doc.photo && images.length > 0) {
+      doc.photo = new Types.ObjectId(images[0]);
+    }
   }
   if (customFields !== undefined) {
     doc.customFields = new Map(Object.entries(customFields));

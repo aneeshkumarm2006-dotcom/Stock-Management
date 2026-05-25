@@ -36,6 +36,10 @@ import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
 import { PropertyVacancyWidget } from "@/components/pm/PropertyVacancyWidget";
+import {
+  EntityImageGallery,
+  type GalleryImage,
+} from "@/components/pm/EntityImageGallery";
 import type {
   PropertyClass,
   PropertySubType,
@@ -68,6 +72,7 @@ interface PropertyDetail {
     country: string;
   };
   photo: string | null;
+  images: GalleryImage[];
   propertyManagerUserId: string | null;
   rentalOwners: OwnerRef[];
   operatingAccount: BankRef | null;
@@ -244,7 +249,22 @@ export default function PropertyDetailPage() {
                   value={doc.propertyManagerUserId ?? "Unassigned"}
                 />
               </dl>
-              <ReplacePhotoButton propertyId={doc.id} hasPhoto={!!doc.photo} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Photos</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <EntityImageGallery
+                entityType="Property"
+                entityId={doc.id}
+                images={doc.images}
+                coverId={doc.photo}
+                parentEndpoint={`/api/pm/properties/${doc.id}`}
+                onChanged={load}
+              />
             </CardContent>
           </Card>
 
@@ -775,38 +795,6 @@ function PropertyTasksTab({ propertyId }: { propertyId: string }) {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function ReplacePhotoButton({
-  propertyId,
-  hasPhoto,
-}: {
-  propertyId: string;
-  hasPhoto: boolean;
-}) {
-  const { toast } = useToast();
-  return (
-    <p className="text-xs text-fg-muted">
-      {hasPhoto ? "Photo attached." : "No photo yet."} Use the Files tab to
-      upload, then return here to set it as the property photo (wiring lands
-      with Phase 8 storage){" "}
-      <button
-        type="button"
-        onClick={() =>
-          toast({
-            title: "Phase 8",
-            description: "Set-photo wiring lands with real blob storage.",
-          })
-        }
-        className="ml-1 text-primary hover:underline"
-      >
-        Replace photo
-      </button>
-      .
-      {/* propertyId reserved for the Phase 8 PATCH wiring. */}
-      <span className="hidden">{propertyId}</span>
-    </p>
   );
 }
 

@@ -118,6 +118,7 @@ export async function POST(request: Request) {
       sizeSqft: parsed.data.sizeSqft,
       description: parsed.data.description,
       amenities: parsed.data.amenities ?? [],
+      images: (parsed.data.images ?? []).map((id) => new Types.ObjectId(id)),
     });
 
     await logActivity({

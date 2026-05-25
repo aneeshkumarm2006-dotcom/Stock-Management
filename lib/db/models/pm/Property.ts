@@ -79,6 +79,9 @@ export interface IProperty {
   propertySubType: PropertySubType;
   address: IPropertyAddress;
   photo?: Types.ObjectId | null;
+  /** Image gallery — refs to PmFile rows. `photo` is the cover image (auto-set
+   *  to images[0] when none is chosen explicitly). */
+  images: Types.ObjectId[];
   propertyManagerUserId?: Types.ObjectId | null;
   rentalOwners: IPropertyOwnerJunction[];
   operatingAccountId?: Types.ObjectId | null;
@@ -162,6 +165,10 @@ const PropertySchema = new Schema<IProperty>(
     propertySubType: { type: String, required: true, trim: true },
     address: { type: AddressSchema, required: true },
     photo: { type: Schema.Types.ObjectId, ref: 'PmFile', default: null },
+    images: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'PmFile' }],
+      default: [],
+    },
     propertyManagerUserId: {
       type: Schema.Types.ObjectId,
       ref: 'User',

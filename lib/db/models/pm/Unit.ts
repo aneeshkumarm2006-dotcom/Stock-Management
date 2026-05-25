@@ -14,6 +14,8 @@ export interface IUnit {
   sizeSqft?: number;
   description?: string;
   amenities: string[];
+  /** Image gallery — refs to PmFile rows tagged with locationType='Unit'. */
+  images: Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,6 +38,10 @@ const UnitSchema = new Schema<IUnit>(
     sizeSqft: { type: Number, min: 0 },
     description: { type: String, maxlength: 4000 },
     amenities: { type: [String], default: [] },
+    images: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'PmFile' }],
+      default: [],
+    },
   },
   { timestamps: true, collection: 'pm_units' },
 );
