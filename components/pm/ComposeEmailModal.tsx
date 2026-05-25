@@ -27,6 +27,11 @@ import {
   type EmailRelatedEntityType,
 } from "@/types/pm";
 
+// Outbound sender is currently funneled through a single authenticated SMTP
+// mailbox (see `lib/pm/emailTransport.ts`). Multi-sender support (per-mailbox
+// SMTP / Gmail OAuth / domain-verified provider) is on the roadmap.
+const LOCKED_FROM_MAILBOX = "automations@davnoot.com";
+
 interface RecipientRow {
   type: EmailRecipientType;
   id: string | null;
@@ -345,7 +350,7 @@ export function ComposeEmailModal({
   defaultMailbox,
 }: ComposeEmailModalProps) {
   const { toast } = useToast();
-  const [from, setFrom] = React.useState(defaultMailbox ?? "");
+  const [from, setFrom] = React.useState(LOCKED_FROM_MAILBOX);
   const [subject, setSubject] = React.useState("");
   const [body, setBody] = React.useState("");
   const [to, setTo] = React.useState<RecipientRow[]>(defaultTo ?? []);
@@ -358,13 +363,8 @@ export function ComposeEmailModal({
 
   React.useEffect(() => {
     if (!open) return;
-    // Load mailbox default + templates on open.
-    fetch(`/api/pm/org/sender-mailbox`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!data) return;
-        if (!defaultMailbox && data.defaultFrom) setFrom(data.defaultFrom);
-      });
+    // From mailbox is locked to LOCKED_FROM_MAILBOX while multi-sender support
+    // is on the roadmap — skip the org default fetch.
     fetch(`/api/pm/emails/templates`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -375,7 +375,7 @@ export function ComposeEmailModal({
 
   React.useEffect(() => {
     if (!open) {
-      setFrom(defaultMailbox ?? "");
+      setFrom(LOCKED_FROM_MAILBOX);
       setSubject("");
       setBody("");
       setTo(defaultTo ?? []);
@@ -486,10 +486,17 @@ export function ComposeEmailModal({
               <Label htmlFor="email-from">From mailbox *</Label>
               <Input
                 id="email-from"
-                placeholder="leasing@company.com"
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
+                readOnly
+                aria-readonly
+                tabIndex={-1}
+                className="cursor-not-allowed bg-surface-high text-fg-muted"
               />
+              <p className="text-xs text-fg-muted">
+                Sending from custom mailboxes is coming soon — for now all
+                outbound mail is sent from{" "}
+                <code>{LOCKED_FROM_MAILBOX}</code>.
+              </p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="email-template">Template</Label>

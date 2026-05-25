@@ -2,7 +2,10 @@
 
 // Lightweight dropdown menu (click to toggle, outside-click + Esc to close).
 // Used by the TopBar account menu and table row actions.
+// The menu is portaled to document.body with fixed positioning so it can't be
+// clipped by an `overflow-hidden` ancestor (e.g. our Card component).
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils/cn";
 
 interface DropdownProps {
@@ -12,6 +15,9 @@ interface DropdownProps {
   className?: string;
 }
 
+const MENU_MIN_WIDTH = 160; // matches min-w-[10rem]
+const GAP = 8; // mt-2 spacing between trigger and menu
+
 export function Dropdown({
   trigger,
   children,
@@ -19,29 +25,75 @@ export function Dropdown({
   className,
 }: DropdownProps) {
   const [open, setOpen] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = React.useState(false);
+  const [coords, setCoords] = React.useState<{
+    top: number;
+    left: number;
+    placement: "below" | "above";
+  } | null>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const updatePosition = React.useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuHeight = menuRef.current?.offsetHeight ?? 0;
+    const menuWidth = Math.max(menuRef.current?.offsetWidth ?? 0, MENU_MIN_WIDTH);
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    // Flip above when there's not enough room below and more room above.
+    const placement: "below" | "above" =
+      menuHeight > 0 && spaceBelow < menuHeight + GAP && spaceAbove > spaceBelow
+        ? "above"
+        : "below";
+    const top =
+      placement === "below" ? rect.bottom + GAP : rect.top - menuHeight - GAP;
+    let left = align === "end" ? rect.right - menuWidth : rect.left;
+    // Keep within viewport horizontally.
+    const maxLeft = window.innerWidth - menuWidth - 4;
+    if (left > maxLeft) left = maxLeft;
+    if (left < 4) left = 4;
+    setCoords({ top, left, placement });
+  }, [align]);
+
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, updatePosition]);
 
   React.useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target)) return;
+      if (menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    const onReflow = () => updatePosition();
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onReflow);
+    window.addEventListener("scroll", onReflow, true);
     return () => {
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onReflow);
+      window.removeEventListener("scroll", onReflow, true);
     };
-  }, [open]);
+  }, [open, updatePosition]);
 
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -50,20 +102,28 @@ export function Dropdown({
       >
         {trigger}
       </button>
-      {open && (
-        <div
-          role="menu"
-          onClick={() => setOpen(false)}
-          className={cn(
-            "absolute z-50 mt-2 min-w-[10rem] overflow-hidden rounded-md border border-border bg-surface-high py-1 animate-fade-in",
-            align === "end" ? "right-0" : "left-0",
-            className,
-          )}
-        >
-          {children}
-        </div>
-      )}
-    </div>
+      {open && mounted &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            onClick={() => setOpen(false)}
+            style={{
+              position: "fixed",
+              top: coords?.top ?? -9999,
+              left: coords?.left ?? -9999,
+              visibility: coords ? "visible" : "hidden",
+            }}
+            className={cn(
+              "z-50 min-w-[10rem] overflow-hidden rounded-md border border-border bg-surface-high py-1 animate-fade-in",
+              className,
+            )}
+          >
+            {children}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
