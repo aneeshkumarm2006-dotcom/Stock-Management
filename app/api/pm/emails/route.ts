@@ -43,6 +43,7 @@ import {
 } from '@/lib/pm/emailRecipientResolver';
 import { logActivity } from '@/lib/pm/activity';
 import { resolveSenderMailbox } from '@/lib/pm/mailbox';
+import { sendEmail } from '@/lib/pm/emailTransport';
 import type { EmailStatus, ParentType } from '@/types/pm';
 
 export const runtime = 'nodejs';
@@ -433,10 +434,37 @@ export async function POST(request: Request) {
       : null,
   });
 
-  // Activity log on the email itself.
-  const eventType =
+  // Transport: only fire on real send. Failures flip the row to 'Failed'
+  // and surface in the response so the UI can warn the user.
+  let delivery: {
+    delivered: boolean;
+    skipped?: boolean;
+    providerMessageId?: string;
+    error?: string;
+  } | null = null;
+  if (status === 'Sent') {
+    delivery = await sendEmail({
+      fromMailbox,
+      fromName: senderDisplayName,
+      to: toResolved.map((r) => r.email),
+      cc: ccResolved.map((r) => r.email),
+      bcc: bccResolved.map((r) => r.email),
+      subject: parsed.data.subject,
+      html: parsed.data.body,
+    });
+    if (!delivery.delivered && !delivery.skipped) {
+      message.status = 'Failed';
+      await message.save();
+    }
+  }
+
+  // Activity log on the email itself. Demote to 'Email failed' when the
+  // provider rejected the send.
+  const baseEventType =
     status === 'Sent'
-      ? 'Email sent'
+      ? delivery && !delivery.delivered && !delivery.skipped
+        ? 'Email failed'
+        : 'Email sent'
       : status === 'Scheduled'
       ? 'Email scheduled'
       : 'Email draft saved';
@@ -444,14 +472,22 @@ export async function POST(request: Request) {
     orgId: ctx.orgId,
     parentType: 'EmailMessage',
     parentId: message._id,
-    eventType,
+    eventType: baseEventType,
     actorUserId: ctx.userId,
     payload: {
       subject: parsed.data.subject,
       recipientCount: message.recipientCount,
       action: parsed.data.action,
+      ...(delivery
+        ? {
+            providerMessageId: delivery.providerMessageId,
+            transportSkipped: delivery.skipped,
+            transportError: delivery.error,
+          }
+        : {}),
     },
   });
+  const eventType = baseEventType;
 
   // Mirror activity log onto the related entity (so its Event-history tab
   // surfaces the send). Cast: EMAIL_RELATED_ENTITY_TYPES is a strict
@@ -477,6 +513,7 @@ export async function POST(request: Request) {
       status: message.status,
       threadId: threadId ? String(threadId) : null,
       recipientCount: message.recipientCount,
+      delivery: delivery ?? undefined,
     },
     { status: 201 },
   );

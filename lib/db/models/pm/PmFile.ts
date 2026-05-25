@@ -20,7 +20,12 @@ export interface IPmFile {
   mimeType: string;
   originalFilename: string;
   fileSize: number;
+  /** Cloudinary `public_id` (e.g. `pm/<org>/abc123`). Used for delete + URL re-derivation. */
   storageKey: string;
+  /** Cloudinary `secure_url` — direct download/view URL. Empty for legacy Phase 0 rows. */
+  storageUrl: string;
+  /** Cloudinary `resource_type` — one of image|video|raw. Required to delete. */
+  resourceType: 'image' | 'video' | 'raw';
   uploadedByUserId: Types.ObjectId;
   lastModifiedByUserId: Types.ObjectId;
   lastModifiedAt: Date;
@@ -56,6 +61,12 @@ const PmFileSchema = new Schema<IPmFile>(
     originalFilename: { type: String, required: true },
     fileSize: { type: Number, required: true, min: 0 },
     storageKey: { type: String, required: true },
+    storageUrl: { type: String, default: '' },
+    resourceType: {
+      type: String,
+      enum: ['image', 'video', 'raw'],
+      default: 'raw',
+    },
     uploadedByUserId: {
       type: Schema.Types.ObjectId,
       ref: 'User',

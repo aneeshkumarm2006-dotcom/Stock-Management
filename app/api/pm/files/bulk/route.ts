@@ -21,6 +21,7 @@ import {
 import { logActivity } from '@/lib/pm/activity';
 import { isParentType } from '@/lib/pm/parentTypes';
 import { objectIdString } from '@/lib/validation/pm/parentRef';
+import { destroyAsset } from '@/lib/pm/cloudinary';
 
 export const runtime = 'nodejs';
 
@@ -89,6 +90,17 @@ export async function POST(request: Request) {
           { $inc: { inUseCount: -n } },
         ),
       ),
+    );
+    // Best-effort Cloudinary cleanup. Skip legacy `phase0/` placeholders.
+    await Promise.all(
+      docs
+        .filter((d) => d.storageKey && !d.storageKey.startsWith('phase0/'))
+        .map((d) =>
+          destroyAsset(
+            d.storageKey,
+            (d.resourceType ?? 'raw') as 'image' | 'video' | 'raw',
+          ),
+        ),
     );
     await Promise.all(
       docs.flatMap((d) => {

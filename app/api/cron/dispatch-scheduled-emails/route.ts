@@ -11,6 +11,7 @@ import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { EmailMessage } from '@/lib/db/models/pm/EmailMessage';
 import { logActivity } from '@/lib/pm/activity';
+import { sendEmail } from '@/lib/pm/emailTransport';
 import type { ParentType } from '@/types/pm';
 
 export const runtime = 'nodejs';
@@ -49,6 +50,7 @@ export async function GET(request: Request) {
     .lean<DispatchableRow[]>();
 
   let promoted = 0;
+  let failed = 0;
   const errors: Array<{ id: string; message: string }> = [];
   for (const row of due) {
     try {
@@ -60,27 +62,57 @@ export async function GET(request: Request) {
       doc.status = 'Sent';
       doc.scheduledSendTime = null;
       await doc.save();
-      promoted++;
+
+      const delivery = await sendEmail({
+        fromMailbox: doc.fromMailbox,
+        fromName: doc.senderDisplayName,
+        to: doc.to.map((r) => r.email),
+        cc: doc.cc.map((r) => r.email),
+        bcc: doc.bcc.map((r) => r.email),
+        subject: doc.subject,
+        html: doc.body,
+      });
+      if (!delivery.delivered && !delivery.skipped) {
+        doc.status = 'Failed';
+        await doc.save();
+        failed++;
+      } else {
+        promoted++;
+      }
+
+      const eventType =
+        !delivery.delivered && !delivery.skipped
+          ? 'Email failed'
+          : 'Email sent';
 
       await logActivity({
         orgId: row.organizationId,
         parentType: 'EmailMessage',
         parentId: row._id,
-        eventType: 'Email sent',
+        eventType,
         actorUserId: row.senderUserId,
-        payload: { subject: row.subject, scheduledFired: true },
+        payload: {
+          subject: row.subject,
+          scheduledFired: true,
+          providerMessageId: delivery.providerMessageId,
+          transportSkipped: delivery.skipped,
+          transportError: delivery.error,
+        },
       });
       if (row.relatedEntityType && row.relatedEntityId) {
         await logActivity({
           orgId: row.organizationId,
           parentType: row.relatedEntityType as ParentType,
           parentId: row.relatedEntityId,
-          eventType: 'Email sent',
+          eventType,
           actorUserId: row.senderUserId,
           payload: {
             emailId: String(row._id),
             subject: row.subject,
             scheduledFired: true,
+            providerMessageId: delivery.providerMessageId,
+            transportSkipped: delivery.skipped,
+            transportError: delivery.error,
           },
         });
       }
@@ -95,6 +127,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     inspected: due.length,
     promoted,
+    failed,
     errors,
     ranAt: now.toISOString(),
   });

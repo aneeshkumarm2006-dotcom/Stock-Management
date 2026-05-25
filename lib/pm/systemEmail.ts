@@ -16,6 +16,7 @@ import {
   computeThreadGroupingKey,
 } from '@/lib/db/models/pm/EmailThread';
 import { logActivity } from '@/lib/pm/activity';
+import { sendEmail } from '@/lib/pm/emailTransport';
 import type {
   EmailRecipientType,
   EmailRelatedEntityType,
@@ -145,7 +146,27 @@ export async function writeSystemEmail(
     relatedEntityId: toOidOrNull(input.relatedEntityId),
   });
 
-  const eventType = input.eventType ?? 'Email sent';
+  // Transport. Failure flips the row to 'Failed' and the activity log
+  // event downgrades to 'Email failed' so the Comms tab surfaces the issue.
+  const delivery = await sendEmail({
+    fromMailbox: input.fromMailbox,
+    fromName: input.senderDisplayName,
+    to: to.map((r) => r.email),
+    cc: cc.map((r) => r.email),
+    bcc: bcc.map((r) => r.email),
+    subject: input.subject,
+    html: input.body,
+  });
+  if (!delivery.delivered && !delivery.skipped) {
+    await EmailMessage.updateOne(
+      { _id: message._id },
+      { $set: { status: 'Failed' } },
+    );
+  }
+
+  const baseEventType = input.eventType ?? 'Email sent';
+  const eventType =
+    !delivery.delivered && !delivery.skipped ? 'Email failed' : baseEventType;
   await logActivity({
     orgId: orgOid,
     parentType: 'EmailMessage',
@@ -156,6 +177,9 @@ export async function writeSystemEmail(
       systemGenerated: true,
       subject: input.subject,
       recipientCount: to.length + cc.length + bcc.length,
+      providerMessageId: delivery.providerMessageId,
+      transportSkipped: delivery.skipped,
+      transportError: delivery.error,
     },
   });
 
@@ -170,6 +194,9 @@ export async function writeSystemEmail(
         systemGenerated: true,
         emailId: String(message._id),
         subject: input.subject,
+        providerMessageId: delivery.providerMessageId,
+        transportSkipped: delivery.skipped,
+        transportError: delivery.error,
       },
     });
   }

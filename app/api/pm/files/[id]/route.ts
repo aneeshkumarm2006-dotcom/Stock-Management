@@ -13,6 +13,7 @@ import {
 import { pmFileUpdateSchema } from '@/lib/validation/pm/pmFile';
 import { logActivity } from '@/lib/pm/activity';
 import { isParentType } from '@/lib/pm/parentTypes';
+import { destroyAsset } from '@/lib/pm/cloudinary';
 
 export const runtime = 'nodejs';
 
@@ -45,6 +46,8 @@ export async function GET(
     originalFilename: doc.originalFilename,
     fileSize: doc.fileSize,
     storageKey: doc.storageKey,
+    storageUrl: doc.storageUrl ?? '',
+    resourceType: doc.resourceType ?? 'raw',
     uploadedAt: doc.createdAt,
     lastModifiedAt: doc.lastModifiedAt,
   });
@@ -125,11 +128,22 @@ export async function DELETE(
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const categoryId = doc.categoryId;
+  const storageKey = doc.storageKey;
+  const resourceType = (doc.resourceType ?? 'raw') as
+    | 'image'
+    | 'video'
+    | 'raw';
+
   await doc.deleteOne();
   await FileCategory.updateOne(
     { _id: categoryId },
     { $inc: { inUseCount: -1 } },
   );
+
+  // Skip legacy Phase 0 rows whose storageKey is a uuid placeholder.
+  if (storageKey && !storageKey.startsWith('phase0/')) {
+    await destroyAsset(storageKey, resourceType);
+  }
 
   if (doc.locationType !== 'Account' && doc.locationId) {
     if (isParentType(doc.locationType)) {

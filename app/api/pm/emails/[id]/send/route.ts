@@ -11,6 +11,7 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { logActivity } from '@/lib/pm/activity';
+import { sendEmail } from '@/lib/pm/emailTransport';
 
 export const runtime = 'nodejs';
 
@@ -53,13 +54,35 @@ export async function POST(_request: Request, { params }: RouteContext) {
   doc.scheduledSendTime = null;
   await doc.save();
 
+  const delivery = await sendEmail({
+    fromMailbox: doc.fromMailbox,
+    fromName: doc.senderDisplayName,
+    to: doc.to.map((r) => r.email),
+    cc: doc.cc.map((r) => r.email),
+    bcc: doc.bcc.map((r) => r.email),
+    subject: doc.subject,
+    html: doc.body,
+  });
+  if (!delivery.delivered && !delivery.skipped) {
+    doc.status = 'Failed';
+    await doc.save();
+  }
+  const eventType =
+    !delivery.delivered && !delivery.skipped ? 'Email failed' : 'Email sent';
+
   await logActivity({
     orgId: ctx.orgId,
     parentType: 'EmailMessage',
     parentId: doc._id,
-    eventType: 'Email sent',
+    eventType,
     actorUserId: ctx.userId,
-    payload: { subject: doc.subject, manualSend: true },
+    payload: {
+      subject: doc.subject,
+      manualSend: true,
+      providerMessageId: delivery.providerMessageId,
+      transportSkipped: delivery.skipped,
+      transportError: delivery.error,
+    },
   });
 
   if (doc.relatedEntityType && doc.relatedEntityId) {
@@ -67,12 +90,15 @@ export async function POST(_request: Request, { params }: RouteContext) {
       orgId: ctx.orgId,
       parentType: doc.relatedEntityType,
       parentId: doc.relatedEntityId,
-      eventType: 'Email sent',
+      eventType,
       actorUserId: ctx.userId,
       payload: {
         emailId: String(doc._id),
         subject: doc.subject,
         manualSend: true,
+        providerMessageId: delivery.providerMessageId,
+        transportSkipped: delivery.skipped,
+        transportError: delivery.error,
       },
     });
   }
@@ -81,5 +107,6 @@ export async function POST(_request: Request, { params }: RouteContext) {
     id: String(doc._id),
     status: doc.status,
     sentAt: doc.sentAt,
+    delivery,
   });
 }

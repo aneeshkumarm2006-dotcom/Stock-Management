@@ -13,6 +13,8 @@ export const pmFileCreateSchema = z
     originalFilename: z.string().min(1).max(255),
     fileSize: z.number().int().min(0),
     storageKey: z.string().min(1),
+    storageUrl: z.string().url().optional(),
+    resourceType: z.enum(['image', 'video', 'raw']).optional(),
   })
   .refine(
     (d) =>

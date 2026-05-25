@@ -126,7 +126,6 @@ const SEGMENT_LABELS: Record<string, string> = {
   calendars: "Calendars",
   files: "Files",
   reports: "Reports",
-  "add-ons": "Add-ons",
   "approval-rules": "Approval rules",
 };
 
