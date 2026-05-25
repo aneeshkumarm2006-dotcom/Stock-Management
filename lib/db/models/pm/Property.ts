@@ -81,7 +81,7 @@ export interface IProperty {
   photo?: Types.ObjectId | null;
   propertyManagerUserId?: Types.ObjectId | null;
   rentalOwners: IPropertyOwnerJunction[];
-  operatingAccountId: Types.ObjectId;
+  operatingAccountId?: Types.ObjectId | null;
   depositTrustAccountId?: Types.ObjectId | null;
   propertyReserve: number;
   listingDescription?: string;

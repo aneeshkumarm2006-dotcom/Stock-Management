@@ -235,7 +235,9 @@ export async function PATCH(
     }));
   }
   if (operatingAccountId !== undefined) {
-    doc.operatingAccountId = new Types.ObjectId(operatingAccountId);
+    doc.operatingAccountId = operatingAccountId
+      ? new Types.ObjectId(operatingAccountId)
+      : null;
   }
   if (depositTrustAccountId !== undefined) {
     doc.depositTrustAccountId = depositTrustAccountId
