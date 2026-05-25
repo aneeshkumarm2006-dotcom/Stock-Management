@@ -22,7 +22,7 @@ export function MobileTabBar() {
   const other = WORKSPACES.find((w) => w.id !== workspace);
 
   return (
-    <nav className="fixed bottom-0 left-0 z-50 flex h-16 w-full items-stretch border-t border-border bg-surface-lowest md:hidden">
+    <nav className="fixed bottom-0 left-0 z-50 flex h-16 w-full items-stretch border-t border-border bg-surface-high md:hidden">
       {items.map(({ href, label, icon: Icon }) => {
         const active = isActivePath(pathname, href);
         return (

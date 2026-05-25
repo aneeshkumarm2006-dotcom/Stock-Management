@@ -15,7 +15,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-bg">
+    <div className="min-h-screen bg-surface-high">
       <SettingsHydrator />
       <NetworkStatus />
       <Sidebar />

@@ -17,8 +17,9 @@
   html.light {
     color-scheme: light;
 
-    /* Warm neutrals (#fafaf9 base, #ffffff surfaces, #f7f7f5 sunken). */
-    --c-bg: 250 250 249;
+    /* Warm neutrals — page canvas matches the sidebar (`surface-high`),
+       cards stay on pure white so they still pop above. */
+    --c-bg: 251 251 249;
     --c-surface: 255 255 255;
     --c-surface-high: 251 251 249;
     --c-surface-highest: 241 241 238;
@@ -68,13 +69,15 @@
   html.dark {
     color-scheme: dark;
 
-    /* Warm-charcoal counterpart to the light palette. */
-    --c-bg: 15 15 16;
-    --c-surface: 22 22 23;
+    /* Warm-charcoal counterpart to the light palette. The page canvas now
+       sits on `surface-high` (matches the sidebar), so `surface` (cards) and
+       `surface-highest` (overlays) are lifted to stay above it. */
+    --c-bg: 28 28 30;
+    --c-surface: 35 35 37;
     --c-surface-high: 28 28 30;
-    --c-surface-highest: 35 35 37;
-    --c-surface-low: 19 19 20;
-    --c-surface-lowest: 8 8 10;
+    --c-surface-highest: 42 42 45;
+    --c-surface-low: 22 22 23;
+    --c-surface-lowest: 15 15 16;
 
     --c-border: 42 42 44;
     --c-outline: 70 70 74;
@@ -120,12 +123,15 @@
   }
 
   body {
-    @apply bg-bg text-fg;
+    @apply bg-surface-high text-fg;
     font-family: var(--font-sans), "Onest", "Geist", Inter, ui-sans-serif,
       system-ui, sans-serif;
-    font-size: 13px;
+    /* Match the sidebar's compact density: 12.5px, slight negative tracking,
+       Onest's tabular feature set. Page chrome, cards, and tables inherit
+       these defaults; explicit utility classes still override where needed. */
+    font-size: 12.5px;
     line-height: 1.45;
-    letter-spacing: -0.005em;
+    letter-spacing: -0.011em;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     font-feature-settings: "cv11", "ss01";
