@@ -25,6 +25,7 @@ import {
   Share2,
   MoreHorizontal,
   Download,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,6 +59,8 @@ interface FileRow {
   originalFilename: string;
   fileSize: number;
   storageKey: string;
+  storageUrl: string;
+  resourceType: "image" | "video" | "raw";
   uploadedAt: string;
   lastModifiedAt: string;
   uploadedByUserId: string;
@@ -65,6 +68,36 @@ interface FileRow {
   uploadedByName: string;
   lastModifiedByName: string;
   locationDisplay: LocationDisplay | null;
+}
+
+interface SignedUpload {
+  cloudName: string;
+  apiKey: string;
+  timestamp: number;
+  signature: string;
+  folder: string;
+}
+
+// Build a Cloudinary URL that forces the browser to download (Content-Disposition:
+// attachment) instead of rendering inline. Works for image/video/raw. We inject
+// `fl_attachment:<filename>` after `/upload/` so the saved filename matches the
+// user-facing original filename.
+function buildDownloadUrl(storageUrl: string, originalFilename: string): string {
+  if (!storageUrl) return "";
+  // Strip the extension — Cloudinary appends it back from the public_id.
+  const base = originalFilename.replace(/\.[^./\\]+$/, "");
+  const safe = encodeURIComponent(base).replace(/%20/g, "_");
+  return storageUrl.replace("/upload/", `/upload/fl_attachment:${safe}/`);
+}
+
+function triggerDownload(url: string, filename: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 interface CategoryRow {
@@ -236,11 +269,31 @@ export default function FilesPage() {
 
   async function bulkDownload() {
     if (selected.size === 0) return;
-    // Phase 0 — blob storage is virtual. Phase 8 will swap this for a real
-    // zip-stream endpoint once `storageKey` is backed by S3/GCS.
+    const targets = rows.filter((r) => selected.has(r.id) && r.storageUrl);
+    const skipped = selected.size - targets.length;
+    if (targets.length === 0) {
+      toast({
+        title: "No downloadable files",
+        description:
+          "Selected files have no storage URL (legacy placeholder uploads). Re-upload to enable downloads.",
+        variant: "error",
+      });
+      return;
+    }
+    // Browsers throttle simultaneous downloads — stagger by 250ms so each file
+    // gets its own user-initiated tick.
+    targets.forEach((row, i) => {
+      setTimeout(() => {
+        triggerDownload(
+          buildDownloadUrl(row.storageUrl, row.originalFilename),
+          row.originalFilename,
+        );
+      }, i * 250);
+    });
     toast({
-      title: "Download queued (placeholder)",
-      description: `${selected.size} file(s). Real blob storage lands when storage is wired.`,
+      title: `Downloading ${targets.length} file(s)`,
+      description: skipped > 0 ? `${skipped} skipped (no storage URL).` : undefined,
+      variant: "success",
     });
   }
 
@@ -733,13 +786,23 @@ function FileRowView({
         />
       </td>
       <td className="align-top text-fg">
-        <button
-          type="button"
-          onClick={() => setEditOpen(true)}
-          className="font-medium hover:underline"
-        >
-          {row.title}
-        </button>
+        {row.storageUrl ? (
+          <a
+            href={row.storageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-fg hover:underline"
+          >
+            {row.title}
+          </a>
+        ) : (
+          <span
+            className="font-medium text-fg-muted"
+            title="No storage URL — legacy placeholder upload"
+          >
+            {row.title}
+          </span>
+        )}
         <div className="text-[11px] text-fg-muted">
           {row.originalFilename} • {formatBytes(row.fileSize)}
         </div>
@@ -792,17 +855,38 @@ function FileRowView({
           <DropdownItem onClick={() => setEditOpen(true)}>
             Edit details
           </DropdownItem>
-          <DropdownItem
-            onClick={() =>
-              toast({
-                title: "Download queued (placeholder)",
-                description:
-                  "Real blob download lands when storage is wired in Phase 8 storage layer.",
-              })
-            }
-          >
-            Download
-          </DropdownItem>
+          {row.storageUrl ? (
+            <>
+              <DropdownItem
+                onClick={() => window.open(row.storageUrl, "_blank", "noopener")}
+              >
+                <Eye className="h-3.5 w-3.5" /> View
+              </DropdownItem>
+              <DropdownItem
+                onClick={() =>
+                  triggerDownload(
+                    buildDownloadUrl(row.storageUrl, row.originalFilename),
+                    row.originalFilename,
+                  )
+                }
+              >
+                <Download className="h-3.5 w-3.5" /> Download
+              </DropdownItem>
+            </>
+          ) : (
+            <DropdownItem
+              onClick={() =>
+                toast({
+                  title: "No file content",
+                  description:
+                    "This row was created before storage was wired. Delete and re-upload to enable view/download.",
+                  variant: "error",
+                })
+              }
+            >
+              View / Download unavailable
+            </DropdownItem>
+          )}
           <DropdownItem
             className="text-error hover:bg-error/10 hover:text-error"
             onClick={remove}
@@ -918,9 +1002,51 @@ function UploadAccountFileModal({
       return;
     }
     setSaving(true);
+
+    // One signature per upload session — Cloudinary timestamps are valid for
+    // ~1 hour so a single signed payload covers every file we send below.
+    const signRes = await fetch("/api/pm/files/sign", { method: "POST" });
+    if (!signRes.ok) {
+      const err = (await signRes.json().catch(() => ({}))) as { error?: string };
+      setSaving(false);
+      toast({
+        title: "Storage not ready",
+        description: err.error ?? "Could not get upload signature.",
+        variant: "error",
+      });
+      return;
+    }
+    const sig = (await signRes.json()) as SignedUpload;
+
     let okCount = 0;
     const failed: string[] = [];
     for (const f of files) {
+      // 1. POST the binary directly to Cloudinary.
+      const cloudForm = new FormData();
+      cloudForm.append("file", f);
+      cloudForm.append("api_key", sig.apiKey);
+      cloudForm.append("timestamp", String(sig.timestamp));
+      cloudForm.append("signature", sig.signature);
+      cloudForm.append("folder", sig.folder);
+      const cloudRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${sig.cloudName}/auto/upload`,
+        { method: "POST", body: cloudForm },
+      );
+      if (!cloudRes.ok) {
+        const err = (await cloudRes.json().catch(() => ({}))) as {
+          error?: { message?: string };
+        };
+        failed.push(`${f.name}: ${err.error?.message ?? "cloud upload failed"}`);
+        continue;
+      }
+      const cloud = (await cloudRes.json()) as {
+        public_id: string;
+        secure_url: string;
+        bytes: number;
+        resource_type: "image" | "video" | "raw";
+      };
+
+      // 2. Record metadata in our DB.
       const payload = {
         title: titleOverride.trim() || f.name,
         sharing,
@@ -932,8 +1058,10 @@ function UploadAccountFileModal({
             : locationId.trim(),
         mimeType: f.type || "application/octet-stream",
         originalFilename: f.name,
-        fileSize: f.size,
-        storageKey: `phase0/${crypto.randomUUID()}`,
+        fileSize: cloud.bytes || f.size,
+        storageKey: cloud.public_id,
+        storageUrl: cloud.secure_url,
+        resourceType: cloud.resource_type,
       };
       const res = await fetch("/api/pm/files", {
         method: "POST",
@@ -944,7 +1072,7 @@ function UploadAccountFileModal({
         okCount += 1;
       } else {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
-        failed.push(`${f.name}: ${err.error ?? "failed"}`);
+        failed.push(`${f.name}: ${err.error ?? "save failed"}`);
       }
     }
     setSaving(false);
