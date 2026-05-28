@@ -21,34 +21,27 @@ const budgetLineSchema = z.object({
   monthlyAmounts: monthlyDollarsSchema,
 });
 
-export const budgetCreateSchema = z
-  .object({
-    scopeType: z.enum(BUDGET_SCOPE_TYPES as readonly [string, ...string[]]),
-    scopeId: objectIdSchema,
-    name: z.string().trim().min(1).max(200),
-    fiscalYear: z.number().int().min(1900).max(2999),
-    fiscalYearStart: z
-      .enum(FISCAL_MONTHS as readonly [string, ...string[]])
-      .default('January'),
-    defaultAmounts: z
-      .enum(BUDGET_DEFAULT_AMOUNTS as readonly [string, ...string[]])
-      .default('Zero'),
-    copySourceBudgetId: objectIdSchema.nullable().optional(),
-    lines: z.array(budgetLineSchema).default([]),
-  })
-  .refine(
-    (d) =>
-      d.defaultAmounts !== 'Copy existing budget' || !!d.copySourceBudgetId,
-    {
-      message:
-        'copySourceBudgetId is required when defaultAmounts="Copy existing budget"',
-      path: ['copySourceBudgetId'],
-    },
-  );
+// Presence requirements (scopeId, name) and "copy-source required when
+// Copy existing" refine moved to computeWarnings (BUDGET_MISSING_SCOPE,
+// BUDGET_MISSING_NAME, BUDGET_MISSING_COPY_SOURCE).
+export const budgetCreateSchema = z.object({
+  scopeType: z.enum(BUDGET_SCOPE_TYPES as readonly [string, ...string[]]).optional(),
+  scopeId: objectIdSchema.optional(),
+  name: z.string().trim().max(200).optional(),
+  fiscalYear: z.number().int().min(1900).max(2999),
+  fiscalYearStart: z
+    .enum(FISCAL_MONTHS as readonly [string, ...string[]])
+    .default('January'),
+  defaultAmounts: z
+    .enum(BUDGET_DEFAULT_AMOUNTS as readonly [string, ...string[]])
+    .default('Zero'),
+  copySourceBudgetId: objectIdSchema.nullable().optional(),
+  lines: z.array(budgetLineSchema).default([]),
+});
 
 export const budgetUpdateSchema = z
   .object({
-    name: z.string().trim().min(1).max(200).optional(),
+    name: z.string().trim().max(200).optional(),
     lines: z.array(budgetLineSchema).optional(),
     active: z.boolean().optional(),
   })

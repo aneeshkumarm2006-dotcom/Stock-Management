@@ -35,6 +35,7 @@ import {
   DRAFT_LEASE_EXECUTION_STATUSES,
   RENT_CYCLES,
 } from '@/types/pm';
+import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
 /** Memo cap shared with active Lease (BR-PU-6). */
 export const LEASE_MEMO_MAX = 100;
@@ -146,6 +147,7 @@ export interface IDraftLease {
   cancelledAt?: Date | null;
   cancelledByUserId?: Types.ObjectId | null;
   customFields: Map<string, unknown>;
+  warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -189,11 +191,11 @@ const SplitRentSchema = new Schema<IDraftLeaseSplitRentCharge>(
 
 const PrimaryRentSchema = new Schema<IDraftLeasePrimaryRent>(
   {
-    amount: { type: Number, required: true, min: 0 },
+    amount: { type: Number, default: 0, min: 0 },
     accountId: {
       type: Schema.Types.ObjectId,
       ref: 'PmChartOfAccount',
-      required: true,
+      default: null,
     },
     nextDueDate: { type: Date, default: null },
     memo: { type: String, trim: true, maxlength: LEASE_MEMO_MAX },
@@ -291,14 +293,14 @@ const DraftLeaseSchema = new Schema<IDraftLease>(
     propertyId: {
       type: Schema.Types.ObjectId,
       ref: 'PmProperty',
-      required: true,
+      default: null,
     },
     unitId: {
       type: Schema.Types.ObjectId,
       ref: 'PmUnit',
-      required: true,
+      default: null,
     },
-    leaseType: { type: String, enum: LEASE_TYPES, required: true },
+    leaseType: { type: String, enum: LEASE_TYPES, default: 'Fixed' },
     startDate: { type: Date, default: null },
     endDate: { type: Date, default: null },
     leasingAgentUserId: {
@@ -312,7 +314,7 @@ const DraftLeaseSchema = new Schema<IDraftLease>(
     rentCycle: { type: String, enum: RENT_CYCLES, default: 'Monthly' },
     primaryRent: {
       type: PrimaryRentSchema,
-      required: true,
+      default: () => ({ amount: 0 }),
     },
     splitRentCharges: { type: [SplitRentSchema], default: () => [] },
     securityDeposit: { type: Number, default: 0, min: 0 },
@@ -345,6 +347,7 @@ const DraftLeaseSchema = new Schema<IDraftLease>(
       default: null,
     },
     customFields: { type: Map, of: Schema.Types.Mixed, default: () => new Map() },
+    warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_draft_leases' },
 );

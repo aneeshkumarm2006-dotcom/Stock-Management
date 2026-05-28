@@ -17,6 +17,7 @@ import {
   APPROVAL_RULE_SCOPE_TYPES,
   APPROVAL_RULE_SEMANTICS,
 } from '@/types/pm';
+import { computeWarnings } from '@/lib/pm/warnings';
 
 export const runtime = 'nodejs';
 
@@ -24,25 +25,21 @@ const objectIdString = z
   .string()
   .refine((v) => Types.ObjectId.isValid(v), { message: 'Invalid id' });
 
-const ruleCreateSchema = z
-  .object({
-    scopeType: z.enum(APPROVAL_RULE_SCOPE_TYPES as readonly [string, ...string[]]),
-    scopeId: objectIdString.optional(),
-    /** Dollars; converted to cents server-side. */
-    threshold: z.number().nonnegative(),
-    semantics: z.enum(APPROVAL_RULE_SEMANTICS as readonly [string, ...string[]]),
-    approverUserIds: z.array(objectIdString).min(1),
-    active: z.boolean().optional(),
-  })
-  .superRefine((d, ctx) => {
-    if (d.scopeType === 'Property' && !d.scopeId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Property-scope rules require scopeId',
-        path: ['scopeId'],
-      });
-    }
-  });
+// Presence requirements and "Property-scope requires scopeId" moved to
+// computeWarnings (RULE_MISSING_SCOPE, RULE_MISSING_APPROVERS).
+const ruleCreateSchema = z.object({
+  scopeType: z
+    .enum(APPROVAL_RULE_SCOPE_TYPES as readonly [string, ...string[]])
+    .default('Company'),
+  scopeId: objectIdString.optional(),
+  /** Dollars; converted to cents server-side. */
+  threshold: z.number().nonnegative().default(0),
+  semantics: z
+    .enum(APPROVAL_RULE_SEMANTICS as readonly [string, ...string[]])
+    .default('any-of'),
+  approverUserIds: z.array(objectIdString).default([]),
+  active: z.boolean().optional(),
+});
 
 interface RuleLeanLike {
   _id: Types.ObjectId;
@@ -115,6 +112,11 @@ export async function POST(request: Request) {
       active: parsed.data.active ?? true,
       createdByUserId: new Types.ObjectId(ctx.userId),
     });
+    const computed = computeWarnings(doc.toObject(), 'ApprovalRule');
+    if (computed.length > 0) {
+      doc.warnings = computed;
+      await doc.save();
+    }
     await logActivity({
       orgId: ctx.orgId,
       parentType: 'ApprovalRule',

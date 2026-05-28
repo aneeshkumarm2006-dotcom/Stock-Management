@@ -32,6 +32,8 @@ import {
   type CalendarReminder,
   type CalendarEditScope,
 } from "@/types/pm";
+import { computeWarnings } from "@/lib/pm/warnings";
+import { WarningInline } from "@/components/pm/WarningBadge";
 
 export interface CalendarEventModalPropertyOption {
   id: string;
@@ -236,23 +238,10 @@ export function CalendarEventModal({
     };
   }, [pickerOpen, pickerChoices.length]);
 
-  function valid(): string | null {
-    if (!propertyId) return "Property is required (BR-CC-6)";
-    if (!eventName.trim()) return "Event name is required";
-    const start = fromLocalInput(startDate, startTime, allDay);
-    const end = fromLocalInput(endDate, endTime, allDay);
-    if (end.getTime() < start.getTime()) {
-      return "End must be ≥ Start (BR-CC-11)";
-    }
-    return null;
-  }
+  // Property / name / end>=start checks moved to non-blocking warnings.
+  // The form can submit either way; the API stamps the warnings on the row.
 
   async function save() {
-    const err = valid();
-    if (err) {
-      toast({ title: err, variant: "error" });
-      return;
-    }
     setSaving(true);
     const start = fromLocalInput(startDate, startTime, allDay);
     const end = fromLocalInput(endDate, endTime, allDay);
@@ -617,6 +606,18 @@ export function CalendarEventModal({
               <span className="font-medium text-fg">Timezone:</span> {timezone} (org-level, read-only, BR-CC-9)
             </div>
           </div>
+
+          <WarningInline
+            warnings={computeWarnings(
+              {
+                propertyId,
+                eventName,
+                startDate: fromLocalInput(startDate, startTime, allDay),
+                endDate: fromLocalInput(endDate, endTime, allDay),
+              },
+              "CalendarEvent",
+            )}
+          />
         </div>
 
         <DialogFooter>
@@ -628,10 +629,7 @@ export function CalendarEventModal({
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button
-            onClick={save}
-            disabled={saving || !eventName.trim() || !propertyId}
-          >
+          <Button onClick={save} disabled={saving}>
             {saving ? "Saving…" : isEdit ? "Save" : "Create"}
           </Button>
         </DialogFooter>

@@ -17,6 +17,8 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { computeWarnings } from "@/lib/pm/warnings";
+import { WarningInline } from "@/components/pm/WarningBadge";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import {
   APPROVAL_RULE_SCOPE_TYPES,
@@ -281,14 +283,8 @@ function ApprovalRuleModal({
   }
 
   async function save() {
-    if (scopeType === "Property" && !scopeId) {
-      toast({ title: "Pick a property for property-scope rule", variant: "error" });
-      return;
-    }
-    if (approverUserIds.length === 0) {
-      toast({ title: "Pick at least one approver", variant: "error" });
-      return;
-    }
+    // Property-scope-needs-scopeId and at-least-one-approver checks moved
+    // to non-blocking warnings (RULE_MISSING_SCOPE, RULE_MISSING_APPROVERS).
     setSaving(true);
     const url = existing
       ? `/api/pm/approval-rules/${existing.id}`
@@ -461,6 +457,13 @@ function ApprovalRuleModal({
               </div>
             </details>
           </div>
+
+          <WarningInline
+            warnings={computeWarnings(
+              { scopeType, scopeId, approverUserIds },
+              "ApprovalRule",
+            )}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>

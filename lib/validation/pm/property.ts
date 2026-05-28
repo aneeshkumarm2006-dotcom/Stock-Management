@@ -1,18 +1,8 @@
 // Zod validators for Property routes. PDR §3.1; DECISIONS.md [G-S-24].
 import { z } from 'zod';
 import { objectIdString } from './parentRef';
-import {
-  COMMERCIAL_SUBTYPES,
-  RESIDENTIAL_SUBTYPES,
-} from '@/types/pm';
 
 const PROPERTY_CLASSES = ['Residential', 'Commercial'] as const;
-const ALL_SUBTYPES = [
-  ...RESIDENTIAL_SUBTYPES,
-  ...COMMERCIAL_SUBTYPES,
-] as readonly string[];
-const RES_SUBTYPES_SET = new Set<string>(RESIDENTIAL_SUBTYPES);
-const COM_SUBTYPES_SET = new Set<string>(COMMERCIAL_SUBTYPES);
 
 const RESIDENT_CENTER_PAYMENT_HISTORY = [
   'Hidden',
@@ -20,13 +10,17 @@ const RESIDENT_CENTER_PAYMENT_HISTORY = [
   'Tenant can view all transactions',
 ] as const;
 
+// Presence requirements lifted: address fields can be blank. The Zod schema
+// keeps type/length guards only; missing-field cases surface as warnings via
+// computeWarnings(). `state` still capped at 2 chars (format) but no longer
+// requires presence.
 const addressSchema = z.object({
-  line1: z.string().min(1).max(120),
+  line1: z.string().max(120).optional(),
   line2: z.string().max(120).optional(),
   line3: z.string().max(120).optional(),
-  city: z.string().min(1).max(80),
-  state: z.string().min(2).max(2),
-  zip: z.string().min(3).max(10),
+  city: z.string().max(80).optional(),
+  state: z.string().max(2).optional(),
+  zip: z.string().max(10).optional(),
   country: z.string().max(2).optional(),
 });
 
@@ -41,12 +35,13 @@ const residentRequestsSchema = z.object({
 });
 
 const baseFields = {
-  propertyName: z.string().min(1).max(200),
-  propertyClass: z.enum(PROPERTY_CLASSES),
-  propertySubType: z
-    .string()
-    .refine((v) => ALL_SUBTYPES.includes(v), 'Unknown propertySubType'),
-  address: addressSchema,
+  propertyName: z.string().max(200).optional(),
+  propertyClass: z.enum(PROPERTY_CLASSES).optional(),
+  // Subtype membership is no longer a hard error — it surfaces as the
+  // SUBTYPE_CLASS_MISMATCH warning. Type stays string + max length to keep
+  // payloads sane.
+  propertySubType: z.string().max(80).optional(),
+  address: addressSchema.optional(),
   photo: objectIdString.nullable().optional(),
   images: z.array(objectIdString).max(100).optional(),
   propertyManagerUserId: objectIdString.nullable().optional(),
@@ -67,41 +62,19 @@ const baseFields = {
   customFields: z.record(z.unknown()).optional(),
 };
 
-function refineOwnerSum(
-  d: { rentalOwners?: Array<{ ownershipPct: number }> },
-): boolean {
-  const list = d.rentalOwners ?? [];
-  if (list.length === 0) return true;
-  const sum = list.reduce((a, r) => a + (Number.isFinite(r.ownershipPct) ? r.ownershipPct : 0), 0);
-  return Math.abs(sum - 100) <= 0.01;
-}
+// Business-rule refinements (ownership-sum = 100, subtype matches class)
+// were here as hard 400-on-violation. They now live in computeWarnings()
+// as non-blocking amber warnings; the create endpoint stamps them on the
+// new doc and returns them in the response.
 
-function refineSubType(d: {
-  propertyClass?: 'Residential' | 'Commercial';
-  propertySubType?: string;
-}): boolean {
-  if (!d.propertyClass || !d.propertySubType) return true;
-  if (d.propertyClass === 'Residential') return RES_SUBTYPES_SET.has(d.propertySubType);
-  return COM_SUBTYPES_SET.has(d.propertySubType);
-}
-
-export const propertyCreateSchema = z
-  .object(baseFields)
-  .refine(refineOwnerSum, {
-    message: 'Rental-owner ownershipPct must sum to 100%',
-    path: ['rentalOwners'],
-  })
-  .refine(refineSubType, {
-    message: 'propertySubType is not valid for the chosen propertyClass',
-    path: ['propertySubType'],
-  });
+export const propertyCreateSchema = z.object(baseFields);
 
 export const propertyUpdateSchema = z
   .object({
-    propertyName: baseFields.propertyName.optional(),
-    propertyClass: baseFields.propertyClass.optional(),
-    propertySubType: baseFields.propertySubType.optional(),
-    address: baseFields.address.optional(),
+    propertyName: baseFields.propertyName,
+    propertyClass: baseFields.propertyClass,
+    propertySubType: baseFields.propertySubType,
+    address: baseFields.address,
     photo: baseFields.photo,
     images: baseFields.images,
     propertyManagerUserId: baseFields.propertyManagerUserId,
@@ -120,14 +93,6 @@ export const propertyUpdateSchema = z
     rentersInsuranceMinLiabilityMSI: baseFields.rentersInsuranceMinLiabilityMSI,
     customFields: baseFields.customFields,
     active: z.boolean().optional(),
-  })
-  .refine(refineOwnerSum, {
-    message: 'Rental-owner ownershipPct must sum to 100%',
-    path: ['rentalOwners'],
-  })
-  .refine(refineSubType, {
-    message: 'propertySubType is not valid for the chosen propertyClass',
-    path: ['propertySubType'],
   })
   .refine((d) => Object.keys(d).length > 0, {
     message: 'No fields to update',

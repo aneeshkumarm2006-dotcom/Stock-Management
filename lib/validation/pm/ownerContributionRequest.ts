@@ -11,13 +11,13 @@ const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid id');
 
 const baseFields = {
   status: z.enum(OWNER_CONTRIBUTION_STATUSES_DB).default('New'),
-  dueDate: z.string().datetime().or(z.string().date()),
-  propertiesScope: z.string().min(1).max(200),
-  taskDescription: z.string().min(1).max(2000),
-  requestedFromOwnerId: objectIdSchema,
+  dueDate: z.string().datetime().or(z.string().date()).optional(),
+  propertiesScope: z.string().max(200).optional(),
+  taskDescription: z.string().max(2000).optional(),
+  requestedFromOwnerId: objectIdSchema.optional(),
   priority: z.enum(OWNER_CONTRIBUTION_PRIORITIES_DB).default('Normal'),
   /** Dollars at the API boundary; persisted as cents. */
-  requestedAmount: z.number().nonnegative(),
+  requestedAmount: z.number().nonnegative().optional(),
   receivedAmount: z.number().nonnegative().optional(),
   taskId: objectIdSchema.nullable().optional(),
 };

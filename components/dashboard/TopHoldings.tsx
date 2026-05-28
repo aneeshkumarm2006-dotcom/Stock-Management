@@ -28,7 +28,7 @@ export function TopHoldings({
   displayCurrency,
 }: {
   holdings: Holding[];
-  displayCurrency: "USD" | "CAD";
+  displayCurrency: string;
 }) {
   const numberFormat = useSettingsStore((s) => s.numberFormat);
   const rows = holdings.slice(0, MAX_ROWS);

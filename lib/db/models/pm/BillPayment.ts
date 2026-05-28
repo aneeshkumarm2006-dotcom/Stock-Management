@@ -4,6 +4,7 @@
 // against Bill.amount. Storage: integer cents (Phase 2 convention).
 import { Schema, model, models, Types, type Model } from 'mongoose';
 import type { BillPaymentMethod } from '@/types/pm';
+import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
 export const BILL_PAYMENT_METHODS_DB: BillPaymentMethod[] = [
   'Check',
@@ -25,6 +26,7 @@ export interface IBillPayment {
   paidDate: Date;
   journalEntryId?: Types.ObjectId | null;
   createdByUserId: Types.ObjectId;
+  warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,11 +47,11 @@ const BillPaymentSchema = new Schema<IBillPayment>(
     paymentMethod: {
       type: String,
       enum: BILL_PAYMENT_METHODS_DB,
-      required: true,
+      default: 'Check',
     },
     checkNumber: { type: String, trim: true, maxlength: 30 },
-    amount: { type: Number, required: true, min: 1 },
-    paidDate: { type: Date, required: true },
+    amount: { type: Number, default: 0, min: 0 },
+    paidDate: { type: Date, default: null },
     journalEntryId: {
       type: Schema.Types.ObjectId,
       ref: 'PmJournalEntry',
@@ -60,6 +62,7 @@ const BillPaymentSchema = new Schema<IBillPayment>(
       ref: 'User',
       required: true,
     },
+    warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_bill_payments' },
 );
@@ -67,12 +70,9 @@ const BillPaymentSchema = new Schema<IBillPayment>(
 BillPaymentSchema.index({ organizationId: 1, billId: 1, paidDate: -1 });
 BillPaymentSchema.index({ organizationId: 1, bankAccountId: 1, paidDate: -1 });
 
-BillPaymentSchema.pre('save', function (next) {
-  if (this.paymentMethod === 'Check' && !this.checkNumber?.trim()) {
-    return next(new Error('checkNumber is required when paymentMethod=Check'));
-  }
-  next();
-});
+// Removed: the "checkNumber required when method=Check" hard check moved to
+// computeWarnings (MISSING_CHECK_NUMBER). The payment row saves either way;
+// downstream reconciliation skips payments that carry this warning.
 
 export const BillPayment: Model<IBillPayment> =
   (models.PmBillPayment as Model<IBillPayment>) ??

@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { LEASE_TYPES, RENT_CYCLES, type LeaseType, type RentCycle } from "@/types/pm";
+import { computeWarnings } from "@/lib/pm/warnings";
+import { WarningInline } from "@/components/pm/WarningBadge";
 
 interface PropertyOption {
   id: string;
@@ -147,28 +149,11 @@ export function DraftLeaseFormModal({
   }
 
   async function save() {
-    if (!propertyId || !unitId) {
-      toast({ title: "Pick property + unit", variant: "error" });
-      return;
-    }
-    if (!startDate) {
-      toast({ title: "startDate required", variant: "error" });
-      return;
-    }
-    if (
-      (leaseType === "Fixed" || leaseType === "Fixed w/rollover") &&
-      !endDate
-    ) {
-      toast({
-        title: "Fixed lease requires endDate (BR-LL-1)",
-        variant: "error",
-      });
-      return;
-    }
-    if (!rentAccountId) {
-      toast({ title: "Pick a rental income account", variant: "error" });
-      return;
-    }
+    // Property/unit/rentAccount presence checks moved to non-blocking warnings.
+    // startDate + Fixed-needs-endDate remain hard requirements — a draft lease
+    // with no start date cannot be scheduled, and the Mongoose pre-validate
+    // hook still enforces them. The Zod schema lets the body through; the
+    // server returns a 400 only if those hard rules trip.
     const cleanTenants = tenants.filter((t) => t.firstName && t.lastName);
     setSaving(true);
     const payload = {
@@ -411,6 +396,18 @@ export function DraftLeaseFormModal({
             ))}
           </div>
         </div>
+
+        <WarningInline
+          warnings={computeWarnings(
+            {
+              propertyId,
+              unitId,
+              primaryRent: { accountId: rentAccountId },
+            },
+            "DraftLease",
+          )}
+          className="px-6"
+        />
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

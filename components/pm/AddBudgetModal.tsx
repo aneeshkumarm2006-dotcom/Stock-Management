@@ -23,6 +23,8 @@ import {
   BUDGET_DEFAULT_AMOUNTS,
   FISCAL_MONTHS,
 } from "@/types/pm";
+import { computeWarnings } from "@/lib/pm/warnings";
+import { WarningInline } from "@/components/pm/WarningBadge";
 
 interface PropertyOption {
   id: string;
@@ -103,19 +105,9 @@ export function AddBudgetModal({
   }, [open, thisYear]);
 
   async function save() {
-    if (!scopeId) {
-      toast({ title: "Pick a scope", variant: "error" });
-      return;
-    }
-    if (!name.trim()) {
-      toast({ title: "Name is required", variant: "error" });
-      return;
-    }
-    if (defaultAmounts === "Copy existing budget" && !copySourceBudgetId) {
-      toast({ title: "Pick a source budget", variant: "error" });
-      return;
-    }
-
+    // Presence checks for scope, name, and copy-source moved to non-blocking
+    // warnings (BUDGET_MISSING_SCOPE, BUDGET_MISSING_NAME,
+    // BUDGET_MISSING_COPY_SOURCE). The API stamps them on the created row.
     setSaving(true);
     const res = await fetch("/api/pm/budgets", {
       method: "POST",
@@ -283,6 +275,13 @@ export function AddBudgetModal({
               </select>
             </div>
           )}
+
+          <WarningInline
+            warnings={computeWarnings(
+              { scopeId, name, defaultAmounts, copySourceBudgetId },
+              "Budget",
+            )}
+          />
         </div>
 
         <DialogFooter>

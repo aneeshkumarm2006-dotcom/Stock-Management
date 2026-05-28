@@ -16,6 +16,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { propertyUpdateSchema } from '@/lib/validation/pm/property';
 import { logActivity } from '@/lib/pm/activity';
+import { computeWarnings, mergeWarnings } from '@/lib/pm/warnings';
 
 export const runtime = 'nodejs';
 
@@ -171,6 +172,7 @@ export async function GET(
     rentersInsuranceMinLiabilityMSI: doc.rentersInsuranceMinLiabilityMSI,
     customFields,
     active: doc.active,
+    warnings: doc.warnings ?? [],
     // Derived
     cashBalance,
     securityDepositsHeld,
@@ -311,6 +313,12 @@ export async function PATCH(
     );
   }
 
+  // Re-stamp warnings — fixed fields auto-drop their codes, previously
+  // dismissed codes preserve their dismissedAt timestamp.
+  const fresh = computeWarnings(doc.toObject(), 'Property');
+  doc.warnings = mergeWarnings(doc.warnings ?? [], fresh);
+  await doc.save();
+
   await logActivity({
     orgId: ctx.orgId,
     parentType: 'Property',
@@ -319,7 +327,7 @@ export async function PATCH(
     actorUserId: ctx.userId,
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, warnings: doc.warnings });
 }
 
 export async function DELETE(

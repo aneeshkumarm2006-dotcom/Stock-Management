@@ -97,15 +97,19 @@ export async function POST(request: Request) {
   await connectToDatabase();
   const orgObjectId = new Types.ObjectId(ctx.orgId);
 
-  const ownerCnt = await RentalOwner.countDocuments({
-    _id: new Types.ObjectId(parsed.data.requestedFromOwnerId),
-    organizationId: orgObjectId,
-  });
-  if (ownerCnt === 0) {
-    return NextResponse.json(
-      { error: 'requestedFromOwnerId does not reference an owner in this org' },
-      { status: 400 },
-    );
+  // requestedFromOwnerId is now optional; when supplied, verify it belongs
+  // to this org.
+  if (parsed.data.requestedFromOwnerId) {
+    const ownerCnt = await RentalOwner.countDocuments({
+      _id: new Types.ObjectId(parsed.data.requestedFromOwnerId),
+      organizationId: orgObjectId,
+    });
+    if (ownerCnt === 0) {
+      return NextResponse.json(
+        { error: 'requestedFromOwnerId does not reference an owner in this org' },
+        { status: 400 },
+      );
+    }
   }
 
   if (parsed.data.taskId) {
@@ -124,12 +128,14 @@ export async function POST(request: Request) {
   const doc = await OwnerContributionRequest.create({
     organizationId: orgObjectId,
     status: parsed.data.status ?? 'New',
-    dueDate: new Date(parsed.data.dueDate),
-    propertiesScope: parsed.data.propertiesScope,
-    taskDescription: parsed.data.taskDescription,
-    requestedFromOwnerId: new Types.ObjectId(parsed.data.requestedFromOwnerId),
+    dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
+    propertiesScope: parsed.data.propertiesScope ?? '',
+    taskDescription: parsed.data.taskDescription ?? '',
+    requestedFromOwnerId: parsed.data.requestedFromOwnerId
+      ? new Types.ObjectId(parsed.data.requestedFromOwnerId)
+      : null,
     priority: parsed.data.priority ?? 'Normal',
-    requestedAmount: toCents(parsed.data.requestedAmount),
+    requestedAmount: toCents(parsed.data.requestedAmount ?? 0),
     receivedAmount:
       typeof parsed.data.receivedAmount === 'number'
         ? toCents(parsed.data.receivedAmount)
@@ -145,10 +151,10 @@ export async function POST(request: Request) {
     eventType: 'OwnerContributionRequest created',
     actorUserId: ctx.userId,
     payload: {
-      owner: String(doc.requestedFromOwnerId),
+      owner: doc.requestedFromOwnerId ? String(doc.requestedFromOwnerId) : null,
       requestedAmount: doc.requestedAmount,
     },
   });
 
-  return NextResponse.json({ id: String(doc._id) }, { status: 201 });
+  return NextResponse.json({ id: String(doc._id), warnings: doc.warnings ?? [] }, { status: 201 });
 }

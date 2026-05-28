@@ -24,6 +24,7 @@ import type {
   ApprovalRuleScopeType,
   ApprovalRuleSemantics,
 } from '@/types/pm';
+import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
 export const APPROVAL_RULE_SCOPE_TYPES_DB: ApprovalRuleScopeType[] = [
   'Company',
@@ -47,6 +48,7 @@ export interface IApprovalRule {
   approverUserIds: Types.ObjectId[];
   active: boolean;
   createdByUserId: Types.ObjectId;
+  warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -79,6 +81,7 @@ const ApprovalRuleSchema = new Schema<IApprovalRule>(
       ref: 'User',
       required: true,
     },
+    warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_approval_rules' },
 );
@@ -94,15 +97,13 @@ ApprovalRuleSchema.index(
   },
 );
 
+// The "Property-scope requires scopeId" and "at least one approver"
+// checks moved to computeWarnings (RULE_MISSING_SCOPE, RULE_MISSING_APPROVERS).
+// Company-scope normalisation (must not carry scopeId) still applies — we
+// just null it on save to keep the row consistent rather than rejecting.
 ApprovalRuleSchema.pre('validate', function (next) {
-  if (this.scopeType === 'Property' && !this.scopeId) {
-    return next(new Error('Property-scope ApprovalRule requires scopeId.'));
-  }
   if (this.scopeType === 'Company' && this.scopeId) {
-    return next(new Error('Company-scope ApprovalRule must not carry scopeId.'));
-  }
-  if (!this.approverUserIds || this.approverUserIds.length === 0) {
-    return next(new Error('ApprovalRule requires at least one approver.'));
+    this.scopeId = null;
   }
   next();
 });

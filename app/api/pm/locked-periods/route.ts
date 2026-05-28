@@ -11,6 +11,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { lockedPeriodCreateSchema } from '@/lib/validation/pm/lockedPeriodPolicy';
 import { logActivity } from '@/lib/pm/activity';
+import { computeWarnings } from '@/lib/pm/warnings';
 import { canManageOrg } from '@/lib/pm/roles';
 import { serializeLockedPeriod } from './serialize';
 
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
   try {
     const doc = await LockedPeriodPolicy.create({
       organizationId: new Types.ObjectId(ctx.orgId),
-      scope: parsed.data.scope,
+      scope: parsed.data.scope ?? 'Global',
       propertyId: parsed.data.propertyId
         ? new Types.ObjectId(parsed.data.propertyId)
         : null,
@@ -65,6 +66,12 @@ export async function POST(request: Request) {
       active: parsed.data.active ?? true,
       createdByUserId: new Types.ObjectId(ctx.userId),
     });
+
+    const computed = computeWarnings(doc.toObject(), 'LockedPeriodPolicy');
+    if (computed.length > 0) {
+      doc.warnings = computed;
+      await doc.save();
+    }
 
     await logActivity({
       orgId: ctx.orgId,

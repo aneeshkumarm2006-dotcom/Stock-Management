@@ -41,6 +41,8 @@ import { Dropdown, DropdownItem } from "@/components/ui/dropdown";
 import { useToast } from "@/components/ui/toast";
 import type { FileLocationType, FileSharing } from "@/types/pm";
 import { FILE_LOCATION_TYPES } from "@/lib/pm/parentTypes";
+import { computeWarnings } from "@/lib/pm/warnings";
+import { WarningInline } from "@/components/pm/WarningBadge";
 
 interface LocationDisplay {
   label: string;
@@ -986,19 +988,11 @@ function UploadAccountFileModal({
   }
 
   async function save() {
+    // Category and locationId presence checks moved to non-blocking warnings.
+    // Zero-file upload stays a hard requirement — it's a true no-op, not a
+    // data-quality issue.
     if (files.length === 0) {
       toast({ title: "Pick at least one file", variant: "error" });
-      return;
-    }
-    if (!categoryId) {
-      toast({ title: "Category is required (BR-FI-2)", variant: "error" });
-      return;
-    }
-    if (locationType && locationType !== "Account" && !locationId.trim()) {
-      toast({
-        title: "locationId required when a non-account location is picked",
-        variant: "error",
-      });
       return;
     }
     setSaving(true);
@@ -1246,6 +1240,13 @@ function UploadAccountFileModal({
               </p>
             </div>
           )}
+
+          <WarningInline
+            warnings={computeWarnings(
+              { categoryId, locationType, locationId },
+              "PmFile",
+            )}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>

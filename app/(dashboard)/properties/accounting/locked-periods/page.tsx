@@ -16,6 +16,8 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { computeWarnings } from "@/lib/pm/warnings";
+import { WarningInline } from "@/components/pm/WarningBadge";
 
 interface PolicyRow {
   id: string;
@@ -214,10 +216,7 @@ function AddLockedPeriodModal({
   }, [open]);
 
   async function save() {
-    if (form.scope === "Per-property" && !form.propertyId) {
-      toast({ title: "Pick a property", variant: "error" });
-      return;
-    }
+    // Per-property scope + propertyId check moved to non-blocking warning.
     setSaving(true);
     const res = await fetch("/api/pm/locked-periods", {
       method: "POST",
@@ -326,6 +325,13 @@ function AddLockedPeriodModal({
               maxLength={500}
             />
           </div>
+
+          <WarningInline
+            warnings={computeWarnings(
+              { scope: form.scope, propertyId: form.propertyId },
+              "LockedPeriodPolicy",
+            )}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>

@@ -11,6 +11,7 @@ import {
 import { recurringTransactionCreateSchema } from '@/lib/validation/pm/recurringTransaction';
 import { toCents } from '@/lib/pm/currency';
 import { logActivity } from '@/lib/pm/activity';
+import { computeWarnings } from '@/lib/pm/warnings';
 
 export const runtime = 'nodejs';
 
@@ -94,39 +95,52 @@ export async function POST(request: Request) {
   await connectToDatabase();
   const orgObjectId = new Types.ObjectId(ctx.orgId);
 
-  const nextDate = new Date(parsed.data.nextDate);
-  if (Number.isNaN(nextDate.getTime())) {
-    return NextResponse.json({ error: 'Invalid nextDate' }, { status: 400 });
+  let nextDate: Date | null = null;
+  if (parsed.data.nextDate) {
+    nextDate = new Date(parsed.data.nextDate);
+    if (Number.isNaN(nextDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid nextDate' }, { status: 400 });
+    }
   }
 
   const doc = await RecurringTransaction.create({
     organizationId: orgObjectId,
-    type: parsed.data.type,
-    payee: parsed.data.payee
-      ? { type: parsed.data.payee.type, id: new Types.ObjectId(parsed.data.payee.id) }
-      : null,
+    type: parsed.data.type ?? 'Check',
+    payee:
+      parsed.data.payee && parsed.data.payee.id
+        ? {
+            type: parsed.data.payee.type ?? 'Vendor',
+            id: new Types.ObjectId(parsed.data.payee.id),
+          }
+        : null,
     bankAccountId: parsed.data.bankAccountId
       ? new Types.ObjectId(parsed.data.bankAccountId)
       : null,
     memo: parsed.data.memo,
-    frequency: parsed.data.frequency,
+    frequency: parsed.data.frequency ?? 'Monthly',
     nextDate,
     postNDaysInAdvance: parsed.data.postNDaysInAdvance,
     duration: parsed.data.duration,
     occurrenceCount: parsed.data.occurrenceCount ?? null,
-    amounts: parsed.data.amounts.map((a) => ({
+    amounts: (parsed.data.amounts ?? []).map((a) => ({
       scopeType: a.scopeType,
       scopeId: a.scopeId ? new Types.ObjectId(a.scopeId) : null,
       unitId: a.unitId ? new Types.ObjectId(a.unitId) : null,
-      accountId: new Types.ObjectId(a.accountId),
+      accountId: a.accountId ? new Types.ObjectId(a.accountId) : null,
       description: a.description,
       refNo: a.refNo,
-      amount: toCents(a.amount),
+      amount: toCents(a.amount ?? 0),
     })),
     queueForPrinting: parsed.data.queueForPrinting ?? false,
     active: parsed.data.active ?? true,
     createdByUserId: new Types.ObjectId(ctx.userId),
   });
+
+  const computed = computeWarnings(doc.toObject(), 'RecurringTransaction');
+  if (computed.length > 0) {
+    doc.warnings = computed;
+    await doc.save();
+  }
 
   await logActivity({
     orgId: ctx.orgId,

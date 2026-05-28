@@ -24,6 +24,7 @@ import { nextTaskId } from '@/lib/pm/taskIdSequence';
 import { toCents } from '@/lib/pm/currency';
 import { isPastDue } from '@/lib/pm/taskHelpers';
 import { logActivity } from '@/lib/pm/activity';
+import { computeWarnings } from '@/lib/pm/warnings';
 import type { TaskStatus } from '@/types/pm';
 
 export const runtime = 'nodejs';
@@ -293,6 +294,13 @@ export async function POST(request: Request) {
     { $addToSet: { workOrders: wo._id } },
   );
 
+  // Stamp warnings based on the just-created doc's state.
+  const computed = computeWarnings(wo.toObject(), 'WorkOrder');
+  if (computed.length > 0) {
+    wo.warnings = computed;
+    await wo.save();
+  }
+
   await logActivity({
     orgId: ctx.orgId,
     parentType: 'WorkOrder',
@@ -307,7 +315,7 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json(
-    { id: String(wo._id), taskId: String(taskOid) },
+    { id: String(wo._id), taskId: String(taskOid), warnings: wo.warnings },
     { status: 201 },
   );
 }

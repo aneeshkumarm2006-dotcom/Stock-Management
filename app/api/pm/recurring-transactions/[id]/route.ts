@@ -100,25 +100,28 @@ export async function PATCH(
 
   Object.assign(doc, rest);
   if (payee !== undefined) {
-    doc.payee = payee
-      ? { type: payee.type, id: new Types.ObjectId(payee.id) }
-      : null;
+    doc.payee =
+      payee && payee.id && payee.type
+        ? { type: payee.type, id: new Types.ObjectId(payee.id) }
+        : null;
   }
   if (bankAccountId !== undefined) {
     doc.bankAccountId = bankAccountId
       ? new Types.ObjectId(bankAccountId)
       : null;
   }
-  if (nextDate !== undefined) doc.nextDate = new Date(nextDate);
+  if (nextDate !== undefined) doc.nextDate = nextDate ? new Date(nextDate) : (null as unknown as Date);
   if (amounts !== undefined) {
     doc.amounts = amounts.map((a) => ({
       scopeType: a.scopeType,
       scopeId: a.scopeId ? new Types.ObjectId(a.scopeId) : null,
       unitId: a.unitId ? new Types.ObjectId(a.unitId) : null,
-      accountId: new Types.ObjectId(a.accountId),
+      accountId: a.accountId
+        ? new Types.ObjectId(a.accountId)
+        : (null as unknown as Types.ObjectId),
       description: a.description,
       refNo: a.refNo,
-      amount: toCents(a.amount),
+      amount: toCents(a.amount ?? 0),
     }));
   }
 

@@ -107,27 +107,32 @@ export function useIndicesQuery() {
 }
 
 /**
- * FX rate query that mirrors the cached USD→CAD rate into the Settings
- * store, so every currency conversion across the app uses one source.
+ * FX query — mirrors the full USD-based conversion table into the Settings
+ * store so every aggregation can convert between any pair of currencies the
+ * provider supports (USD/CAD/EUR/GBP/JPY/AUD/HKD/INR/…).
  */
 export function useFxSync() {
-  const setFxRate = useSettingsStore((s) => s.setFxRate);
+  const setFxRates = useSettingsStore((s) => s.setFxRates);
   const query = useQuery({
     queryKey: ["fx"],
     queryFn: () =>
-      fetchJson<CacheResult<{ usdToCad: number; cadToUsd: number }>>(
-        "/api/fx",
-      ),
+      fetchJson<
+        CacheResult<{
+          usdToCad: number;
+          cadToUsd: number;
+          rates: Record<string, number>;
+        }>
+      >("/api/fx"),
     // FX is cached 24h server-side; no need to refetch aggressively.
     staleTime: 60 * 60 * 1000,
   });
 
-  const usdToCad = query.data?.data?.usdToCad;
+  const rates = query.data?.data?.rates;
   useEffect(() => {
-    if (usdToCad && Number.isFinite(usdToCad) && usdToCad > 0) {
-      setFxRate(usdToCad);
+    if (rates && typeof rates === "object" && Object.keys(rates).length > 0) {
+      setFxRates(rates);
     }
-  }, [usdToCad, setFxRate]);
+  }, [rates, setFxRates]);
 
   return query;
 }
@@ -154,7 +159,7 @@ export interface DashboardData {
 
 export function useDashboardData(): DashboardData {
   const displayCurrency = useSettingsStore((s) => s.displayCurrency);
-  const usdToCad = useSettingsStore((s) => s.fxUsdToCad);
+  const rates = useSettingsStore((s) => s.fxRates);
 
   const positionsQuery = usePositionsQuery();
   useFxSync();
@@ -211,7 +216,7 @@ export function useDashboardData(): DashboardData {
 
     const computed = computePortfolio(inputs, {
       displayCurrency,
-      usdToCad,
+      rates,
     });
 
     const metricsById = new Map(computed.positions.map((m) => [m.id, m]));
@@ -235,7 +240,7 @@ export function useDashboardData(): DashboardData {
     rows.sort((a, b) => b.metrics.currentValue - a.metrics.currentValue);
 
     return { summary: computed, holdings: rows };
-  }, [positions, quoteByKey, displayCurrency, usdToCad]);
+  }, [positions, quoteByKey, displayCurrency, rates]);
 
   return {
     summary,

@@ -27,20 +27,26 @@ const REQUIRED_HEADER = [
 const emptyToUndefined = (v: unknown) =>
   typeof v === 'string' && v.trim() === '' ? undefined : v;
 
+// `exchange` and `currency` accept any code Twelve Data / Exchange Rate API
+// can serve. The 3-letter regex on currency keeps malformed cells out;
+// exchange has only length caps because venue codes vary in length.
 const rowSchema = z.object({
-  ticker: z.string().trim().toUpperCase().min(1, 'Ticker is required').max(12),
-  exchange: z.preprocess(
-    (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
-    z.enum(['NYSE', 'NASDAQ', 'TSX']),
-  ),
+  ticker: z.string().trim().toUpperCase().min(1, 'Ticker is required').max(20),
+  exchange: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(1, 'Exchange is required')
+    .max(32, 'Exchange code is too long'),
   quantity: z.coerce.number().positive('Quantity must be greater than 0'),
   avgBuyPrice: z.coerce
     .number()
     .min(0, 'Average buy price cannot be negative'),
-  currency: z.preprocess(
-    (v) => (typeof v === 'string' ? v.trim().toUpperCase() : v),
-    z.enum(['USD', 'CAD']),
-  ),
+  currency: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{3}$/, 'Currency must be a 3-letter ISO code'),
   buyDate: z.preprocess(
     emptyToUndefined,
     z.coerce.date().optional(),
@@ -80,10 +86,10 @@ export async function POST(request: Request) {
   const valid: Array<{
     userId: string;
     ticker: string;
-    exchange: 'NYSE' | 'NASDAQ' | 'TSX';
+    exchange: string;
     quantity: number;
     avgBuyPrice: number;
-    currency: 'USD' | 'CAD';
+    currency: string;
     buyDate?: Date;
   }> = [];
 

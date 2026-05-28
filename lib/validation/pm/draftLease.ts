@@ -18,44 +18,44 @@ const memo = z.string().max(100); // BR-PU-6
 
 const tenantRefSchema = z.object({
   tenantId: objectIdString.nullable().optional(),
-  firstName: z.string().min(1).max(80),
-  lastName: z.string().min(1).max(80),
+  firstName: z.string().max(80).optional(),
+  lastName: z.string().max(80).optional(),
   email: z.string().email().optional().or(z.literal('')),
   isCosigner: z.boolean().optional(),
 });
 
 const approvedApplicantRefSchema = z.object({
   applicantId: objectIdString,
-  firstName: z.string().min(1).max(80),
-  lastName: z.string().min(1).max(80),
+  firstName: z.string().max(80).optional(),
+  lastName: z.string().max(80).optional(),
 });
 
 const splitRentSchema = z.object({
-  accountId: objectIdString,
-  amount: z.number().nonnegative(),
+  accountId: objectIdString.optional(),
+  amount: z.number().nonnegative().optional(),
   memo: memo.optional(),
 });
 
 const primaryRentSchema = z.object({
-  amount: z.number().nonnegative(),
-  accountId: objectIdString,
-  nextDueDate: z.string().min(8).nullable().optional(),
+  amount: z.number().nonnegative().optional(),
+  accountId: objectIdString.optional(),
+  nextDueDate: z.string().nullable().optional(),
   memo: memo.optional(),
 });
 
 const recurringChargeSchema = z.object({
-  amount: z.number().nonnegative(),
-  accountId: objectIdString,
-  frequency: z.enum(RENT_CYCLES as unknown as [string, ...string[]]),
-  nextDate: z.string().min(8).nullable().optional(),
+  amount: z.number().nonnegative().optional(),
+  accountId: objectIdString.optional(),
+  frequency: z.enum(RENT_CYCLES as unknown as [string, ...string[]]).optional(),
+  nextDate: z.string().nullable().optional(),
   memo: memo.optional(),
   postNDaysInAdvance: z.number().int().min(0).max(30).optional(),
 });
 
 const oneTimeChargeSchema = z.object({
-  amount: z.number().nonnegative(),
-  accountId: objectIdString,
-  dueDate: z.string().min(8).nullable().optional(),
+  amount: z.number().nonnegative().optional(),
+  accountId: objectIdString.optional(),
+  dueDate: z.string().nullable().optional(),
   memo: memo.optional(),
   isMoveInCharge: z.boolean().optional(),
 });
@@ -71,18 +71,21 @@ const lateFeeSchema = z.object({
 const esigDocSchema = z.object({
   fileId: objectIdString.nullable().optional(),
   role: z.enum(['Lease', 'Addendum']).optional(),
-  label: z.string().min(1).max(200),
+  label: z.string().max(200).optional(),
   status: z.enum(ESIGNATURE_STATUSES as unknown as [string, ...string[]]).optional(),
 });
 
+// Presence requirements (propertyId, unitId, startDate, primaryRent.accountId)
+// are now warnings (computeWarnings → MISSING_PROPERTY_OR_UNIT,
+// MISSING_RENT_ACCOUNT). The Zod schema keeps type/format guards only.
 const base = {
-  propertyId: objectIdString,
-  unitId: objectIdString,
-  leaseType: z.enum(LEASE_TYPES as unknown as [string, ...string[]]),
-  startDate: z.string().min(8),
-  endDate: z.string().min(8).nullable().optional(),
+  propertyId: objectIdString.optional(),
+  unitId: objectIdString.optional(),
+  leaseType: z.enum(LEASE_TYPES as unknown as [string, ...string[]]).optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().nullable().optional(),
   rentCycle: z.enum(RENT_CYCLES as unknown as [string, ...string[]]).optional(),
-  primaryRent: primaryRentSchema,
+  primaryRent: primaryRentSchema.optional(),
   splitRentCharges: z.array(splitRentSchema).optional(),
   securityDeposit: z.number().nonnegative().optional(),
   recurringCharges: z.array(recurringChargeSchema).optional(),
@@ -106,11 +109,6 @@ export const draftLeaseCreateSchema = z.object(base);
 export const draftLeaseUpdateSchema = z
   .object({
     ...base,
-    propertyId: base.propertyId.optional(),
-    unitId: base.unitId.optional(),
-    leaseType: base.leaseType.optional(),
-    startDate: base.startDate.optional(),
-    primaryRent: primaryRentSchema.optional(),
     signatureStatus: z
       .enum(ESIGNATURE_STATUSES as unknown as [string, ...string[]])
       .optional(),

@@ -35,7 +35,48 @@ type SortKey =
   | "pnlPct"
   | "weight";
 
-const FLAG: Record<"US" | "CA", string> = { US: "🇺🇸", CA: "🇨🇦" };
+// ISO-2 → flag emoji. Anything outside the table renders no flag rather than
+// "undefined" so global listings degrade cleanly.
+const FLAG: Record<string, string> = {
+  US: "🇺🇸",
+  CA: "🇨🇦",
+  GB: "🇬🇧",
+  DE: "🇩🇪",
+  FR: "🇫🇷",
+  NL: "🇳🇱",
+  BE: "🇧🇪",
+  IT: "🇮🇹",
+  ES: "🇪🇸",
+  PT: "🇵🇹",
+  CH: "🇨🇭",
+  SE: "🇸🇪",
+  NO: "🇳🇴",
+  DK: "🇩🇰",
+  FI: "🇫🇮",
+  IE: "🇮🇪",
+  AT: "🇦🇹",
+  PL: "🇵🇱",
+  TR: "🇹🇷",
+  AU: "🇦🇺",
+  NZ: "🇳🇿",
+  JP: "🇯🇵",
+  HK: "🇭🇰",
+  SG: "🇸🇬",
+  CN: "🇨🇳",
+  IN: "🇮🇳",
+  KR: "🇰🇷",
+  TW: "🇹🇼",
+  TH: "🇹🇭",
+  MY: "🇲🇾",
+  ID: "🇮🇩",
+  BR: "🇧🇷",
+  MX: "🇲🇽",
+  AR: "🇦🇷",
+  ZA: "🇿🇦",
+  IL: "🇮🇱",
+  AE: "🇦🇪",
+  SA: "🇸🇦",
+};
 
 function valueFor(row: PortfolioRow, key: SortKey): number | string {
   switch (key) {

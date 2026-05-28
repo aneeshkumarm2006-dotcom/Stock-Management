@@ -8,31 +8,17 @@ const objectIdString = z
 
 const scope = z.enum(['Global', 'Per-property']);
 
-export const lockedPeriodCreateSchema = z
-  .object({
-    scope,
-    propertyId: objectIdString.nullable().optional(),
-    fromDate: z.string().min(8).nullable().optional(),
-    toDate: z.string().min(8).nullable().optional(),
-    message: z.string().max(500).optional(),
-    active: z.boolean().optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.scope === 'Per-property' && !data.propertyId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Per-property locks require a propertyId',
-        path: ['propertyId'],
-      });
-    }
-    if (data.scope === 'Global' && data.propertyId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Global locks must not carry a propertyId',
-        path: ['propertyId'],
-      });
-    }
-  });
+// "Per-property requires propertyId" check moved to computeWarnings
+// (LOCK_MISSING_PROPERTY). "Global must not carry propertyId" is now
+// normalised on save (Mongoose pre-save nulls the field).
+export const lockedPeriodCreateSchema = z.object({
+  scope: scope.optional(),
+  propertyId: objectIdString.nullable().optional(),
+  fromDate: z.string().nullable().optional(),
+  toDate: z.string().nullable().optional(),
+  message: z.string().max(500).optional(),
+  active: z.boolean().optional(),
+});
 
 export const lockedPeriodUpdateSchema = z
   .object({

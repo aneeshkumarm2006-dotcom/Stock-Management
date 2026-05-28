@@ -13,6 +13,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { propertyCreateSchema } from '@/lib/validation/pm/property';
 import { logActivity } from '@/lib/pm/activity';
+import { computeWarnings, type PmWarning } from '@/lib/pm/warnings';
 
 export const runtime = 'nodejs';
 
@@ -27,6 +28,7 @@ interface PropertyLeanLike {
   active: boolean;
   propertyReserve?: number;
   operatingAccountId?: unknown;
+  warnings?: PmWarning[];
 }
 
 function listSerialize(p: PropertyLeanLike) {
@@ -43,6 +45,7 @@ function listSerialize(p: PropertyLeanLike) {
     active: p.active,
     propertyReserve: p.propertyReserve ?? 0,
     operatingAccountId: p.operatingAccountId ? String(p.operatingAccountId) : null,
+    warnings: p.warnings ?? [],
   };
 }
 
@@ -157,10 +160,10 @@ export async function POST(request: Request) {
 
   const doc = await Property.create({
     organizationId: new Types.ObjectId(ctx.orgId),
-    propertyName: parsed.data.propertyName,
-    propertyClass: parsed.data.propertyClass,
-    propertySubType: parsed.data.propertySubType,
-    address: parsed.data.address,
+    propertyName: parsed.data.propertyName ?? '',
+    propertyClass: parsed.data.propertyClass ?? 'Residential',
+    propertySubType: parsed.data.propertySubType ?? '',
+    address: parsed.data.address ?? {},
     photo: parsed.data.photo ? new Types.ObjectId(parsed.data.photo) : null,
     propertyManagerUserId: parsed.data.propertyManagerUserId
       ? new Types.ObjectId(parsed.data.propertyManagerUserId)
@@ -193,6 +196,14 @@ export async function POST(request: Request) {
     customFields: parsed.data.customFields ?? {},
   });
 
+  // Stamp warnings based on the just-created doc's state. Saved back so the
+  // list view can read them without recomputing.
+  const computed = computeWarnings(doc.toObject(), 'Property');
+  if (computed.length > 0) {
+    doc.warnings = computed;
+    await doc.save();
+  }
+
   await logActivity({
     orgId: ctx.orgId,
     parentType: 'Property',
@@ -202,5 +213,8 @@ export async function POST(request: Request) {
     payload: { propertyName: doc.propertyName },
   });
 
-  return NextResponse.json({ id: String(doc._id) }, { status: 201 });
+  return NextResponse.json(
+    { id: String(doc._id), warnings: doc.warnings },
+    { status: 201 },
+  );
 }

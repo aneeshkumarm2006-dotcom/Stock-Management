@@ -16,6 +16,7 @@ import {
   postBillPaymentToLedger,
   LockedPeriodError,
 } from '@/lib/pm/postBillPaymentToLedger';
+import { computeWarnings, hasBlockingWarnings } from '@/lib/pm/warnings';
 
 export const runtime = 'nodejs';
 
@@ -85,12 +86,17 @@ export async function POST(request: Request) {
   await connectToDatabase();
   const orgObjectId = new Types.ObjectId(ctx.orgId);
 
-  const paidDate = new Date(parsed.data.paidDate);
-  if (Number.isNaN(paidDate.getTime())) {
-    return NextResponse.json({ error: 'Invalid paidDate' }, { status: 400 });
+  let paidDate: Date;
+  if (parsed.data.paidDate) {
+    paidDate = new Date(parsed.data.paidDate);
+    if (Number.isNaN(paidDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid paidDate' }, { status: 400 });
+    }
+  } else {
+    paidDate = new Date(); // Default to now; warning will flag the missing pick.
   }
 
-  const amountCents = toCents(parsed.data.amount);
+  const amountCents = toCents(parsed.data.amount ?? 0);
 
   try {
     const payment = await BillPayment.create({
@@ -99,23 +105,41 @@ export async function POST(request: Request) {
       bankAccountId: parsed.data.bankAccountId
         ? new Types.ObjectId(parsed.data.bankAccountId)
         : null,
-      paymentMethod: parsed.data.paymentMethod,
+      paymentMethod: parsed.data.paymentMethod ?? 'Check',
       checkNumber: parsed.data.checkNumber,
       amount: amountCents,
       paidDate,
       createdByUserId: new Types.ObjectId(ctx.userId),
     });
 
-    const result = await postBillPaymentToLedger({
-      orgId: ctx.orgId,
-      ctx,
-      billId: payment.billId,
-      bankAccountId: payment.bankAccountId ?? null,
-      amount: amountCents,
-      paidDate,
-    });
-    payment.journalEntryId = result.journalEntryId;
-    await payment.save();
+    // Stamp warnings BEFORE ledger posting so we can skip the GL leg when
+    // a critical prereq (bank account) is missing.
+    const computed = computeWarnings(payment.toObject(), 'BillPayment');
+    if (computed.length > 0) {
+      payment.warnings = computed;
+      await payment.save();
+    }
+
+    // Only post the cash leg when we have a bank account. Otherwise the
+    // payment row is pending — the warning badge tells the user why.
+    let journalEntryId: Types.ObjectId | null = null;
+    let newBillStatus: string | null = null;
+    if (
+      !hasBlockingWarnings(payment.warnings, ['MISSING_BANK_ACCOUNT'])
+    ) {
+      const result = await postBillPaymentToLedger({
+        orgId: ctx.orgId,
+        ctx,
+        billId: payment.billId,
+        bankAccountId: payment.bankAccountId ?? null,
+        amount: amountCents,
+        paidDate,
+      });
+      payment.journalEntryId = result.journalEntryId;
+      journalEntryId = result.journalEntryId;
+      newBillStatus = result.newBillStatus;
+      await payment.save();
+    }
 
     await logActivity({
       orgId: ctx.orgId,
@@ -133,8 +157,9 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         id: String(payment._id),
-        journalEntryId: String(result.journalEntryId),
-        billStatus: result.newBillStatus,
+        journalEntryId: journalEntryId ? String(journalEntryId) : null,
+        billStatus: newBillStatus,
+        warnings: payment.warnings,
       },
       { status: 201 },
     );

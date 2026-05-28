@@ -3,10 +3,16 @@
 // metrics. Every monetary figure is converted to the display currency BEFORE
 // aggregation (PDR §9). No I/O here so it is trivially unit-testable.
 // Refs: PDR.md §5.2, §5.3, §5.6, §9.
-import { toDisplayCurrency, type Currency } from "./convertCurrency";
+import {
+  toDisplayCurrency,
+  type Currency,
+  type FxRates,
+} from "./convertCurrency";
 
-export type Exchange = "NYSE" | "NASDAQ" | "TSX";
-export type Country = "US" | "CA";
+// Both types are free strings now that Position / StockMetadata accept any
+// exchange Twelve Data returns and any ISO country code derived from it.
+export type Exchange = string;
+export type Country = string;
 
 /** A holding joined with its (optional) live quote + metadata. */
 export interface PositionInput {
@@ -76,16 +82,16 @@ export interface PortfolioSummary {
 
 interface ComputeOptions {
   displayCurrency: Currency;
-  /** Cached USD→CAD rate (1 USD = usdToCad CAD). */
-  usdToCad: number;
+  /** USD-anchored conversion table from the FX cache. */
+  rates: FxRates;
 }
 
 function computePositionMetrics(
   p: PositionInput,
-  { displayCurrency, usdToCad }: ComputeOptions,
+  { displayCurrency, rates }: ComputeOptions,
 ): PositionMetrics {
   const conv = (amount: number) =>
-    toDisplayCurrency(amount, p.currency, displayCurrency, usdToCad);
+    toDisplayCurrency(amount, p.currency, displayCurrency, rates);
 
   const invested = conv(p.quantity * p.avgBuyPrice);
   const hasQuote = p.price != null && Number.isFinite(p.price);
@@ -179,7 +185,7 @@ export function computePortfolio(
   );
   const allocationByCountry = bucket(
     input.map((p, i) => ({
-      key: p.country ?? (p.exchange === "TSX" ? "CA" : "US"),
+      key: (p.country ?? "Unknown") || "Unknown",
       value: positions[i]?.currentValue ?? 0,
     })),
     totalValue,

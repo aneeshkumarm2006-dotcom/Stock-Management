@@ -14,6 +14,8 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { computeWarnings } from "@/lib/pm/warnings";
+import { WarningInline } from "@/components/pm/WarningBadge";
 import {
   BILL_PAYMENT_METHODS,
   type BillPaymentMethod,
@@ -118,10 +120,10 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
   );
 
   function valid(): string | null {
+    // Bank-account and check-number checks moved to non-blocking warnings.
+    // Selecting at least one bill stays a hard requirement — paying nothing
+    // is a no-op (warning.md: "intentionally left as blocking").
     if (Object.keys(selected).length === 0) return "Select at least one bill";
-    if (!bankAccountId) return "Choose a bank account";
-    if (method === "Check" && !checkNumber.trim())
-      return "Check number is required";
     return null;
   }
 
@@ -306,6 +308,17 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
               </tr>
             </tfoot>
           </table>
+
+          <WarningInline
+            warnings={computeWarnings(
+              {
+                bankAccountId,
+                paymentMethod: method,
+                checkNumber,
+              },
+              "BillPayment",
+            )}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>

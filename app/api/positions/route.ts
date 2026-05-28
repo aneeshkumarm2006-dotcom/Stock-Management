@@ -17,12 +17,25 @@ import { getProfile } from '@/lib/api-clients/finnhub';
 // Mongoose needs the Node runtime (not Edge).
 export const runtime = 'nodejs';
 
+// `exchange` accepts any code the Twelve Data symbol search returns (LSE,
+// HKEX, NSE, ASX, XETRA, …) and `currency` accepts any ISO-4217 code from
+// the Exchange Rate API's conversion table. Length caps prevent free-text
+// abuse; uppercase is enforced so the unique index matches.
 const createSchema = z.object({
-  ticker: z.string().trim().toUpperCase().min(1, 'Ticker is required').max(12),
-  exchange: z.enum(['NYSE', 'NASDAQ', 'TSX']),
+  ticker: z.string().trim().toUpperCase().min(1, 'Ticker is required').max(20),
+  exchange: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(1, 'Exchange is required')
+    .max(32, 'Exchange code is too long'),
   quantity: z.number().positive('Quantity must be greater than 0'),
   avgBuyPrice: z.number().min(0, 'Average buy price cannot be negative'),
-  currency: z.enum(['USD', 'CAD']),
+  currency: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{3}$/, 'Currency must be a 3-letter ISO code'),
   buyDate: z.coerce.date().optional(),
 });
 

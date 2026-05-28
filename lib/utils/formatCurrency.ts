@@ -8,12 +8,37 @@ import {
   DEFAULT_NUMBER_FORMAT,
 } from "./formatNumber";
 
-export type Currency = "USD" | "CAD";
+// Currency is now any ISO-4217 code (positions can hold global listings).
+// SYMBOL maps the ones we want a distinctive prefix for; anything else falls
+// back to the ISO code followed by a space (e.g. "EUR 12.34") which is
+// unambiguous and renders correctly without per-locale Intl noise.
+export type Currency = string;
 
-const SYMBOL: Record<Currency, string> = {
+const SYMBOL: Record<string, string> = {
   USD: "$",
   CAD: "C$",
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+  CNY: "¥",
+  HKD: "HK$",
+  AUD: "A$",
+  NZD: "NZ$",
+  SGD: "S$",
+  CHF: "CHF ",
+  SEK: "kr ",
+  NOK: "kr ",
+  DKK: "kr ",
+  INR: "₹",
+  KRW: "₩",
+  BRL: "R$",
+  MXN: "Mex$",
+  ZAR: "R",
 };
+
+function symbolFor(currency: string): string {
+  return SYMBOL[currency.toUpperCase()] ?? `${currency.toUpperCase()} `;
+}
 
 interface FormatCurrencyOptions {
   format?: NumberFormat;
@@ -54,7 +79,7 @@ export function formatCurrency(
     decimals,
     compact,
   });
-  const symbol = hideSymbol ? "" : SYMBOL[currency];
+  const symbol = hideSymbol ? "" : symbolFor(currency);
 
   if (accounting && negative) {
     // Accounting style: ($1,234.56) — no leading minus, parentheses wrap.

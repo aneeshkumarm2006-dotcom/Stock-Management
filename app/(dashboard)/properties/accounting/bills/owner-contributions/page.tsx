@@ -21,6 +21,8 @@ import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { RequestOwnerContributionModal } from "@/components/pm/RequestOwnerContributionModal";
 import type { OwnerContributionStatus } from "@/lib/db/models/pm/OwnerContributionRequest";
+import { WarningInline } from "@/components/pm/WarningBadge";
+import { getWarningMessage } from "@/lib/pm/warnings";
 
 interface OcrRow {
   id: string;
@@ -276,10 +278,9 @@ function RecordPaymentDialog({
   const [saving, setSaving] = React.useState(false);
 
   async function save() {
-    if (!bankAccountId) {
-      toast({ title: "Pick a bank account", variant: "error" });
-      return;
-    }
+    // Bank-account check moved to non-blocking warning. The payment record
+    // saves either way; downstream ledger posting checks for the warning
+    // before booking the cash leg.
     setSaving(true);
     const r = await fetch(
       `/api/pm/owner-contribution-requests/${row.id}/record-payment`,
@@ -351,6 +352,19 @@ function RecordPaymentDialog({
               onChange={(e) => setDate(e.target.value)}
             />
           </div>
+
+          <WarningInline
+            warnings={
+              bankAccountId
+                ? []
+                : [
+                    {
+                      code: "MISSING_BANK_ACCOUNT",
+                      message: getWarningMessage("MISSING_BANK_ACCOUNT"),
+                    },
+                  ]
+            }
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>

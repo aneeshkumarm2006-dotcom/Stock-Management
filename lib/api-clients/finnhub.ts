@@ -12,7 +12,7 @@ import {
   stockMetadataStore,
   type CacheResult,
 } from '@/lib/cache/withCache';
-import type { IStockMetadata, Country } from '@/lib/db/models/StockMetadata';
+import type { IStockMetadata } from '@/lib/db/models/StockMetadata';
 
 const BASE = 'https://finnhub.io/api/v1';
 
@@ -24,15 +24,83 @@ function apiKey(): string {
   return k;
 }
 
-/** US for NYSE/NASDAQ, CA for TSX (PDR §6 listing country). */
-function countryFor(exchange: string): Country {
-  return exchange === 'TSX' ? 'CA' : 'US';
+/** Finnhub ticker-suffix + ISO-2 country for each exchange we recognise.
+ *  Anything not listed defaults to a US-style bare ticker (NYSE/NASDAQ). On
+ *  the free plan most non-US profiles return `{}` — we still try because (a)
+ *  `getProfile` already handles empty responses as a cache miss and (b)
+ *  Finnhub gradually exposes more venues. Suffix map mirrors Finnhub's
+ *  `/stock/symbol` reference. */
+const EXCHANGE_META: Record<string, { suffix: string; country: string }> = {
+  // North America
+  NYSE: { suffix: '', country: 'US' },
+  NASDAQ: { suffix: '', country: 'US' },
+  AMEX: { suffix: '', country: 'US' },
+  ARCA: { suffix: '', country: 'US' },
+  BATS: { suffix: '', country: 'US' },
+  OTC: { suffix: '', country: 'US' },
+  TSX: { suffix: '.TO', country: 'CA' },
+  'TSX VENTURE': { suffix: '.V', country: 'CA' },
+  TSXV: { suffix: '.V', country: 'CA' },
+  CSE: { suffix: '.CN', country: 'CA' },
+  NEO: { suffix: '.NE', country: 'CA' },
+  // Europe
+  LSE: { suffix: '.L', country: 'GB' },
+  'LONDON STOCK EXCHANGE': { suffix: '.L', country: 'GB' },
+  XETRA: { suffix: '.DE', country: 'DE' },
+  FRANKFURT: { suffix: '.F', country: 'DE' },
+  PARIS: { suffix: '.PA', country: 'FR' },
+  EURONEXT: { suffix: '.PA', country: 'FR' },
+  AMSTERDAM: { suffix: '.AS', country: 'NL' },
+  BRUSSELS: { suffix: '.BR', country: 'BE' },
+  MILAN: { suffix: '.MI', country: 'IT' },
+  MADRID: { suffix: '.MC', country: 'ES' },
+  LISBON: { suffix: '.LS', country: 'PT' },
+  STOCKHOLM: { suffix: '.ST', country: 'SE' },
+  HELSINKI: { suffix: '.HE', country: 'FI' },
+  OSLO: { suffix: '.OL', country: 'NO' },
+  COPENHAGEN: { suffix: '.CO', country: 'DK' },
+  SIX: { suffix: '.SW', country: 'CH' },
+  VIENNA: { suffix: '.VI', country: 'AT' },
+  WARSAW: { suffix: '.WA', country: 'PL' },
+  ISTANBUL: { suffix: '.IS', country: 'TR' },
+  // Asia-Pacific
+  ASX: { suffix: '.AX', country: 'AU' },
+  NZX: { suffix: '.NZ', country: 'NZ' },
+  TSE: { suffix: '.T', country: 'JP' }, // Tokyo
+  HKEX: { suffix: '.HK', country: 'HK' },
+  SSE: { suffix: '.SS', country: 'CN' }, // Shanghai
+  SZSE: { suffix: '.SZ', country: 'CN' }, // Shenzhen
+  KRX: { suffix: '.KS', country: 'KR' }, // KOSPI
+  KOSDAQ: { suffix: '.KQ', country: 'KR' },
+  TWSE: { suffix: '.TW', country: 'TW' },
+  SGX: { suffix: '.SI', country: 'SG' },
+  NSE: { suffix: '.NS', country: 'IN' },
+  BSE: { suffix: '.BO', country: 'IN' },
+  SET: { suffix: '.BK', country: 'TH' },
+  IDX: { suffix: '.JK', country: 'ID' },
+  KLSE: { suffix: '.KL', country: 'MY' },
+  // Americas (ex-NA)
+  B3: { suffix: '.SA', country: 'BR' },
+  BMV: { suffix: '.MX', country: 'MX' },
+  BCBA: { suffix: '.BA', country: 'AR' },
+  // Middle East / Africa
+  TASE: { suffix: '.TA', country: 'IL' },
+  TADAWUL: { suffix: '.SR', country: 'SA' },
+  JSE: { suffix: '.JO', country: 'ZA' },
+};
+
+function exchangeMeta(exchange: string): { suffix: string; country: string } {
+  return EXCHANGE_META[exchange.toUpperCase()] ?? { suffix: '', country: 'US' };
 }
 
-/** Finnhub symbol form: TSX listings use the `.TO` suffix. */
+function countryFor(exchange: string): string {
+  return exchangeMeta(exchange).country;
+}
+
 function finnhubSymbol(ticker: string, exchange: string): string {
   const t = ticker.toUpperCase();
-  return exchange === 'TSX' ? `${t}.TO` : t;
+  const { suffix } = exchangeMeta(exchange);
+  return suffix ? `${t}${suffix}` : t;
 }
 
 interface RawProfile {

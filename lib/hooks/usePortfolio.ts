@@ -52,6 +52,9 @@ export interface SymbolSearchResult {
   symbol: string;
   name: string;
   exchange: string;
+  /** MIC code (e.g. ARCX, BATS, XNAS). Optional — used by the form to map
+   *  sub-exchanges to a storable parent (NYSE / NASDAQ / TSX). */
+  micCode?: string;
   country: string;
   currency: string;
   instrumentType: string;
@@ -91,7 +94,12 @@ export interface PortfolioStats {
 /* ------------------------------------------------------------------ */
 
 function deriveCountry(p: ApiPosition): Country {
-  return p.metadata?.country ?? (p.exchange === "TSX" ? "CA" : "US");
+  // Metadata is authoritative once Finnhub fills it in (any of the ~50
+  // exchanges in finnhub.ts EXCHANGE_META). While that's still in flight we
+  // fall back to the legacy NYSE/NASDAQ → US, TSX → CA mapping for the
+  // common-case so the country donut isn't blank for fresh adds.
+  if (p.metadata?.country) return p.metadata.country;
+  return p.exchange === "TSX" ? "CA" : "US";
 }
 
 /* ------------------------------------------------------------------ */
@@ -116,7 +124,7 @@ export interface PortfolioData {
 
 export function usePortfolio(): PortfolioData {
   const displayCurrency = useSettingsStore((s) => s.displayCurrency);
-  const usdToCad = useSettingsStore((s) => s.fxUsdToCad);
+  const rates = useSettingsStore((s) => s.fxRates);
 
   const positionsQuery = usePositionsQuery();
   useFxSync();
@@ -181,7 +189,7 @@ export function usePortfolio(): PortfolioData {
       };
     });
 
-    const computed = computePortfolio(inputs, { displayCurrency, usdToCad });
+    const computed = computePortfolio(inputs, { displayCurrency, rates });
     const metricsById = new Map(computed.positions.map((m) => [m.id, m]));
 
     const built: PortfolioRow[] = positions.flatMap((p) => {
@@ -247,7 +255,7 @@ export function usePortfolio(): PortfolioData {
     ).sort();
 
     return { rows: built, stats: statsValue, sectors: sectorList, summary: computed };
-  }, [positions, quoteByKey, displayCurrency, usdToCad]);
+  }, [positions, quoteByKey, displayCurrency, rates]);
 
   return {
     rows,

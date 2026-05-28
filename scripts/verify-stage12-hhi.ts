@@ -38,7 +38,10 @@ const sample: PositionInput[] = [
 // (100 each), so weights are NOT equal — this verifies the math is FX-aware
 // (PDR §9): weights ≈ 26.73/26.73/19.80/26.73, HHI ≈ 0.2536,
 // normalized (0.2536-0.25)/0.75 ≈ 0.48; top weight ≈ 26.73%.
-const s = computePortfolio(sample, { displayCurrency: "USD", usdToCad: 1.35 });
+const s = computePortfolio(sample, {
+  displayCurrency: "USD",
+  rates: { USD: 1, CAD: 1.35 },
+});
 expect("e2e concentration (FX-weighted)", s.diversification.concentrationScore, 0.48, 0.05);
 expect("e2e topWeightPct (FX-weighted)", s.diversification.topWeightPct, 26.73, 0.1);
 expect("e2e uniqueSectors", s.diversification.uniqueSectors, 4, 0);

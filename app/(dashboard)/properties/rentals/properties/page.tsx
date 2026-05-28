@@ -28,6 +28,8 @@ import type {
   ResidentialSubType,
   CommercialSubType,
 } from "@/types/pm";
+import { computeWarnings, type PmWarning } from "@/lib/pm/warnings";
+import { WarningInline, WarningBadge } from "@/components/pm/WarningBadge";
 
 interface PropertyRow {
   id: string;
@@ -45,6 +47,7 @@ interface PropertyRow {
   active: boolean;
   propertyReserve: number;
   operatingAccountId: string | null;
+  warnings: PmWarning[];
 }
 
 const RES_SUBTYPES: ResidentialSubType[] = [
@@ -179,13 +182,16 @@ export default function PropertiesListPage() {
                       href={`/properties/rentals/properties/${p.id}`}
                       className="font-medium hover:underline"
                     >
-                      {p.propertyName}
+                      {p.propertyName || "(Untitled)"}
                     </Link>
-                    {!p.operatingAccountId && (
-                      <span className="ml-2 text-xs font-medium text-amber-600">
-                        Setup needed
-                      </span>
-                    )}
+                    <WarningBadge
+                      entityType="Property"
+                      entityId={p.id}
+                      warnings={p.warnings}
+                      onIgnored={load}
+                      layout="inline"
+                      className="ml-2"
+                    />
                   </td>
                   <td className="text-fg-muted">
                     {p.propertyClass}
@@ -301,6 +307,31 @@ function AddPropertyModal({
     }
   }, [propertyClass, propertySubType]);
 
+  // Live amber warnings while the form is being filled. The server computes
+  // its own canonical set on create — this is for user feedback only.
+  const localWarnings = React.useMemo(
+    () =>
+      computeWarnings(
+        {
+          propertyName,
+          propertyClass,
+          propertySubType,
+          address,
+          operatingAccountId,
+          rentalOwners: owners,
+        },
+        "Property",
+      ),
+    [
+      propertyName,
+      propertyClass,
+      propertySubType,
+      address,
+      operatingAccountId,
+      owners,
+    ],
+  );
+
   function reset() {
     setPropertyName("");
     setPropertyClass("Residential");
@@ -313,33 +344,9 @@ function AddPropertyModal({
   }
 
   async function save() {
-    if (!propertyName.trim()) {
-      toast({ title: "Property name required", variant: "error" });
-      return;
-    }
-    if (!address.line1 || !address.city || !address.state || !address.zip) {
-      toast({ title: "Address line 1 / city / state / zip required", variant: "error" });
-      return;
-    }
-    if (owners.length > 0) {
-      const sum = owners.reduce(
-        (a, r) => a + (Number.isFinite(r.ownershipPct) ? r.ownershipPct : 0),
-        0,
-      );
-      if (Math.abs(sum - 100) > 0.01) {
-        toast({
-          title: "Owners must sum to 100%",
-          description: `Currently ${sum}%`,
-          variant: "error",
-        });
-        return;
-      }
-      if (owners.some((o) => !o.rentalOwnerId)) {
-        toast({ title: "Pick an owner for every share row", variant: "error" });
-        return;
-      }
-    }
-
+    // Presence / business-rule checks no longer block submission. The form
+    // shows them inline (see <WarningInline> below), and the API stamps the
+    // same set on the created entity so the badge persists post-creation.
     setSaving(true);
     const res = await fetch("/api/pm/properties", {
       method: "POST",
@@ -457,11 +464,8 @@ function AddPropertyModal({
                   </option>
                 ))}
               </select>
-              {!operatingAccountId && (
-                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  No operating account selected — payments won&apos;t be processed until one is configured in Property Settings.
-                </p>
-              )}
+              {/* Field-level warning lives in the unified WarningInline below
+                  DialogFooter so all warnings share the same UI. */}
             </div>
             <div className="space-y-1">
               <Label htmlFor="p-trust">Deposit trust account</Label>
@@ -503,6 +507,8 @@ function AddPropertyModal({
             settings, amenities, listing description, and photo can be edited
             from the detail page after creation.
           </p>
+
+          <WarningInline warnings={localWarnings} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>

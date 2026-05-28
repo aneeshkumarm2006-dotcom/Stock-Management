@@ -95,17 +95,16 @@ export default function PortfolioPage() {
 
   // Per-exchange counts for the filter pills — derived from the unfiltered
   // row set so the pills always reflect the user's true distribution.
+  // Positions can now sit on any global venue (LSE, XETRA, HKEX, …) so the
+  // map is open-ended; the filter UI keeps the legacy NA pills as primary.
   const exchangeCounts = useMemo(() => {
-    const counts = { NYSE: 0, NASDAQ: 0, TSX: 0 } as Record<
-      "NYSE" | "NASDAQ" | "TSX",
-      number
-    >;
-    for (const r of rows) counts[r.exchange] += 1;
+    const counts: Record<string, number> = { NYSE: 0, NASDAQ: 0, TSX: 0 };
+    for (const r of rows) counts[r.exchange] = (counts[r.exchange] ?? 0) + 1;
     return counts;
   }, [rows]);
 
   const distinctExchanges = (["NASDAQ", "NYSE", "TSX"] as const).filter(
-    (id) => exchangeCounts[id] > 0,
+    (id) => (exchangeCounts[id] ?? 0) > 0,
   ).length;
 
   return (

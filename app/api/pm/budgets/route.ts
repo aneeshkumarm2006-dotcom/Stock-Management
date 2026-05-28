@@ -19,6 +19,7 @@ import {
 import { budgetCreateSchema } from '@/lib/validation/pm/budget';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
+import { computeWarnings } from '@/lib/pm/warnings';
 import {
   computeFiscalYearWindow,
   copyExistingBudgetLines,
@@ -67,12 +68,12 @@ function totalsFromLines(lines: BudgetLeanLike['lines']): {
   return { totalIncomeCents: income, totalExpensesCents: expense };
 }
 
-function serializeRow(b: BudgetLeanLike) {
+function serializeRow(b: BudgetLeanLike & { warnings?: unknown[] }) {
   const { totalIncomeCents, totalExpensesCents } = totalsFromLines(b.lines ?? []);
   return {
     id: String(b._id),
     scopeType: b.scopeType,
-    scopeId: String(b.scopeId),
+    scopeId: b.scopeId ? String(b.scopeId) : null,
     name: b.name,
     fiscalYear: b.fiscalYear,
     fiscalYearStart: b.fiscalYearStart,
@@ -87,6 +88,7 @@ function serializeRow(b: BudgetLeanLike) {
     active: b.active,
     lineCount: b.lines?.length ?? 0,
     updatedAt: b.updatedAt,
+    warnings: b.warnings ?? [],
   };
 }
 
@@ -139,10 +141,13 @@ export async function POST(request: Request) {
 
   await connectToDatabase();
   const orgObjectId = new Types.ObjectId(ctx.orgId);
-  const scopeObjectId = new Types.ObjectId(parsed.data.scopeId);
+  const scopeObjectId = parsed.data.scopeId
+    ? new Types.ObjectId(parsed.data.scopeId)
+    : null;
 
-  // Pre-check the per-property uniqueness so we can return a nice 409.
-  if (parsed.data.scopeType === 'Property') {
+  // Pre-check the per-property uniqueness so we can return a nice 409 (only
+  // possible when a scope is actually picked).
+  if (parsed.data.scopeType === 'Property' && scopeObjectId) {
     const existing = await Budget.findOne({
       organizationId: orgObjectId,
       scopeType: 'Property',
@@ -195,9 +200,9 @@ export async function POST(request: Request) {
   try {
     const doc = await Budget.create({
       organizationId: orgObjectId,
-      scopeType: parsed.data.scopeType,
+      scopeType: parsed.data.scopeType ?? 'Property',
       scopeId: scopeObjectId,
-      name: parsed.data.name,
+      name: parsed.data.name ?? '',
       fiscalYear: parsed.data.fiscalYear,
       fiscalYearStart: parsed.data.fiscalYearStart,
       startDate,
@@ -210,6 +215,12 @@ export async function POST(request: Request) {
       active: true,
       createdByUserId: new Types.ObjectId(ctx.userId),
     });
+
+    const computed = computeWarnings(doc.toObject(), 'Budget');
+    if (computed.length > 0) {
+      doc.warnings = computed;
+      await doc.save();
+    }
 
     await logActivity({
       orgId: ctx.orgId,

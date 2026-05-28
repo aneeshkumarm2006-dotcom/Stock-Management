@@ -17,47 +17,41 @@ const objectIdSchema = z
 
 const datetimeOrDate = z.string().datetime().or(z.string().date());
 
-export const calendarEventCreateSchema = z
-  .object({
-    propertyId: objectIdSchema,
-    eventName: z.string().trim().min(1, 'Event name is required').max(200),
-    description: z.string().trim().max(2000).optional(),
-    startDate: datetimeOrDate,
-    endDate: datetimeOrDate.nullable().optional(),
-    allDay: z.boolean().optional().default(false),
-    repeat: z
-      .enum(CALENDAR_REPEATS as readonly [string, ...string[]])
-      .optional()
-      .default('Does not repeat'),
-    recurrenceRule: z.string().trim().max(500).optional(),
-    location: z.string().trim().max(200).optional(),
-    reminder: z
-      .enum(CALENDAR_REMINDERS as readonly [string, ...string[]])
-      .optional()
-      .default('None'),
-    linkedWorkOrderId: objectIdSchema.nullable().optional(),
-    attachments: z.array(objectIdSchema).optional(),
-    /** Server-stamped from session if absent. Used by the WorkOrder
-     *  schedule-event sub-route to mark provenance. */
-    source: z.string().trim().min(1).max(60).optional(),
-    /** Polymorphic activity-log parent override. When absent, the route
-     *  stamps `parentType=CalendarEvent` + `parentId=self`. */
-    parentType: z.string().trim().min(1).max(40).optional(),
-    parentId: objectIdSchema.optional(),
-  })
-  .refine(
-    (d) => {
-      // End ≥ Start (BR-CC-11) — Mongoose pre-save also enforces, but
-      // checking at the edge gives a clean 400.
-      if (!d.endDate) return true;
-      return new Date(d.endDate).getTime() >= new Date(d.startDate).getTime();
-    },
-    { message: 'endDate must be ≥ startDate', path: ['endDate'] },
-  );
+// Presence requirements (propertyId, eventName, startDate) and the End >=
+// Start refine moved to computeWarnings (CALENDAR_MISSING_PROPERTY,
+// CALENDAR_MISSING_NAME, CALENDAR_END_BEFORE_START). The schema keeps
+// type/format guards only.
+export const calendarEventCreateSchema = z.object({
+  propertyId: objectIdSchema.optional(),
+  eventName: z.string().trim().max(200).optional(),
+  description: z.string().trim().max(2000).optional(),
+  startDate: datetimeOrDate.optional(),
+  endDate: datetimeOrDate.nullable().optional(),
+  allDay: z.boolean().optional().default(false),
+  repeat: z
+    .enum(CALENDAR_REPEATS as readonly [string, ...string[]])
+    .optional()
+    .default('Does not repeat'),
+  recurrenceRule: z.string().trim().max(500).optional(),
+  location: z.string().trim().max(200).optional(),
+  reminder: z
+    .enum(CALENDAR_REMINDERS as readonly [string, ...string[]])
+    .optional()
+    .default('None'),
+  linkedWorkOrderId: objectIdSchema.nullable().optional(),
+  attachments: z.array(objectIdSchema).optional(),
+  /** Server-stamped from session if absent. Used by the WorkOrder
+   *  schedule-event sub-route to mark provenance. */
+  source: z.string().trim().max(60).optional(),
+  /** Polymorphic activity-log parent override. When absent, the route
+   *  stamps `parentType=CalendarEvent` + `parentId=self`. */
+  parentType: z.string().trim().max(40).optional(),
+  parentId: objectIdSchema.optional(),
+});
 
 export const calendarEventUpdateSchema = z
   .object({
-    eventName: z.string().trim().min(1).max(200).optional(),
+    eventName: z.string().trim().max(200).optional(),
     description: z.string().trim().max(2000).nullable().optional(),
     startDate: datetimeOrDate.optional(),
     endDate: datetimeOrDate.nullable().optional(),

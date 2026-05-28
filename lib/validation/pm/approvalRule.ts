@@ -7,33 +7,21 @@ import {
 
 const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid id');
 
-export const approvalRuleCreateSchema = z
-  .object({
-    scopeType: z
-      .enum(APPROVAL_RULE_SCOPE_TYPES as readonly [string, ...string[]])
-      .default('Company'),
-    scopeId: objectIdSchema.nullable().optional(),
-    /** Threshold in dollars at the API boundary. */
-    thresholdDollars: z.number().min(0).default(0),
-    semantics: z
-      .enum(APPROVAL_RULE_SEMANTICS as readonly [string, ...string[]])
-      .default('any-of'),
-    approverUserIds: z.array(objectIdSchema).min(1),
-  })
-  .refine(
-    (d) => d.scopeType !== 'Property' || !!d.scopeId,
-    {
-      message: 'Property-scope rules require scopeId',
-      path: ['scopeId'],
-    },
-  )
-  .refine(
-    (d) => d.scopeType !== 'Company' || !d.scopeId,
-    {
-      message: 'Company-scope rules must not carry scopeId',
-      path: ['scopeId'],
-    },
-  );
+// "Property-scope requires scopeId" and "at least one approver" moved to
+// computeWarnings (RULE_MISSING_SCOPE, RULE_MISSING_APPROVERS).
+// "Company-scope must not carry scopeId" is normalised on save.
+export const approvalRuleCreateSchema = z.object({
+  scopeType: z
+    .enum(APPROVAL_RULE_SCOPE_TYPES as readonly [string, ...string[]])
+    .default('Company'),
+  scopeId: objectIdSchema.nullable().optional(),
+  /** Threshold in dollars at the API boundary. */
+  thresholdDollars: z.number().min(0).default(0),
+  semantics: z
+    .enum(APPROVAL_RULE_SEMANTICS as readonly [string, ...string[]])
+    .default('any-of'),
+  approverUserIds: z.array(objectIdSchema).default([]),
+});
 
 export const approvalRuleUpdateSchema = z
   .object({
@@ -41,7 +29,7 @@ export const approvalRuleUpdateSchema = z
     semantics: z
       .enum(APPROVAL_RULE_SEMANTICS as readonly [string, ...string[]])
       .optional(),
-    approverUserIds: z.array(objectIdSchema).min(1).optional(),
+    approverUserIds: z.array(objectIdSchema).optional(),
     active: z.boolean().optional(),
   })
   .refine((d) => Object.keys(d).length > 0, {

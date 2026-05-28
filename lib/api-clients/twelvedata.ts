@@ -29,6 +29,9 @@ export interface SymbolSearchResult {
   symbol: string;
   name: string;
   exchange: string;
+  /** ISO-style MIC code from Twelve Data when present (e.g. ARCX, BATS, XNAS).
+   *  Lets the UI map sub-exchanges (NYSE Arca, BATS) back to a storable parent. */
+  micCode?: string;
   country: string;
   currency: string;
   instrumentType: string;
@@ -65,9 +68,16 @@ function apiKey(): string {
   return k;
 }
 
-/** US for NYSE/NASDAQ, CA for TSX (drives Twelve Data `exchange` param). */
+/** Twelve Data disambiguates cross-listings with an explicit `exchange` code.
+ *  NYSE/NASDAQ are the global default — omit them so US tickers without an
+ *  exchange suffix still match. For every other listing (TSX, LSE, HKEX, NSE,
+ *  ASX, Euronext, XETRA, …) we forward whatever the symbol-search returned so
+ *  the right venue is queried. */
 function exchangeParam(exchange: string): string | undefined {
-  return exchange === 'TSX' ? 'TSX' : undefined;
+  if (!exchange) return undefined;
+  const e = exchange.toUpperCase();
+  if (e === 'NYSE' || e === 'NASDAQ') return undefined;
+  return exchange;
 }
 
 /**
@@ -241,13 +251,71 @@ interface RawSearch {
     symbol: string;
     instrument_name: string;
     exchange: string;
+    mic_code?: string;
     country: string;
     currency: string;
     instrument_type: string;
   }>;
 }
 
-/** Symbol-search typeahead, filtered to US/CA equities (PDR §7: 7d cache). */
+/** Maps Twelve Data's verbose country names to ISO-2 codes for the UI/badges.
+ *  Anything not in this table is forwarded through unchanged so we don't drop
+ *  rows for missing entries — the user still sees the listing. */
+const COUNTRY_ISO2: Record<string, string> = {
+  'United States': 'US',
+  Canada: 'CA',
+  'United Kingdom': 'GB',
+  Germany: 'DE',
+  France: 'FR',
+  Netherlands: 'NL',
+  Belgium: 'BE',
+  Italy: 'IT',
+  Spain: 'ES',
+  Switzerland: 'CH',
+  Sweden: 'SE',
+  Norway: 'NO',
+  Denmark: 'DK',
+  Finland: 'FI',
+  Ireland: 'IE',
+  Portugal: 'PT',
+  Austria: 'AT',
+  Australia: 'AU',
+  'New Zealand': 'NZ',
+  Japan: 'JP',
+  'Hong Kong': 'HK',
+  Singapore: 'SG',
+  China: 'CN',
+  India: 'IN',
+  'South Korea': 'KR',
+  Taiwan: 'TW',
+  Thailand: 'TH',
+  Malaysia: 'MY',
+  Indonesia: 'ID',
+  Philippines: 'PH',
+  Vietnam: 'VN',
+  Brazil: 'BR',
+  Mexico: 'MX',
+  Argentina: 'AR',
+  Chile: 'CL',
+  Colombia: 'CO',
+  'South Africa': 'ZA',
+  Israel: 'IL',
+  'United Arab Emirates': 'AE',
+  'Saudi Arabia': 'SA',
+  Turkey: 'TR',
+  Poland: 'PL',
+  Russia: 'RU',
+};
+
+function iso2(country: string): string {
+  return COUNTRY_ISO2[country] ?? country;
+}
+
+/** Symbol-search typeahead. Returns every listing Twelve Data finds (any
+ *  exchange, any instrument type — Common Stock, ETF, Index, REIT, Mutual
+ *  Fund, etc.). The free tier inherently excludes non-tradeable instruments
+ *  like GICs, savings accounts and private holdings (no public ticker), so
+ *  those still need a separate manual-asset path. (PDR §7: 7d cache.) */
 export async function searchSymbols(
   query: string,
 ): Promise<CacheResult<SymbolSearchResult[]>> {
@@ -259,16 +327,15 @@ export async function searchSymbols(
     cost: 1,
     fetcher: async () => {
       const raw = await tdFetch<RawSearch>('/symbol_search', { symbol: q });
-      return (raw.data ?? [])
-        .filter((d) => d.country === 'United States' || d.country === 'Canada')
-        .map((d) => ({
-          symbol: d.symbol,
-          name: d.instrument_name,
-          exchange: d.exchange,
-          country: d.country === 'Canada' ? 'CA' : 'US',
-          currency: d.currency,
-          instrumentType: d.instrument_type,
-        }));
+      return (raw.data ?? []).map((d) => ({
+        symbol: d.symbol,
+        name: d.instrument_name,
+        exchange: d.exchange,
+        micCode: d.mic_code,
+        country: iso2(d.country),
+        currency: d.currency,
+        instrumentType: d.instrument_type,
+      }));
     },
   });
 }

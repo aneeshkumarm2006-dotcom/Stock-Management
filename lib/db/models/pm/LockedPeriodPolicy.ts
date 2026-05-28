@@ -9,6 +9,7 @@
 // until audit-trail telemetry says otherwise.
 import { Schema, model, models, Types, type Model } from 'mongoose';
 import type { LockedPeriodScope } from '@/types/pm';
+import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
 export const LOCKED_PERIOD_SCOPES: LockedPeriodScope[] = [
   'Global',
@@ -25,6 +26,7 @@ export interface ILockedPeriodPolicy {
   message?: string;
   active: boolean;
   createdByUserId: Types.ObjectId;
+  warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,6 +58,7 @@ const LockedPeriodPolicySchema = new Schema<ILockedPeriodPolicy>(
       ref: 'User',
       required: true,
     },
+    warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_locked_period_policies' },
 );
@@ -67,16 +70,14 @@ LockedPeriodPolicySchema.index({
   propertyId: 1,
 });
 
+// The "Per-property requires propertyId" check moved to computeWarnings
+// (LOCK_MISSING_PROPERTY). The relational fromDate <= toDate check is a TYPE
+// concern (nonsensical inversion) so it stays as a hard block. The
+// Global-must-not-carry-propertyId check is a normalization concern; we just
+// null the field on save to keep the row consistent.
 LockedPeriodPolicySchema.pre('validate', function (next) {
-  if (this.scope === 'Per-property' && !this.propertyId) {
-    return next(
-      new Error('Per-property locked periods require a propertyId.'),
-    );
-  }
   if (this.scope === 'Global' && this.propertyId) {
-    return next(
-      new Error('Global locked periods must not carry a propertyId.'),
-    );
+    this.propertyId = null;
   }
   if (this.fromDate && this.toDate && this.fromDate > this.toDate) {
     return next(new Error('Locked period: fromDate must be on or before toDate.'));

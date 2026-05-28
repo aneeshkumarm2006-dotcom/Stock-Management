@@ -20,6 +20,7 @@ import type {
   WorkOrderStatus,
   WorkPriority,
 } from '@/types/pm';
+import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
 export const WORK_ORDER_STATUSES_DB: WorkOrderStatus[] = [
   'New',
@@ -107,6 +108,7 @@ export interface IWorkOrder {
   unitId?: Types.ObjectId | null;
   propertyId?: Types.ObjectId | null;
   createdByUserId: Types.ObjectId;
+  warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -145,7 +147,7 @@ const WorkOrderSchema = new Schema<IWorkOrder>(
       ref: 'PmOrganization',
       required: true,
     },
-    subject: { type: String, required: true, trim: true, maxlength: 200 },
+    subject: { type: String, default: '', trim: true, maxlength: 200 },
     vendorId: {
       type: Schema.Types.ObjectId,
       ref: 'PmVendor',
@@ -167,7 +169,7 @@ const WorkOrderSchema = new Schema<IWorkOrder>(
     taskId: {
       type: Schema.Types.ObjectId,
       ref: 'PmTask',
-      required: true,
+      default: null,
     },
     taskType: { type: String, trim: true, maxlength: 60 },
     taskCategoryId: {
@@ -214,6 +216,7 @@ const WorkOrderSchema = new Schema<IWorkOrder>(
       ref: 'User',
       required: true,
     },
+    warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_work_orders' },
 );

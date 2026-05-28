@@ -278,16 +278,20 @@ export async function PATCH(
   }
   if (primaryRent !== undefined) {
     doc.primaryRent = {
-      amount: toCents(primaryRent.amount),
-      accountId: new Types.ObjectId(primaryRent.accountId),
+      amount: toCents(primaryRent.amount ?? 0),
+      accountId: primaryRent.accountId
+        ? new Types.ObjectId(primaryRent.accountId)
+        : (null as unknown as Types.ObjectId),
       nextDueDate: primaryRent.nextDueDate ? new Date(primaryRent.nextDueDate) : null,
       memo: primaryRent.memo,
     };
   }
   if (splitRentCharges !== undefined) {
     doc.splitRentCharges = splitRentCharges.map((c) => ({
-      accountId: new Types.ObjectId(c.accountId),
-      amount: toCents(c.amount),
+      accountId: c.accountId
+        ? new Types.ObjectId(c.accountId)
+        : (null as unknown as Types.ObjectId),
+      amount: toCents(c.amount ?? 0),
       memo: c.memo,
     }));
   }
@@ -296,9 +300,11 @@ export async function PATCH(
   }
   if (recurringCharges !== undefined) {
     doc.recurringCharges = recurringCharges.map((c) => ({
-      amount: toCents(c.amount),
-      accountId: new Types.ObjectId(c.accountId),
-      frequency: c.frequency as RentCycle,
+      amount: toCents(c.amount ?? 0),
+      accountId: c.accountId
+        ? new Types.ObjectId(c.accountId)
+        : (null as unknown as Types.ObjectId),
+      frequency: (c.frequency ?? 'Monthly') as RentCycle,
       nextDate: c.nextDate ? new Date(c.nextDate) : null,
       memo: c.memo,
       postNDaysInAdvance: c.postNDaysInAdvance ?? 5,
@@ -306,8 +312,10 @@ export async function PATCH(
   }
   if (oneTimeCharges !== undefined) {
     doc.oneTimeCharges = oneTimeCharges.map((c) => ({
-      amount: toCents(c.amount),
-      accountId: new Types.ObjectId(c.accountId),
+      amount: toCents(c.amount ?? 0),
+      accountId: c.accountId
+        ? new Types.ObjectId(c.accountId)
+        : (null as unknown as Types.ObjectId),
       dueDate: c.dueDate ? new Date(c.dueDate) : null,
       memo: c.memo,
       isMoveInCharge: c.isMoveInCharge ?? false,
@@ -317,8 +325,10 @@ export async function PATCH(
   }
   if (moveInCharges !== undefined) {
     doc.moveInCharges = moveInCharges.map((c) => ({
-      amount: toCents(c.amount),
-      accountId: new Types.ObjectId(c.accountId),
+      amount: toCents(c.amount ?? 0),
+      accountId: c.accountId
+        ? new Types.ObjectId(c.accountId)
+        : (null as unknown as Types.ObjectId),
       dueDate: c.dueDate ? new Date(c.dueDate) : null,
       memo: c.memo,
       isMoveInCharge: true,
@@ -333,7 +343,7 @@ export async function PATCH(
     doc.esignatureDocuments = esignatureDocuments.map((d) => ({
       fileId: d.fileId ? new Types.ObjectId(d.fileId) : null,
       role: d.role ?? 'Lease',
-      label: d.label,
+      label: d.label ?? '',
       status: (d.status ?? 'Not sent') as EsignatureStatus,
       sentAt: null,
       signedAt: null,
@@ -345,15 +355,15 @@ export async function PATCH(
   if (approvedApplicants !== undefined) {
     doc.approvedApplicants = approvedApplicants.map((a) => ({
       applicantId: new Types.ObjectId(a.applicantId),
-      firstName: a.firstName,
-      lastName: a.lastName,
+      firstName: a.firstName ?? '',
+      lastName: a.lastName ?? '',
     }));
   }
   if (tenants !== undefined) {
     doc.tenants = tenants.map((t) => ({
       tenantId: t.tenantId ? new Types.ObjectId(t.tenantId) : null,
-      firstName: t.firstName,
-      lastName: t.lastName,
+      firstName: t.firstName ?? '',
+      lastName: t.lastName ?? '',
       email: t.email,
       isCosigner: t.isCosigner ?? false,
     }));
@@ -361,8 +371,8 @@ export async function PATCH(
   if (cosigners !== undefined) {
     doc.cosigners = cosigners.map((t) => ({
       tenantId: t.tenantId ? new Types.ObjectId(t.tenantId) : null,
-      firstName: t.firstName,
-      lastName: t.lastName,
+      firstName: t.firstName ?? '',
+      lastName: t.lastName ?? '',
       email: t.email,
       isCosigner: true,
     }));

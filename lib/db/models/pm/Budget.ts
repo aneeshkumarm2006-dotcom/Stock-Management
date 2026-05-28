@@ -22,6 +22,7 @@ import type {
   BudgetScopeType,
   FiscalMonth,
 } from '@/types/pm';
+import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
 export const BUDGET_SCOPE_TYPES_DB: BudgetScopeType[] = ['Property', 'Company'];
 
@@ -75,6 +76,7 @@ export interface IBudget {
   lines: IBudgetLine[];
   active: boolean;
   createdByUserId: Types.ObjectId;
+  warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -115,8 +117,8 @@ const BudgetSchema = new Schema<IBudget>(
       enum: BUDGET_SCOPE_TYPES_DB,
       required: true,
     },
-    scopeId: { type: Schema.Types.ObjectId, required: true },
-    name: { type: String, required: true, trim: true, maxlength: 200 },
+    scopeId: { type: Schema.Types.ObjectId, default: null },
+    name: { type: String, default: '', trim: true, maxlength: 200 },
     fiscalYear: { type: Number, required: true, min: 1900, max: 2999 },
     fiscalYearStart: {
       type: String,
@@ -144,6 +146,7 @@ const BudgetSchema = new Schema<IBudget>(
       ref: 'User',
       required: true,
     },
+    warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_budgets' },
 );
@@ -162,14 +165,13 @@ BudgetSchema.index(
 // Fast list query: org + active filter + sort by FY desc.
 BudgetSchema.index({ organizationId: 1, active: 1, fiscalYear: -1 });
 
+// The "copySourceBudgetId required when Copy existing budget" check moved
+// to computeWarnings (BUDGET_MISSING_COPY_SOURCE). startDate/endDate
+// relational check is a TYPE concern (nonsensical inversion) so it stays
+// as a hard block.
 BudgetSchema.pre('validate', function (next) {
   if (this.startDate && this.endDate && this.startDate >= this.endDate) {
     return next(new Error('Budget startDate must precede endDate.'));
-  }
-  if (this.defaultAmounts === 'Copy existing budget' && !this.copySourceBudgetId) {
-    return next(
-      new Error('copySourceBudgetId is required when defaultAmounts="Copy existing budget".'),
-    );
   }
   next();
 });

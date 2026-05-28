@@ -7,6 +7,7 @@
 // reserved word + the Task entity sharing the namespace. The Task cross-link
 // is `taskId`.
 import { Schema, model, models, Types, type Model } from 'mongoose';
+import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
 export const OWNER_CONTRIBUTION_STATUSES_DB = [
   'New',
@@ -41,6 +42,7 @@ export interface IOwnerContributionRequest {
   /** Cross-link to PmTask. */
   taskId?: Types.ObjectId | null;
   createdByUserId: Types.ObjectId;
+  warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -58,18 +60,18 @@ const OwnerContributionRequestSchema = new Schema<IOwnerContributionRequest>(
       required: true,
       default: 'New',
     },
-    dueDate: { type: Date, required: true },
-    propertiesScope: { type: String, required: true, trim: true, maxlength: 200 },
+    dueDate: { type: Date, default: null },
+    propertiesScope: { type: String, default: '', trim: true, maxlength: 200 },
     taskDescription: {
       type: String,
-      required: true,
+      default: '',
       trim: true,
       maxlength: 2000,
     },
     requestedFromOwnerId: {
       type: Schema.Types.ObjectId,
       ref: 'PmRentalOwner',
-      required: true,
+      default: null,
     },
     priority: {
       type: String,
@@ -77,7 +79,7 @@ const OwnerContributionRequestSchema = new Schema<IOwnerContributionRequest>(
       required: true,
       default: 'Normal',
     },
-    requestedAmount: { type: Number, required: true, min: 0 },
+    requestedAmount: { type: Number, default: 0, min: 0 },
     receivedAmount: { type: Number, default: 0, min: 0 },
     taskId: { type: Schema.Types.ObjectId, ref: 'PmTask', default: null },
     createdByUserId: {
@@ -85,6 +87,7 @@ const OwnerContributionRequestSchema = new Schema<IOwnerContributionRequest>(
       ref: 'User',
       required: true,
     },
+    warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_owner_contribution_requests' },
 );

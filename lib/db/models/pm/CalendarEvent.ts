@@ -19,6 +19,7 @@ import type {
   CalendarReminder,
 } from '@/types/pm';
 import { CALENDAR_REPEATS, CALENDAR_REMINDERS } from '@/types/pm';
+import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
 export interface ICalendarEvent {
   _id: Types.ObjectId;
@@ -59,6 +60,7 @@ export interface ICalendarEvent {
   /** Originating surface — e.g. 'Calendars', 'WorkOrder'. */
   source: string;
   createdByUserId: Types.ObjectId;
+  warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -73,7 +75,7 @@ const CalendarEventSchema = new Schema<ICalendarEvent>(
     propertyId: {
       type: Schema.Types.ObjectId,
       ref: 'PmProperty',
-      required: true,
+      default: null,
     },
     parentType: {
       type: String,
@@ -81,11 +83,11 @@ const CalendarEventSchema = new Schema<ICalendarEvent>(
       required: true,
     },
     parentId: { type: Schema.Types.ObjectId, required: true },
-    eventName: { type: String, required: true, trim: true, maxlength: 200 },
-    title: { type: String, required: true, trim: true, maxlength: 200 },
+    eventName: { type: String, default: '', trim: true, maxlength: 200 },
+    title: { type: String, default: '', trim: true, maxlength: 200 },
     description: { type: String, trim: true, maxlength: 2000 },
-    startDate: { type: Date, required: true },
-    endDate: { type: Date, required: true },
+    startDate: { type: Date, default: null },
+    endDate: { type: Date, default: null },
     allDay: { type: Boolean, default: false },
     timezone: { type: String, required: true, trim: true },
     repeat: {
@@ -124,23 +126,21 @@ const CalendarEventSchema = new Schema<ICalendarEvent>(
       ref: 'User',
       required: true,
     },
+    warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_calendar_events' },
 );
 
-// BR-CC-11 — End defaults to Start + 1 hour; End ≥ Start enforced.
-// Also keep `title` mirror in sync with `eventName` so Phase 4 readers
-// that selected `title` still resolve. Uses pre('validate') so the
-// default lands before Mongoose's required-field validation runs.
+// `title` mirror stays in sync with `eventName` so Phase 4 readers that
+// selected `title` still resolve. The end >= start check that used to live
+// here is now a non-blocking warning (CALENDAR_END_BEFORE_START in
+// lib/pm/warnings.ts); the row still saves either way.
 CalendarEventSchema.pre('validate', function (next) {
   const doc = this as unknown as ICalendarEvent & {
     isModified: (path: string) => boolean;
   };
   if (!doc.endDate && doc.startDate) {
     doc.endDate = new Date(doc.startDate.getTime() + 60 * 60 * 1000);
-  }
-  if (doc.endDate && doc.startDate && doc.endDate < doc.startDate) {
-    return next(new Error('endDate must be ≥ startDate (BR-CC-11)'));
   }
   if (doc.isModified('eventName') && doc.eventName) {
     doc.title = doc.eventName;

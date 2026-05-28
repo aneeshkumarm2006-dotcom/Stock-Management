@@ -27,6 +27,8 @@ import {
   type EntryDetails,
   type ChargeTargetType,
 } from "@/types/pm";
+import { computeWarnings } from "@/lib/pm/warnings";
+import { WarningInline } from "@/components/pm/WarningBadge";
 
 interface VendorOption {
   id: string;
@@ -178,22 +180,12 @@ export function AddWorkOrderModal({
     return payload;
   }
 
-  function valid(): string | null {
-    if (!subject.trim()) return "Subject is required";
-    if (taskMode === "existing" && !taskId) return "Pick a task";
-    if (taskMode === "new" && !taskTitle.trim() && !subject.trim()) {
-      return "Task title or subject required";
-    }
-    if (chargeType && !chargeId) return "Pick a chargeWorkTo target";
-    return null;
-  }
+  // Presence checks (subject, task pick, charge target) moved to non-blocking
+  // warnings. The form can submit either way; the API stamps the warnings on
+  // the created row. The task auto-defaults to a new task when none is picked,
+  // since the WO model still needs a parent for activity-log threading.
 
   async function save(scheduleEvent: boolean) {
-    const err = valid();
-    if (err) {
-      toast({ title: err, variant: "error" });
-      return;
-    }
     setSaving(true);
     const res = await fetch("/api/pm/work-orders", {
       method: "POST",
@@ -273,11 +265,7 @@ export function AddWorkOrderModal({
                   </option>
                 ))}
               </select>
-              {!vendorId && (
-                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  No vendor assigned — assign one from the work order detail page.
-                </p>
-              )}
+              {/* Unified WarningInline below DialogFooter handles this. */}
             </div>
             <div className="space-y-1">
               <Label htmlFor="wo-assignee">Staff assignee</Label>
@@ -287,11 +275,7 @@ export function AddWorkOrderModal({
                 value={assignedToUserId}
                 onChange={(e) => setAssignedToUserId(e.target.value)}
               />
-              {!assignedToUserId && (
-                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  No staff assignee — assign one from the work order detail page.
-                </p>
-              )}
+              {/* Unified WarningInline below DialogFooter handles this. */}
             </div>
           </div>
 
@@ -524,6 +508,21 @@ export function AddWorkOrderModal({
               />
             </div>
           </div>
+
+          <WarningInline
+            warnings={computeWarnings(
+              {
+                subject,
+                vendorId,
+                assignedToUserId,
+                chargeWorkTo:
+                  chargeType
+                    ? { type: chargeType, id: chargeId }
+                    : null,
+              },
+              "WorkOrder",
+            )}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>

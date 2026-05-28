@@ -27,7 +27,7 @@ const chargeWorkToSchema = z.discriminatedUnion('type', [
  *  The route handler creates the Task first when `taskNew` is present and
  *  rejects when neither `taskId` nor `taskNew` is supplied. */
 const taskInlineCreateSchema = z.object({
-  title: z.string().min(1).max(200),
+  title: z.string().max(200).optional(),
   taskType: z.string().optional(),
   priority: z.string().optional(),
   dueDate: z.string().datetime().optional(),
@@ -37,7 +37,7 @@ const taskInlineCreateSchema = z.object({
 });
 
 const baseFields = {
-  subject: z.string().min(1).max(200),
+  subject: z.string().max(200).optional(),
   vendorId: objectIdSchema.optional(),
   status: z
     .enum(WORK_ORDER_STATUSES as readonly [string, ...string[]])
@@ -66,13 +66,11 @@ const baseFields = {
   propertyId: objectIdSchema.nullable().optional(),
 };
 
-export const workOrderCreateSchema = z
-  .object(baseFields)
-  .refine((d) => Boolean(d.taskId) || Boolean(d.taskNew), {
-    message:
-      'Every work order needs a parent task. Provide either taskId or taskNew.',
-    path: ['taskId'],
-  });
+// The "every WO needs a parent task" refine was a hard 400. The route now
+// creates a default Task when neither taskId nor taskNew is supplied, so the
+// row always has a parent — but the absence of an explicit user-picked task
+// surfaces as a (future) warning if we choose to add one.
+export const workOrderCreateSchema = z.object(baseFields);
 
 export const workOrderUpdateSchema = z
   .object({

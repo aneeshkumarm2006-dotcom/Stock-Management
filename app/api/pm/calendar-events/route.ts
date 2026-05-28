@@ -25,6 +25,7 @@ import {
 import { logActivity } from '@/lib/pm/activity';
 import { expandRecurrence } from '@/lib/pm/calendarEvents';
 import { CALENDAR_MAX_OVERLAYS } from '@/types/pm';
+import { computeWarnings } from '@/lib/pm/warnings';
 
 export const runtime = 'nodejs';
 
@@ -152,27 +153,34 @@ export async function POST(request: Request) {
 
   await connectToDatabase();
 
-  // BR-CC-6 — confirm propertyId belongs to this org before publishing.
-  const property = await Property.findOne({
-    _id: new Types.ObjectId(parsed.data.propertyId),
-    organizationId: new Types.ObjectId(ctx.orgId),
-  })
-    .select('_id')
-    .lean();
-  if (!property) {
-    return NextResponse.json(
-      { error: 'Property not found in this organization' },
-      { status: 404 },
-    );
+  // BR-CC-6 — confirm propertyId belongs to this org IF a propertyId is
+  // supplied (it's now optional; absence becomes a CALENDAR_MISSING_PROPERTY
+  // warning, not a 404).
+  if (parsed.data.propertyId) {
+    const property = await Property.findOne({
+      _id: new Types.ObjectId(parsed.data.propertyId),
+      organizationId: new Types.ObjectId(ctx.orgId),
+    })
+      .select('_id')
+      .lean();
+    if (!property) {
+      return NextResponse.json(
+        { error: 'Property not found in this organization' },
+        { status: 404 },
+      );
+    }
   }
 
   // BR-CC-9 — timezone is read-only and inherited from the org.
   const org = await Organization.findById(ctx.orgId).select('timezone').lean();
   const timezone = org?.timezone ?? 'America/New_York';
 
-  const startDate = new Date(parsed.data.startDate);
-  if (Number.isNaN(startDate.getTime())) {
-    return NextResponse.json({ error: 'Invalid startDate' }, { status: 400 });
+  let startDate: Date | null = null;
+  if (parsed.data.startDate) {
+    startDate = new Date(parsed.data.startDate);
+    if (Number.isNaN(startDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid startDate' }, { status: 400 });
+    }
   }
   let endDate: Date | null = null;
   if (parsed.data.endDate) {
@@ -194,16 +202,18 @@ export async function POST(request: Request) {
   try {
     doc = await CalendarEvent.create({
       organizationId: new Types.ObjectId(ctx.orgId),
-      propertyId: new Types.ObjectId(parsed.data.propertyId),
+      propertyId: parsed.data.propertyId
+        ? new Types.ObjectId(parsed.data.propertyId)
+        : null,
       // parentId is required by the schema — when caller didn't provide
       // one we point it at the row's own id post-insert. To avoid a
       // second write, use an interim placeholder ObjectId and update.
       parentType,
       parentId: parentId ?? new Types.ObjectId(),
-      eventName: parsed.data.eventName,
-      title: parsed.data.eventName,
+      eventName: parsed.data.eventName ?? '',
+      title: parsed.data.eventName ?? '',
       description: parsed.data.description,
-      startDate,
+      startDate: startDate ?? undefined,
       endDate: endDate ?? undefined,
       allDay: parsed.data.allDay ?? false,
       timezone,
@@ -234,6 +244,12 @@ export async function POST(request: Request) {
     );
   }
 
+  const computed = computeWarnings(doc.toObject(), 'CalendarEvent');
+  if (computed.length > 0) {
+    doc.warnings = computed;
+    await doc.save();
+  }
+
   await logActivity({
     orgId: ctx.orgId,
     parentType: parentType as never,
@@ -253,11 +269,12 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       id: String(doc._id),
-      propertyId: String(doc.propertyId),
+      propertyId: doc.propertyId ? String(doc.propertyId) : null,
       eventName: doc.eventName,
       timezone: doc.timezone,
       startDate: doc.startDate,
       endDate: doc.endDate,
+      warnings: doc.warnings,
     },
     { status: 201 },
   );

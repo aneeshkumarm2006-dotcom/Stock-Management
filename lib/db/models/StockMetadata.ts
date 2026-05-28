@@ -1,8 +1,12 @@
 // StockMetadata — global company profile cache (Finnhub). No userId.
 // Refs: PDR.md §6 (StockMetadata), Tech_Stack.md §Database.
+//
+// `country` is the ISO-2 listing country (US, CA, GB, DE, JP, HK, AU, IN, …).
+// It used to be enum-locked to US/CA back when only NYSE/NASDAQ/TSX were
+// supported; now any exchange Twelve Data returns is allowed.
 import { Schema, model, models, type Model } from 'mongoose';
 
-export type Country = 'US' | 'CA';
+export type Country = string;
 
 export interface IStockMetadata {
   ticker: string;
@@ -23,7 +27,7 @@ const StockMetadataSchema = new Schema<IStockMetadata>(
     logo: { type: String },
     sector: { type: String },
     industry: { type: String },
-    country: { type: String, enum: ['US', 'CA'] },
+    country: { type: String },
     lastUpdated: { type: Date, default: Date.now },
   },
   { collection: 'stockMetadata' },

@@ -23,19 +23,23 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { SidePanel } from "./SidePanel";
-import { Field, SelectField, FieldError } from "./fields";
+import { Field, FieldError } from "./fields";
 
-// Form values are strings (native inputs); converted on submit. The numeric
-// rules mirror the server contract in app/api/positions/route.ts.
+// Form values mirror the server contract in app/api/positions/route.ts:
+// exchange and currency are free uppercase strings so any venue Twelve Data
+// surfaces (LSE, XETRA, HKEX, NSE, ASX, …) is storable. Currency must still
+// be a 3-letter ISO code.
 const schema = z.object({
   ticker: z
     .string()
     .trim()
     .min(1, "Ticker is required")
-    .max(12, "Ticker is too long"),
-  exchange: z.enum(["NYSE", "NASDAQ", "TSX"], {
-    errorMap: () => ({ message: "Select an exchange" }),
-  }),
+    .max(20, "Ticker is too long"),
+  exchange: z
+    .string()
+    .trim()
+    .min(1, "Exchange is required")
+    .max(32, "Exchange code is too long"),
   quantity: z
     .string()
     .min(1, "Quantity is required")
@@ -47,18 +51,159 @@ const schema = z.object({
       (v) => Number.isFinite(Number(v)) && Number(v) >= 0,
       "Average buy price cannot be negative",
     ),
-  currency: z.enum(["USD", "CAD"]),
+  currency: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{3}$/, "Currency must be a 3-letter ISO code"),
   buyDate: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
-function mapExchange(raw: string): FormValues["exchange"] | null {
-  const e = raw.toUpperCase();
-  if (e.includes("TSX") || e === "TOR" || e === "NEO") return "TSX";
+// Twelve Data returns `exchange` (human label like "NYSE Arca") and `mic_code`
+// (ISO 10383 MIC like "ARCX"). We translate both to one of the venue keys in
+// finnhub.ts EXCHANGE_META so the async profile fetch picks the right ticker
+// suffix (.TO, .L, .DE, …). Anything we don't recognise is passed through
+// uppercased — the server accepts it and Twelve Data /quote works regardless.
+const MIC_TO_VENUE: Record<string, string> = {
+  // North America
+  XNYS: "NYSE",
+  ARCX: "ARCA",
+  XASE: "AMEX",
+  BATS: "BATS",
+  IEXG: "NYSE",
+  XCBO: "BATS",
+  EDGX: "BATS",
+  EDGA: "BATS",
+  OOTC: "OTC",
+  XNAS: "NASDAQ",
+  XTSE: "TSX",
+  XTSX: "TSXV",
+  XCNQ: "CSE",
+  NEOE: "NEO",
+  XCNX: "CSE",
+  // Europe
+  XLON: "LSE",
+  XETR: "XETRA",
+  XFRA: "FRANKFURT",
+  XPAR: "PARIS",
+  XAMS: "AMSTERDAM",
+  XBRU: "BRUSSELS",
+  XMIL: "MILAN",
+  XMAD: "MADRID",
+  XLIS: "LISBON",
+  XSTO: "STOCKHOLM",
+  XHEL: "HELSINKI",
+  XOSL: "OSLO",
+  XCSE: "COPENHAGEN",
+  XSWX: "SIX",
+  XWBO: "VIENNA",
+  XWAR: "WARSAW",
+  XIST: "ISTANBUL",
+  // Asia-Pacific
+  XASX: "ASX",
+  XNZE: "NZX",
+  XTKS: "TSE",
+  XHKG: "HKEX",
+  XSHG: "SSE",
+  XSHE: "SZSE",
+  XKRX: "KRX",
+  XKOS: "KOSDAQ",
+  XTAI: "TWSE",
+  XSES: "SGX",
+  XNSE: "NSE",
+  XBOM: "BSE",
+  XBKK: "SET",
+  XIDX: "IDX",
+  XKLS: "KLSE",
+  // Americas (ex-NA)
+  BVMF: "B3",
+  XMEX: "BMV",
+  XBUE: "BCBA",
+  // Middle East / Africa
+  XTAE: "TASE",
+  XSAU: "TADAWUL",
+  XJSE: "JSE",
+};
+
+const LABEL_TO_VENUE: Record<string, string> = {
+  "NYSE ARCA": "ARCA",
+  "NYSE AMERICAN": "AMEX",
+  AMEX: "AMEX",
+  BATS: "BATS",
+  CBOE: "BATS",
+  IEX: "NYSE",
+  OTC: "OTC",
+  "TSX VENTURE": "TSXV",
+  TSXV: "TSXV",
+  NEO: "NEO",
+  CSE: "CSE",
+};
+
+function mapExchange(raw: string, mic?: string): string {
+  if (mic) {
+    const m = MIC_TO_VENUE[mic.toUpperCase()];
+    if (m) return m;
+  }
+  const e = raw.trim().toUpperCase();
+  if (LABEL_TO_VENUE[e]) return LABEL_TO_VENUE[e];
   if (e.includes("NASDAQ")) return "NASDAQ";
   if (e.includes("NYSE")) return "NYSE";
-  return null;
+  if (e.includes("TSX")) return "TSX";
+  // Anything else — pass through uppercased so the server stores it as-is.
+  return e || "NYSE";
 }
+
+// Common venue suggestions for the datalist; user can still type anything.
+const COMMON_EXCHANGES = [
+  "NYSE",
+  "NASDAQ",
+  "AMEX",
+  "ARCA",
+  "BATS",
+  "OTC",
+  "TSX",
+  "TSXV",
+  "NEO",
+  "CSE",
+  "LSE",
+  "XETRA",
+  "PARIS",
+  "AMSTERDAM",
+  "MILAN",
+  "MADRID",
+  "SIX",
+  "ASX",
+  "TSE",
+  "HKEX",
+  "NSE",
+  "BSE",
+  "SGX",
+  "KRX",
+  "B3",
+  "BMV",
+];
+
+const COMMON_CURRENCIES = [
+  "USD",
+  "CAD",
+  "EUR",
+  "GBP",
+  "JPY",
+  "AUD",
+  "CHF",
+  "HKD",
+  "SGD",
+  "INR",
+  "CNY",
+  "KRW",
+  "BRL",
+  "MXN",
+  "ZAR",
+  "NZD",
+  "SEK",
+  "NOK",
+  "DKK",
+];
 
 export function AddPositionPanel() {
   const open = useUiStore((s) => s.addPanelOpen);
@@ -102,15 +247,12 @@ export function AddPositionPanel() {
 
   function pick(r: SymbolSearchResult) {
     setValue("ticker", r.symbol.toUpperCase(), { shouldValidate: true });
-    const ex = mapExchange(r.exchange);
-    if (ex) setValue("exchange", ex, { shouldValidate: true });
-    const cur =
-      r.currency === "USD" || r.currency === "CAD"
-        ? (r.currency as FormValues["currency"])
-        : r.country === "CA"
-          ? "CAD"
-          : "USD";
-    setValue("currency", cur);
+    setValue("exchange", mapExchange(r.exchange, r.micCode), {
+      shouldValidate: true,
+    });
+    if (r.currency) {
+      setValue("currency", r.currency.toUpperCase(), { shouldValidate: true });
+    }
     setSearchOpen(false);
   }
 
@@ -155,7 +297,7 @@ export function AddPositionPanel() {
       open={open}
       onClose={closeAndReset}
       title="Add Position"
-      description="Search a US or Canadian listing, then enter your cost basis."
+      description="Search any listing Twelve Data covers — stocks, ETFs, mutual funds, ADRs, REITs across 50+ global exchanges — then enter your cost basis."
       footer={
         <div className="flex items-center justify-end gap-3">
           <Button variant="ghost" onClick={closeAndReset}>
@@ -216,27 +358,38 @@ export function AddPositionPanel() {
                 </div>
               ) : results.length === 0 ? (
                 <div className="px-3 py-3 text-xs text-fg-muted">
-                  No US / Canadian listings found. You can still enter the
-                  ticker manually.
+                  No matching listings. You can still enter the ticker
+                  manually.
                 </div>
               ) : (
                 results.slice(0, 12).map((r) => (
                   <button
-                    key={`${r.symbol}:${r.exchange}`}
+                    key={`${r.symbol}:${r.exchange}:${r.micCode ?? ""}`}
                     type="button"
                     onClick={() => pick(r)}
                     className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-surface-highest"
                   >
                     <span className="min-w-0">
-                      <span className="block text-xs font-bold text-fg">
-                        {r.symbol}
+                      <span className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-fg">
+                          {r.symbol}
+                        </span>
+                        {r.instrumentType && (
+                          <span className="rounded bg-surface-highest px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fg-muted">
+                            {r.instrumentType}
+                          </span>
+                        )}
                       </span>
                       <span className="block truncate text-[11px] text-fg-muted">
                         {r.name}
                       </span>
                     </span>
-                    <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-fg-muted">
-                      {r.exchange} · {r.country}
+                    <span className="shrink-0 text-right text-[10px] font-bold uppercase tracking-wider text-fg-muted">
+                      <span className="block">{r.exchange}</span>
+                      <span className="block opacity-70">
+                        {r.country}
+                        {r.currency ? ` · ${r.currency}` : ""}
+                      </span>
                     </span>
                   </button>
                 ))
@@ -246,25 +399,35 @@ export function AddPositionPanel() {
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <SelectField
+          <Field
             label="Exchange"
             id="exchange"
+            list="exchange-options"
+            placeholder="NYSE, TSX, LSE…"
+            className="uppercase"
             error={errors.exchange?.message}
             {...register("exchange")}
-          >
-            <option value="NYSE">NYSE</option>
-            <option value="NASDAQ">NASDAQ</option>
-            <option value="TSX">TSX</option>
-          </SelectField>
-          <SelectField
+          />
+          <datalist id="exchange-options">
+            {COMMON_EXCHANGES.map((x) => (
+              <option key={x} value={x} />
+            ))}
+          </datalist>
+          <Field
             label="Currency"
             id="currency"
+            list="currency-options"
+            placeholder="USD"
+            maxLength={3}
+            className="uppercase"
             error={errors.currency?.message}
             {...register("currency")}
-          >
-            <option value="USD">USD</option>
-            <option value="CAD">CAD</option>
-          </SelectField>
+          />
+          <datalist id="currency-options">
+            {COMMON_CURRENCIES.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
         </div>
 
         <div className="grid grid-cols-2 gap-4">

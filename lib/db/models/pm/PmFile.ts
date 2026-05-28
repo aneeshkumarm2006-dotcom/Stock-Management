@@ -6,6 +6,7 @@
 import { Schema, model, models, Types, type Model } from 'mongoose';
 import { FILE_LOCATION_TYPES } from '@/lib/pm/parentTypes';
 import type { FileLocationType, FileSharing } from '@/types/pm';
+import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
 export interface IPmFile {
   _id: Types.ObjectId;
@@ -29,6 +30,7 @@ export interface IPmFile {
   uploadedByUserId: Types.ObjectId;
   lastModifiedByUserId: Types.ObjectId;
   lastModifiedAt: Date;
+  warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,7 +42,7 @@ const PmFileSchema = new Schema<IPmFile>(
       ref: 'PmOrganization',
       required: true,
     },
-    title: { type: String, required: true, trim: true },
+    title: { type: String, default: '', trim: true },
     sharing: {
       type: String,
       enum: ['Internal', 'Resident', 'Owner', 'PublicLink'],
@@ -49,7 +51,7 @@ const PmFileSchema = new Schema<IPmFile>(
     categoryId: {
       type: Schema.Types.ObjectId,
       ref: 'PmFileCategory',
-      required: true,
+      default: null,
     },
     locationType: {
       type: String,
@@ -78,6 +80,7 @@ const PmFileSchema = new Schema<IPmFile>(
       required: true,
     },
     lastModifiedAt: { type: Date, required: true, default: () => new Date() },
+    warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_files' },
 );
@@ -86,14 +89,13 @@ PmFileSchema.index({ organizationId: 1, locationType: 1, locationId: 1 });
 PmFileSchema.index({ organizationId: 1, categoryId: 1 });
 PmFileSchema.index({ organizationId: 1, lastModifiedAt: -1 });
 
-PmFileSchema.path('locationId').validate(function validateLocationId(
-  this: IPmFile,
-  v: Types.ObjectId | null,
-) {
-  if (this.locationType === 'Account') return v == null;
-  return v != null;
-},
-'locationId is required unless locationType is "Account"');
+// The "locationId required unless Account" check moved to computeWarnings
+// (FILE_MISSING_LOCATION). Account-scope uploads still null the field on
+// save to keep the row consistent.
+PmFileSchema.pre('save', function (next) {
+  if (this.locationType === 'Account') this.locationId = null;
+  next();
+});
 
 export const PmFile: Model<IPmFile> =
   (models.PmFile as Model<IPmFile>) ??

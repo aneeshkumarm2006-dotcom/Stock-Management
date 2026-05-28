@@ -34,6 +34,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { pmFileCreateSchema } from '@/lib/validation/pm/pmFile';
 import { logActivity } from '@/lib/pm/activity';
+import { computeWarnings } from '@/lib/pm/warnings';
 import {
   COLLECTION_BY_LOCATION_TYPE,
   FK_VALIDATED_LOCATION_TYPES,
@@ -194,16 +195,21 @@ export async function POST(request: Request) {
   await connectToDatabase();
   const orgObjectId = new Types.ObjectId(ctx.orgId);
 
-  // Category must belong to this org.
-  const category = await FileCategory.findOne({
-    _id: new Types.ObjectId(parsed.data.categoryId),
-    organizationId: orgObjectId,
-  });
-  if (!category) {
-    return NextResponse.json(
-      { error: 'Category not found in this organization' },
-      { status: 400 },
-    );
+  // Category is now optional — when supplied, it must belong to this org.
+  // When absent, the file saves without a category and surfaces a
+  // FILE_MISSING_CATEGORY warning on the row.
+  let category: { _id: Types.ObjectId } | null = null;
+  if (parsed.data.categoryId) {
+    category = await FileCategory.findOne({
+      _id: new Types.ObjectId(parsed.data.categoryId),
+      organizationId: orgObjectId,
+    });
+    if (!category) {
+      return NextResponse.json(
+        { error: 'Category not found in this organization' },
+        { status: 400 },
+      );
+    }
   }
 
   // FK existence check for Phase 1+ collections. Anything not in
@@ -237,9 +243,9 @@ export async function POST(request: Request) {
   const now = new Date();
   const doc = await PmFile.create({
     organizationId: orgObjectId,
-    title: parsed.data.title,
+    title: parsed.data.title ?? '',
     sharing: parsed.data.sharing ?? 'Internal',
-    categoryId: category._id,
+    categoryId: category ? category._id : null,
     locationType: parsed.data.locationType,
     locationId: parsed.data.locationId
       ? new Types.ObjectId(parsed.data.locationId)
@@ -255,10 +261,18 @@ export async function POST(request: Request) {
     lastModifiedAt: now,
   });
 
-  await FileCategory.updateOne(
-    { _id: category._id },
-    { $inc: { inUseCount: 1 } },
-  );
+  const computed = computeWarnings(doc.toObject(), 'PmFile');
+  if (computed.length > 0) {
+    doc.warnings = computed;
+    await doc.save();
+  }
+
+  if (category) {
+    await FileCategory.updateOne(
+      { _id: category._id },
+      { $inc: { inUseCount: 1 } },
+    );
+  }
 
   // Only log against the parent when the parent is a recognised polymorphic
   // type — `Account` is a synthetic non-parent.

@@ -10,6 +10,7 @@ import type {
   RecurringPayeeType,
   RecurringTransactionType,
 } from '@/types/pm';
+import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
 export const RECURRING_TRANSACTION_TYPES_DB: RecurringTransactionType[] = [
   'Check',
@@ -74,6 +75,7 @@ export interface IRecurringTransaction {
   /** Counts of postings created so far (read-only). */
   postedCount: number;
   createdByUserId: Types.ObjectId;
+  warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -102,6 +104,9 @@ const RecurringAmountLineSchema = new Schema<IRecurringAmountLine>(
 
 const RecurringPayeeSchema = new Schema<IRecurringPayee>(
   {
+    // Sub-doc fields stay required — partial payee can't exist in DB.
+    // When the form leaves the payee blank, the route stores payee: null
+    // and computeWarnings stamps RECURRING_MISSING_PAYEE.
     type: { type: String, enum: RECURRING_PAYEE_TYPES_DB, required: true },
     id: { type: Schema.Types.ObjectId, required: true },
   },
@@ -118,7 +123,7 @@ const RecurringTransactionSchema = new Schema<IRecurringTransaction>(
     type: {
       type: String,
       enum: RECURRING_TRANSACTION_TYPES_DB,
-      required: true,
+      default: 'Check',
     },
     payee: { type: RecurringPayeeSchema, default: null },
     bankAccountId: {
@@ -134,21 +139,19 @@ const RecurringTransactionSchema = new Schema<IRecurringTransaction>(
     frequency: {
       type: String,
       enum: RECURRING_FREQUENCIES_DB,
-      required: true,
+      default: 'Monthly',
     },
-    nextDate: { type: Date, required: true },
+    nextDate: { type: Date, default: null },
     postNDaysInAdvance: { type: Number, required: true, default: 5, min: 0 },
     duration: {
       type: String,
       enum: RECURRING_DURATIONS_DB,
-      required: true,
       default: 'Until cancelled',
     },
     occurrenceCount: { type: Number, default: null },
     amounts: {
       type: [RecurringAmountLineSchema],
-      required: true,
-      default: undefined,
+      default: [],
     },
     queueForPrinting: { type: Boolean, default: false },
     active: { type: Boolean, default: true },
@@ -159,6 +162,7 @@ const RecurringTransactionSchema = new Schema<IRecurringTransaction>(
       ref: 'User',
       required: true,
     },
+    warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_recurring_transactions' },
 );
@@ -170,22 +174,11 @@ RecurringTransactionSchema.index({
 });
 RecurringTransactionSchema.index({ organizationId: 1, 'payee.id': 1 });
 
-RecurringTransactionSchema.pre('validate', function (next) {
-  if (this.type !== 'Journal entry' && !this.payee?.id) {
-    return next(
-      new Error('payee is required when type is Check or Bill (BR-AC-9).'),
-    );
-  }
-  if (this.duration === 'End after N' && (!this.occurrenceCount || this.occurrenceCount < 1)) {
-    return next(
-      new Error('occurrenceCount must be a positive integer when duration is "End after N".'),
-    );
-  }
-  if (!this.amounts || this.amounts.length < 1) {
-    return next(new Error('At least one amounts line is required.'));
-  }
-  next();
-});
+// All three checks here used to hard-block creation. They now live in
+// computeWarnings (RECURRING_MISSING_PAYEE, etc.) as non-blocking amber
+// warnings. The recurrence poster (BR-AC-8) must check
+// `hasBlockingWarnings(doc.warnings, [...])` before generating the underlying
+// Check/Bill/JE — see lib/pm/warnings.ts.
 
 export const RecurringTransaction: Model<IRecurringTransaction> =
   (models.PmRecurringTransaction as Model<IRecurringTransaction>) ??

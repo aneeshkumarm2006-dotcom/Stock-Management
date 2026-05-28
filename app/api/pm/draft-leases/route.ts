@@ -16,20 +16,21 @@ import {
 import { draftLeaseCreateSchema } from '@/lib/validation/pm/draftLease';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
+import { computeWarnings } from '@/lib/pm/warnings';
 import { DRAFT_LEASE_EXECUTION_STATUSES } from '@/types/pm';
 
 export const runtime = 'nodejs';
 
 function toCharge(input: {
-  amount: number;
-  accountId: string;
+  amount?: number;
+  accountId?: string;
   dueDate?: string | null;
   memo?: string;
   isMoveInCharge?: boolean;
 }) {
   return {
-    amount: toCents(input.amount),
-    accountId: new Types.ObjectId(input.accountId),
+    amount: toCents(input.amount ?? 0),
+    accountId: input.accountId ? new Types.ObjectId(input.accountId) : null,
     dueDate: input.dueDate ? new Date(input.dueDate) : null,
     memo: input.memo,
     isMoveInCharge: input.isMoveInCharge ?? false,
@@ -120,9 +121,13 @@ export async function POST(request: Request) {
       signatureStatus: 'Unknown',
       esignatureStatus: 'Not sent',
       executionStatus: 'Draft',
-      propertyId: new Types.ObjectId(parsed.data.propertyId),
-      unitId: new Types.ObjectId(parsed.data.unitId),
-      leaseType: parsed.data.leaseType,
+      propertyId: parsed.data.propertyId
+        ? new Types.ObjectId(parsed.data.propertyId)
+        : null,
+      unitId: parsed.data.unitId
+        ? new Types.ObjectId(parsed.data.unitId)
+        : null,
+      leaseType: parsed.data.leaseType ?? 'Fixed',
       startDate: parsed.data.startDate ? new Date(parsed.data.startDate) : null,
       endDate: parsed.data.endDate ? new Date(parsed.data.endDate) : null,
       leasingAgentUserId: parsed.data.leasingAgentUserId
@@ -135,37 +140,39 @@ export async function POST(request: Request) {
       })),
       tenants: (parsed.data.tenants ?? []).map((t) => ({
         tenantId: t.tenantId ? new Types.ObjectId(t.tenantId) : null,
-        firstName: t.firstName,
-        lastName: t.lastName,
+        firstName: t.firstName ?? '',
+        lastName: t.lastName ?? '',
         email: t.email,
         isCosigner: t.isCosigner ?? false,
       })),
       cosigners: (parsed.data.cosigners ?? []).map((t) => ({
         tenantId: t.tenantId ? new Types.ObjectId(t.tenantId) : null,
-        firstName: t.firstName,
-        lastName: t.lastName,
+        firstName: t.firstName ?? '',
+        lastName: t.lastName ?? '',
         email: t.email,
         isCosigner: true,
       })),
       rentCycle: parsed.data.rentCycle ?? 'Monthly',
       primaryRent: {
-        amount: toCents(parsed.data.primaryRent.amount),
-        accountId: new Types.ObjectId(parsed.data.primaryRent.accountId),
-        nextDueDate: parsed.data.primaryRent.nextDueDate
+        amount: toCents(parsed.data.primaryRent?.amount ?? 0),
+        accountId: parsed.data.primaryRent?.accountId
+          ? new Types.ObjectId(parsed.data.primaryRent.accountId)
+          : null,
+        nextDueDate: parsed.data.primaryRent?.nextDueDate
           ? new Date(parsed.data.primaryRent.nextDueDate)
           : null,
-        memo: parsed.data.primaryRent.memo,
+        memo: parsed.data.primaryRent?.memo,
       },
       splitRentCharges: (parsed.data.splitRentCharges ?? []).map((c) => ({
-        accountId: new Types.ObjectId(c.accountId),
-        amount: toCents(c.amount),
+        accountId: c.accountId ? new Types.ObjectId(c.accountId) : null,
+        amount: toCents(c.amount ?? 0),
         memo: c.memo,
       })),
       securityDeposit: toCents(parsed.data.securityDeposit ?? 0),
       recurringCharges: (parsed.data.recurringCharges ?? []).map((c) => ({
-        amount: toCents(c.amount),
-        accountId: new Types.ObjectId(c.accountId),
-        frequency: c.frequency,
+        amount: toCents(c.amount ?? 0),
+        accountId: c.accountId ? new Types.ObjectId(c.accountId) : null,
+        frequency: c.frequency ?? 'Monthly',
         nextDate: c.nextDate ? new Date(c.nextDate) : null,
         memo: c.memo,
         postNDaysInAdvance: c.postNDaysInAdvance ?? 5,
@@ -181,7 +188,7 @@ export async function POST(request: Request) {
         (d) => ({
           fileId: d.fileId ? new Types.ObjectId(d.fileId) : null,
           role: d.role ?? 'Lease',
-          label: d.label,
+          label: d.label ?? '',
           status: d.status ?? 'Not sent',
           sentAt: null,
           signedAt: null,
@@ -193,6 +200,12 @@ export async function POST(request: Request) {
       customFields: parsed.data.customFields ?? {},
     });
 
+    const computed = computeWarnings(doc.toObject(), 'DraftLease');
+    if (computed.length > 0) {
+      doc.warnings = computed;
+      await doc.save();
+    }
+
     await logActivity({
       orgId: ctx.orgId,
       parentType: 'DraftLease',
@@ -203,7 +216,7 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(
-      { id: String(doc._id), draftId },
+      { id: String(doc._id), draftId, warnings: doc.warnings },
       { status: 201 },
     );
   } catch (err: unknown) {
