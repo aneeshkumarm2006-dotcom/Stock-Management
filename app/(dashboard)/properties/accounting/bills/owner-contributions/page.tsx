@@ -278,9 +278,16 @@ function RecordPaymentDialog({
   const [saving, setSaving] = React.useState(false);
 
   async function save() {
-    // Bank-account check moved to non-blocking warning. The payment record
-    // saves either way; downstream ledger posting checks for the warning
-    // before booking the cash leg.
+    // record-payment requires a bank account on the server (it debits the
+    // bank's CoA in the JE) — guard here so the user gets a clear message
+    // instead of a 400 "Invalid id".
+    if (!bankAccountId) {
+      toast({
+        title: "Select a bank account to record the payment.",
+        variant: "error",
+      });
+      return;
+    }
     setSaving(true);
     const r = await fetch(
       `/api/pm/owner-contribution-requests/${row.id}/record-payment`,

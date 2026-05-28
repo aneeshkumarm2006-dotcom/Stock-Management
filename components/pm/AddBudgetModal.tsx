@@ -114,14 +114,14 @@ export function AddBudgetModal({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         scopeType,
-        scopeId,
+        scopeId: scopeId || undefined,
         name: name.trim(),
         fiscalYear,
         fiscalYearStart,
         defaultAmounts,
         copySourceBudgetId:
           defaultAmounts === "Copy existing budget"
-            ? copySourceBudgetId
+            ? copySourceBudgetId || undefined
             : undefined,
       }),
     });

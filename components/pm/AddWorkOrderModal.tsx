@@ -151,8 +151,8 @@ export function AddWorkOrderModal({
   function buildPayload() {
     const payload: Record<string, unknown> = {
       subject: subject.trim(),
-      vendorId,
-      assignedToUserId,
+      vendorId: vendorId || undefined,
+      assignedToUserId: assignedToUserId || undefined,
       priority,
       dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
       entryDetails: entryDetails || undefined,
@@ -171,7 +171,7 @@ export function AddWorkOrderModal({
       payload.chargeWorkTo = { type: chargeType, id: chargeId };
     }
     if (taskMode === "existing") {
-      payload.taskId = taskId;
+      if (taskId) payload.taskId = taskId;
     } else {
       payload.taskNew = {
         title: taskTitle.trim() || subject.trim() || "Maintenance task",

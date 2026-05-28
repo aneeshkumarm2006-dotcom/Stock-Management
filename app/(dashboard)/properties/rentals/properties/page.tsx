@@ -360,7 +360,7 @@ function AddPropertyModal({
           state: address.state || undefined,
           country: address.country || "US",
         },
-        operatingAccountId,
+        operatingAccountId: operatingAccountId || null,
         depositTrustAccountId: depositTrustAccountId || null,
         propertyReserve: Number.isFinite(propertyReserve) ? propertyReserve : 0,
         rentalOwners: owners,
