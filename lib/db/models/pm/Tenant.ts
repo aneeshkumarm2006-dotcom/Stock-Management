@@ -5,7 +5,7 @@
 // between leases or in the directory only.
 // Phone shape mirrors RentalOwner: `{ number, smsOptIn }` per slot.
 import { Schema, model, models, Types, type Model } from 'mongoose';
-import type { UsState } from '@/types/pm';
+import type { StateOrProvince } from '@/types/pm';
 
 export interface ITenantPhone {
   number: string;
@@ -17,7 +17,7 @@ export interface ITenantAddress {
   line2?: string;
   line3?: string;
   city?: string;
-  state?: UsState | '';
+  state?: StateOrProvince | '';
   zip?: string;
   country?: string;
 }

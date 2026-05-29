@@ -4,7 +4,7 @@
 // the inverse on read so the owner detail page is always live without dual-
 // write risk. Soft-archive (BR-AC-18). Refs: PDR_MASTER §3.6.
 import { Schema, model, models, Types, type Model } from 'mongoose';
-import type { TaxIdentityType, UsState } from '@/types/pm';
+import type { TaxIdentityType, StateOrProvince } from '@/types/pm';
 
 export interface IRentalOwnerPhone {
   number: string;
@@ -16,7 +16,7 @@ export interface IRentalOwnerAddress {
   line2?: string;
   line3?: string;
   city?: string;
-  state?: UsState | '';
+  state?: StateOrProvince | '';
   zip?: string;
   country?: string;
 }

@@ -14,7 +14,7 @@ import type {
   PropertySubType,
   ResidentialSubType,
   CommercialSubType,
-  UsState,
+  StateOrProvince,
   ManagementFeeBillingFrequency,
 } from '@/types/pm';
 import {
@@ -37,7 +37,7 @@ export interface IPropertyAddress {
   line2?: string;
   line3?: string;
   city: string;
-  state: UsState | '';
+  state: StateOrProvince | '';
   zip: string;
   country: string;
 }

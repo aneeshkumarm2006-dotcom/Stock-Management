@@ -330,6 +330,55 @@ export type UsState =
   | "SD" | "TN" | "TX" | "UT" | "VT" | "VA" | "WA" | "WV" | "WI" | "WY"
   | "DC" | "PR";
 
+export const US_STATES: readonly UsState[] = [
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
+  "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+  "VA","WA","WV","WI","WY","DC","PR",
+] as const;
+
+/** Canadian ISO-3166 sub-division provinces/territories used by composite
+ *  address. 10 provinces + 3 territories. Mirrors UsState so the composite
+ *  AddressFields can branch on country. */
+export type CaProvince =
+  | "AB" | "BC" | "MB" | "NB" | "NL" | "NS" | "ON" | "PE" | "QC" | "SK"
+  | "NT" | "NU" | "YT";
+
+export const CA_PROVINCES: readonly CaProvince[] = [
+  "AB","BC","MB","NB","NL","NS","ON","PE","QC","SK","NT","NU","YT",
+] as const;
+
+/** Human-readable names for province codes (used by the dropdown label). */
+export const CA_PROVINCE_NAMES: Record<CaProvince, string> = {
+  AB: "Alberta",
+  BC: "British Columbia",
+  MB: "Manitoba",
+  NB: "New Brunswick",
+  NL: "Newfoundland and Labrador",
+  NS: "Nova Scotia",
+  ON: "Ontario",
+  PE: "Prince Edward Island",
+  QC: "Quebec",
+  SK: "Saskatchewan",
+  NT: "Northwest Territories",
+  NU: "Nunavut",
+  YT: "Yukon",
+};
+
+/** Union of US states + Canadian provinces — the underlying storage type for
+ *  the composite `state` field on Property / Tenant / Vendor / RentalOwner /
+ *  Applicant addresses. Country (`US` | `CA`) on the same address record
+ *  disambiguates which subdivision set the code belongs to. */
+export type StateOrProvince = UsState | CaProvince;
+
+/** Supported ISO-3166-1 alpha-2 country codes for the composite address. */
+export type AddressCountry = "US" | "CA";
+
+export const SUPPORTED_ADDRESS_COUNTRIES: readonly AddressCountry[] = [
+  "US",
+  "CA",
+] as const;
+
 // -----------------------------------------------------------------------------
 // Phase 4 — Maintenance + A/P enums (DECISIONS.md Phase 4)
 // -----------------------------------------------------------------------------

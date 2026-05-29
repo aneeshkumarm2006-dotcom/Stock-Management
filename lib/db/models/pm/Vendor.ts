@@ -6,7 +6,7 @@
 // Tax identity enum reuses [G-S-25] (`SSN | EIN | ITIN`) declared in
 // types/pm.ts.
 import { Schema, model, models, Types, type Model } from 'mongoose';
-import type { TaxIdentityType, UsState } from '@/types/pm';
+import type { TaxIdentityType, StateOrProvince } from '@/types/pm';
 
 export interface IVendorPhone {
   number: string;
@@ -18,7 +18,7 @@ export interface IVendorAddress {
   line2?: string;
   line3?: string;
   city?: string;
-  state?: UsState | '';
+  state?: StateOrProvince | '';
   zip?: string;
   country?: string;
 }

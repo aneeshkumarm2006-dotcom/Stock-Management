@@ -27,7 +27,7 @@ import { Schema, model, models, Types, type Model } from 'mongoose';
 import type {
   ApplicantStatus,
   ApplicantScreeningStatus,
-  UsState,
+  StateOrProvince,
 } from '@/types/pm';
 import {
   APPLICANT_STATUSES,
@@ -84,7 +84,7 @@ export interface IApplicantAddress {
   line1?: string;
   line2?: string;
   city?: string;
-  state?: UsState | '';
+  state?: StateOrProvince | '';
   zip?: string;
   country?: string;
 }
