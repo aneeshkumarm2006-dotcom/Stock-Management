@@ -8,6 +8,7 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { AddBudgetModal } from "@/components/pm/AddBudgetModal";
@@ -77,11 +78,12 @@ export default function BudgetsPage() {
               <Label htmlFor="fy-filter" className="text-xs uppercase">
                 Fiscal year
               </Label>
-              <input
+              <Input
                 id="fy-filter"
                 type="number"
+                min={0}
                 placeholder="All years"
-                className="h-8 w-28 rounded-md border border-border bg-bg-elevated px-2 text-sm"
+                className="h-8 w-28 bg-bg-elevated px-2 text-sm"
                 value={fyFilter}
                 onChange={(e) => setFyFilter(e.target.value)}
               />

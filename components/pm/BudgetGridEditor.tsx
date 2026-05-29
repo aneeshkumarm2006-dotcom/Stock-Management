@@ -10,6 +10,7 @@
 import * as React from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import type { BudgetLineCategory, FiscalMonth } from "@/types/pm";
 import { FISCAL_MONTH_INDEX } from "@/types/pm";
@@ -215,10 +216,11 @@ export function BudgetGridEditor({
                   </td>
                   {l.monthlyAmounts.map((v, m) => (
                     <td key={m} className="px-0.5">
-                      <input
+                      <Input
                         type="number"
+                        min={0}
                         step="0.01"
-                        className="h-7 w-20 rounded-md border border-border bg-bg-elevated px-1 text-right text-xs"
+                        className="h-7 w-20 bg-bg-elevated px-1 text-right text-xs"
                         value={Number.isFinite(v) ? v : 0}
                         onChange={(e) =>
                           setCell(idx, m, Number(e.target.value) || 0)

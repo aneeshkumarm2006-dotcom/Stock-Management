@@ -166,6 +166,19 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum";
   }
+
+  /* Hide native spinner arrows on every number input. We treat them as plain
+     numeric text fields and block `-`/`e`/`+` at the keyboard layer (see
+     components/ui/input.tsx) to keep values non-negative. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
 }
 
 @layer utilities {
