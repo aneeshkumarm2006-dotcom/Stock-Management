@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { fromCents } from "@/lib/pm/currency";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 
 interface JELine {
   accountId: string;
@@ -166,6 +167,21 @@ export default function JournalEntryDetailPage() {
               </span>
             </div>
           )}
+          {doc.status === "Draft" ? (
+            <InlineFieldEditor
+              endpoint={`/api/pm/journal-entries/${doc.id}`}
+              data={{
+                memo: doc.memo,
+                date: doc.date,
+              } as Record<string, unknown>}
+              fields={[
+                { key: "date", label: "Date", type: "date" },
+                { key: "memo", label: "Memo", type: "textarea" },
+              ]}
+              title="Journal entry"
+              onSaved={load}
+            />
+          ) : null}
           <dl className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
             <Field label="Scope">
               {doc.scopeType === "Property" && doc.scopeId

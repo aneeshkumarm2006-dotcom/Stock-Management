@@ -18,6 +18,7 @@ import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { useToast } from "@/components/ui/toast";
 
 interface PartsRow {
@@ -154,10 +155,48 @@ export default function WorkOrderDetailPage() {
               <CardTitle>Overview</CardTitle>
             </CardHeader>
             <CardContent>
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Field label="Due date" value={doc.dueDate ? new Date(doc.dueDate).toLocaleDateString() : "—"} />
+              <InlineFieldEditor
+                endpoint={`/api/pm/work-orders/${doc.id}`}
+                data={{
+                  subject: doc.subject,
+                  dueDate: doc.dueDate,
+                  priority: doc.priority,
+                  invoiceNumber: doc.invoiceNumber,
+                  workToBePerformed: doc.workToBePerformed,
+                  vendorNotes: doc.vendorNotes,
+                } as Record<string, unknown>}
+                fields={[
+                  { key: "subject", label: "Subject", required: true },
+                  { key: "dueDate", label: "Due date", type: "date" },
+                  {
+                    key: "priority",
+                    label: "Priority",
+                    type: "select",
+                    options: [
+                      { value: "Low", label: "Low" },
+                      { value: "Normal", label: "Normal" },
+                      { value: "High", label: "High" },
+                      { value: "Urgent", label: "Urgent" },
+                    ],
+                  },
+                  { key: "invoiceNumber", label: "Invoice number" },
+                  {
+                    key: "workToBePerformed",
+                    label: "Work to be performed",
+                    type: "textarea",
+                  },
+                  {
+                    key: "vendorNotes",
+                    label: "Notes to vendor",
+                    type: "textarea",
+                  },
+                ]}
+                title="Work order"
+                canEdit={doc.status !== "Cancelled" && doc.status !== "Completed"}
+                onSaved={load}
+              />
+              <dl className="mt-4 grid gap-3 md:grid-cols-2">
                 <Field label="Entry details" value={doc.entryDetails ?? "—"} />
-                <Field label="Invoice number" value={doc.invoiceNumber || "—"} />
                 <Field
                   label="Charge work to"
                   value={
@@ -167,22 +206,6 @@ export default function WorkOrderDetailPage() {
                   }
                 />
               </dl>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Work to be performed</CardTitle>
-            </CardHeader>
-            <CardContent className="whitespace-pre-line text-sm text-fg">
-              {doc.workToBePerformed || "—"}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Notes to vendor</CardTitle>
-            </CardHeader>
-            <CardContent className="whitespace-pre-line text-sm text-fg">
-              {doc.vendorNotes || "—"}
             </CardContent>
           </Card>
         </TabsContent>

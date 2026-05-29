@@ -20,9 +20,9 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/components/ui/toast";
 import { ComingSoon } from "@/components/pm/ComingSoon";
 import { AddTaskModal } from "@/components/pm/AddTaskModal";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
 
 interface TaskRow {
   id: string;
@@ -53,7 +53,6 @@ export default function TasksPage() {
 function TasksPageInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const { toast } = useToast();
 
   const initialSearchOption =
     (params.get("searchOption") as SearchOption | null) ?? "me";
@@ -73,6 +72,7 @@ function TasksPageInner() {
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
   const [modalOpen, setModalOpen] = React.useState(false);
+  const [editingId, setEditingId] = React.useState<string | undefined>();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -112,7 +112,13 @@ function TasksPageInner() {
       <Card>
         <CardHeader>
           <CardTitle>Tasks</CardTitle>
-          <Button size="sm" onClick={() => setModalOpen(true)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditingId(undefined);
+              setModalOpen(true);
+            }}
+          >
             <Plus className="h-3.5 w-3.5" /> Add task
           </Button>
         </CardHeader>
@@ -182,6 +188,10 @@ function TasksPageInner() {
             <TaskTable
               rows={overdueOnly ? rows.filter((r) => r.pastDue) : rows}
               loading={loading}
+              onEdit={(id) => {
+                setEditingId(id);
+                setModalOpen(true);
+              }}
             />
           )}
         </CardContent>
@@ -189,17 +199,28 @@ function TasksPageInner() {
 
       <AddTaskModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingId(undefined);
+        }}
+        editingId={editingId}
         onSaved={async () => {
           await load();
-          toast({ title: "Task created", variant: "success" });
         }}
       />
     </div>
   );
 }
 
-function TaskTable({ rows, loading }: { rows: TaskRow[]; loading: boolean }) {
+function TaskTable({
+  rows,
+  loading,
+  onEdit,
+}: {
+  rows: TaskRow[];
+  loading: boolean;
+  onEdit: (id: string) => void;
+}) {
   return (
     <table className="w-full text-sm">
       <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
@@ -211,19 +232,20 @@ function TaskTable({ rows, loading }: { rows: TaskRow[]; loading: boolean }) {
           <th>Priority</th>
           <th>Due</th>
           <th>WOs</th>
+          <th />
         </tr>
       </thead>
       <tbody>
         {loading && (
           <tr>
-            <td colSpan={7} className="py-4 text-fg-muted">
+            <td colSpan={8} className="py-4 text-fg-muted">
               Loading…
             </td>
           </tr>
         )}
         {!loading && rows.length === 0 && (
           <tr>
-            <td colSpan={7} className="py-4 text-fg-muted">
+            <td colSpan={8} className="py-4 text-fg-muted">
               No tasks match.
             </td>
           </tr>
@@ -257,6 +279,9 @@ function TaskTable({ rows, loading }: { rows: TaskRow[]; loading: boolean }) {
             </td>
             <td className="text-fg-muted">
               {t.workOrderIds.length > 0 ? t.workOrderIds.length : "—"}
+            </td>
+            <td className="text-right">
+              <EditEntityButton onClick={() => onEdit(t.id)} />
             </td>
           </tr>
         ))}

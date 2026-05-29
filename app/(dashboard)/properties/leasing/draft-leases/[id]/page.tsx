@@ -28,6 +28,7 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { CancelDraftLeaseDialog } from "@/components/pm/CancelDraftLeaseDialog";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 
 interface DraftLeaseDetail {
   id: string;
@@ -260,38 +261,42 @@ export default function DraftLeaseDetailPage() {
             <CardHeader>
               <CardTitle>Lease terms</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <div className="text-xs text-fg-muted">Lease type</div>
-                <div>{data.leaseType}</div>
-              </div>
-              <div>
-                <div className="text-xs text-fg-muted">Dates</div>
+            <CardContent>
+              <InlineFieldEditor
+                endpoint={`/api/pm/draft-leases/${data.id}`}
+                data={{
+                  startDate: data.startDate,
+                  endDate: data.endDate,
+                } as Record<string, unknown>}
+                fields={[
+                  { key: "startDate", label: "Start date", type: "date" },
+                  { key: "endDate", label: "End date", type: "date" },
+                ]}
+                title="Draft lease"
+                canEdit={data.executionStatus !== "Executed" && data.executionStatus !== "Cancelled"}
+                onSaved={load}
+              />
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  {data.startDate
-                    ? new Date(data.startDate).toLocaleDateString()
-                    : "—"}{" "}
-                  →{" "}
-                  {data.endDate
-                    ? new Date(data.endDate).toLocaleDateString()
-                    : "(At-will)"}
+                  <div className="text-xs text-fg-muted">Lease type</div>
+                  <div>{data.leaseType}</div>
                 </div>
-              </div>
-              <div>
-                <div className="text-xs text-fg-muted">Primary rent</div>
                 <div>
-                  <CurrencyAmount cents={data.primaryRent.amount} /> / cycle
-                </div>
-                {data.primaryRent.memo && (
-                  <div className="text-xs text-fg-muted">
-                    {data.primaryRent.memo}
+                  <div className="text-xs text-fg-muted">Primary rent</div>
+                  <div>
+                    <CurrencyAmount cents={data.primaryRent.amount} /> / cycle
                   </div>
-                )}
-              </div>
-              <div>
-                <div className="text-xs text-fg-muted">Security deposit</div>
+                  {data.primaryRent.memo && (
+                    <div className="text-xs text-fg-muted">
+                      {data.primaryRent.memo}
+                    </div>
+                  )}
+                </div>
                 <div>
-                  <CurrencyAmount cents={data.securityDeposit} />
+                  <div className="text-xs text-fg-muted">Security deposit</div>
+                  <div>
+                    <CurrencyAmount cents={data.securityDeposit} />
+                  </div>
                 </div>
               </div>
             </CardContent>

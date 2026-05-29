@@ -18,6 +18,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { computeWarnings } from "@/lib/pm/warnings";
 import { WarningInline } from "@/components/pm/WarningBadge";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
 
 interface PolicyRow {
   id: string;
@@ -41,6 +42,7 @@ export default function LockedPeriodsPage() {
   const [properties, setProperties] = React.useState<PropertyOption[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [modalOpen, setModalOpen] = React.useState(false);
+  const [editingId, setEditingId] = React.useState<string | undefined>();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -91,7 +93,13 @@ export default function LockedPeriodsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Locked periods</CardTitle>
-          <Button size="sm" onClick={() => setModalOpen(true)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditingId(undefined);
+              setModalOpen(true);
+            }}
+          >
             <Plus className="h-3.5 w-3.5" /> Add locked period
           </Button>
         </CardHeader>
@@ -156,14 +164,22 @@ export default function LockedPeriodsPage() {
                       </button>
                     </td>
                     <td className="text-right">
-                      <button
-                        type="button"
-                        onClick={() => archive(r.id)}
-                        className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-error"
-                        aria-label="Archive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <div className="inline-flex items-center gap-1">
+                        <EditEntityButton
+                          onClick={() => {
+                            setEditingId(r.id);
+                            setModalOpen(true);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => archive(r.id)}
+                          className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-error"
+                          aria-label="Archive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -174,8 +190,12 @@ export default function LockedPeriodsPage() {
       </Card>
       <AddLockedPeriodModal
         open={modalOpen}
+        editingId={editingId}
         properties={properties}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingId(undefined);
+        }}
         onSaved={load}
       />
     </div>
@@ -187,13 +207,16 @@ function AddLockedPeriodModal({
   properties,
   onClose,
   onSaved,
+  editingId,
 }: {
   open: boolean;
   properties: PropertyOption[];
   onClose: () => void;
   onSaved: () => Promise<void>;
+  editingId?: string;
 }) {
   const { toast } = useToast();
+  const isEdit = Boolean(editingId);
   const [form, setForm] = React.useState({
     scope: "Global" as "Global" | "Per-property",
     propertyId: "",
@@ -204,7 +227,8 @@ function AddLockedPeriodModal({
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
-    if (open) {
+    if (!open) return;
+    if (!editingId) {
       setForm({
         scope: "Global",
         propertyId: "",
@@ -212,21 +236,48 @@ function AddLockedPeriodModal({
         toDate: "",
         message: "",
       });
+      return;
     }
-  }, [open]);
+    let cancelled = false;
+    fetch(`/api/pm/locked-periods/${editingId}`).then(async (r) => {
+      if (!r.ok || cancelled) return;
+      const d = (await r.json()) as {
+        scope: "Global" | "Per-property";
+        propertyId: string | null;
+        fromDate: string | null;
+        toDate: string | null;
+        message: string;
+      };
+      if (cancelled) return;
+      setForm({
+        scope: d.scope,
+        propertyId: d.propertyId ?? "",
+        fromDate: d.fromDate ? d.fromDate.slice(0, 10) : "",
+        toDate: d.toDate ? d.toDate.slice(0, 10) : "",
+        message: d.message ?? "",
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, editingId]);
 
   async function save() {
     // Per-property scope + propertyId check moved to non-blocking warning.
     setSaving(true);
-    const res = await fetch("/api/pm/locked-periods", {
-      method: "POST",
+    const url = isEdit
+      ? `/api/pm/locked-periods/${editingId}`
+      : "/api/pm/locked-periods";
+    const method = isEdit ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         scope: form.scope,
         propertyId: form.scope === "Per-property" ? form.propertyId : null,
         fromDate: form.fromDate || null,
         toDate: form.toDate || null,
-        message: form.message.trim() || undefined,
+        message: form.message.trim() || (isEdit ? "" : undefined),
       }),
     });
     setSaving(false);
@@ -241,7 +292,10 @@ function AddLockedPeriodModal({
       toast({ title: "Save failed", description: issueMsg, variant: "error" });
       return;
     }
-    toast({ title: "Locked period created", variant: "success" });
+    toast({
+      title: isEdit ? "Locked period updated" : "Locked period created",
+      variant: "success",
+    });
     onClose();
     await onSaved();
   }
@@ -249,7 +303,10 @@ function AddLockedPeriodModal({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogHeader title="Add locked period" onClose={onClose} />
+        <DialogHeader
+          title={isEdit ? "Edit locked period" : "Add locked period"}
+          onClose={onClose}
+        />
         <div className="space-y-3">
           <div className="space-y-1">
             <Label htmlFor="lp-scope">Scope *</Label>
@@ -338,7 +395,7 @@ function AddLockedPeriodModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

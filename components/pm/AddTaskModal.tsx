@@ -53,6 +53,8 @@ export interface AddTaskModalProps {
   presetPropertyId?: string;
   /** Optional pre-filled project link (e.g. from Project detail). */
   presetProjectId?: string;
+  /** When set, the modal loads this task and saves via PATCH. */
+  editingId?: string;
 }
 
 export function AddTaskModal({
@@ -61,7 +63,9 @@ export function AddTaskModal({
   onSaved,
   presetPropertyId,
   presetProjectId,
+  editingId,
 }: AddTaskModalProps) {
+  const isEdit = Boolean(editingId);
   const { toast } = useToast();
   const [properties, setProperties] = React.useState<PropertyOption[]>([]);
   const [tenants, setTenants] = React.useState<TenantOption[]>([]);
@@ -103,6 +107,41 @@ export function AddTaskModal({
     if (presetProjectId) setProjectId(presetProjectId);
   }, [presetPropertyId, presetProjectId]);
 
+  // Edit mode: load the existing task on open. Status, work orders, project
+  // membership, and notifications are managed elsewhere — this form covers
+  // the same fields as the create flow.
+  React.useEffect(() => {
+    if (!open || !editingId) return;
+    let cancelled = false;
+    fetch(`/api/pm/tasks/${editingId}`).then(async (r) => {
+      if (!r.ok || cancelled) return;
+      const t = (await r.json()) as {
+        title: string;
+        taskType: TaskType;
+        priority: WorkPriority;
+        dueDate: string | null;
+        propertyId: string | null;
+        sourceTenantId: string | null;
+        sourceOwnerId: string | null;
+        description: string;
+        projectIds: string[];
+      };
+      if (cancelled) return;
+      setTitle(t.title);
+      setTaskType(t.taskType);
+      setPriority(t.priority);
+      setDueDate(t.dueDate ? t.dueDate.slice(0, 10) : "");
+      setPropertyId(t.propertyId ?? "");
+      setSourceTenantId(t.sourceTenantId ?? "");
+      setSourceOwnerId(t.sourceOwnerId ?? "");
+      setDescription(t.description ?? "");
+      setProjectId(t.projectIds?.[0] ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, editingId]);
+
   function reset() {
     setTitle("");
     setTaskType("To do");
@@ -129,16 +168,24 @@ export function AddTaskModal({
     };
     if (dueDate) payload.dueDate = new Date(dueDate).toISOString();
     if (propertyId) payload.propertyId = propertyId;
-    if (taskType === "Resident request" && sourceTenantId) {
-      payload.sourceTenantId = sourceTenantId;
+    if (taskType === "Resident request") {
+      payload.sourceTenantId = sourceTenantId || null;
     }
-    if (taskType === "Rental owner request" && sourceOwnerId) {
-      payload.sourceOwnerId = sourceOwnerId;
+    if (taskType === "Rental owner request") {
+      payload.sourceOwnerId = sourceOwnerId || null;
     }
-    if (projectId) payload.projectIds = [projectId];
+    if (isEdit) {
+      payload.projectIds = projectId ? [projectId] : [];
+      payload.dueDate = dueDate ? new Date(dueDate).toISOString() : null;
+      payload.propertyId = propertyId || null;
+    } else if (projectId) {
+      payload.projectIds = [projectId];
+    }
 
-    const res = await fetch("/api/pm/tasks", {
-      method: "POST",
+    const url = isEdit ? `/api/pm/tasks/${editingId}` : "/api/pm/tasks";
+    const method = isEdit ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
@@ -152,9 +199,15 @@ export function AddTaskModal({
       });
       return;
     }
-    const created = (await res.json()) as { id: string; taskId: number };
+    const created = isEdit
+      ? { id: editingId as string }
+      : ((await res.json()) as { id: string; taskId: number });
     reset();
     setSaving(false);
+    toast({
+      title: isEdit ? "Task updated" : "Task created",
+      variant: "success",
+    });
     onClose();
     await onSaved(created.id);
   }
@@ -163,8 +216,12 @@ export function AddTaskModal({
     <Dialog open={open} onOpenChange={(o) => (!o ? onClose() : undefined)}>
       <DialogContent className="max-w-xl">
         <DialogHeader
-          title="Add task"
-          description="Create a new task and assign it from the detail page."
+          title={isEdit ? "Edit task" : "Add task"}
+          description={
+            isEdit
+              ? "Update task details. Status, assignees, and work orders are managed from the detail page."
+              : "Create a new task and assign it from the detail page."
+          }
           onClose={onClose}
         />
 
@@ -315,7 +372,13 @@ export function AddTaskModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Creating…" : "Create task"}
+            {saving
+              ? isEdit
+                ? "Saving…"
+                : "Creating…"
+              : isEdit
+                ? "Save changes"
+                : "Create task"}
           </Button>
         </DialogFooter>
       </DialogContent>

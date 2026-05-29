@@ -47,6 +47,9 @@ interface AddBudgetModalProps {
   onClose: () => void;
   onSaved: () => Promise<void> | void;
   properties: PropertyOption[];
+  /** When set, modal loads the budget and renames via PATCH.
+   *  Scope, fiscal year, and default-amounts are locked post-creation. */
+  editingId?: string;
 }
 
 export function AddBudgetModal({
@@ -54,7 +57,9 @@ export function AddBudgetModal({
   onClose,
   onSaved,
   properties,
+  editingId,
 }: AddBudgetModalProps) {
+  const isEdit = Boolean(editingId);
   const { toast } = useToast();
   const thisYear = new Date().getFullYear();
   const [companyAccounts, setCompanyAccounts] = React.useState<
@@ -104,44 +109,93 @@ export function AddBudgetModal({
     }
   }, [open, thisYear]);
 
+  React.useEffect(() => {
+    if (!open || !editingId) return;
+    let cancelled = false;
+    fetch(`/api/pm/budgets/${editingId}`).then(async (r) => {
+      if (!r.ok || cancelled) return;
+      const b = (await r.json()) as {
+        scopeType: BudgetScopeType;
+        scopeId: string;
+        name: string;
+        fiscalYear: number;
+        fiscalYearStart: FiscalMonth;
+        defaultAmounts: BudgetDefaultAmounts;
+      };
+      if (cancelled) return;
+      setScopeType(b.scopeType);
+      setScopeId(b.scopeId);
+      setName(b.name);
+      setFiscalYear(b.fiscalYear);
+      setFiscalYearStart(b.fiscalYearStart);
+      setDefaultAmounts(b.defaultAmounts);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, editingId]);
+
   async function save() {
     // Presence checks for scope, name, and copy-source moved to non-blocking
     // warnings (BUDGET_MISSING_SCOPE, BUDGET_MISSING_NAME,
     // BUDGET_MISSING_COPY_SOURCE). The API stamps them on the created row.
     setSaving(true);
-    const res = await fetch("/api/pm/budgets", {
-      method: "POST",
+    const url = isEdit ? `/api/pm/budgets/${editingId}` : "/api/pm/budgets";
+    const method = isEdit ? "PATCH" : "POST";
+    // Edit mode: only `name` is mutable post-creation (PATCH ignores other
+    // budget metadata; scope/year/defaults are seeded once at create).
+    const body = isEdit
+      ? { name: name.trim() }
+      : {
+          scopeType,
+          scopeId: scopeId || undefined,
+          name: name.trim(),
+          fiscalYear,
+          fiscalYearStart,
+          defaultAmounts,
+          copySourceBudgetId:
+            defaultAmounts === "Copy existing budget"
+              ? copySourceBudgetId || undefined
+              : undefined,
+        };
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        scopeType,
-        scopeId: scopeId || undefined,
-        name: name.trim(),
-        fiscalYear,
-        fiscalYearStart,
-        defaultAmounts,
-        copySourceBudgetId:
-          defaultAmounts === "Copy existing budget"
-            ? copySourceBudgetId || undefined
-            : undefined,
-      }),
+      body: JSON.stringify(body),
     });
     setSaving(false);
 
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const errBody = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
       toast({
-        title: body.error ?? "Failed to create budget",
+        title:
+          errBody.error ?? (isEdit ? "Failed to update budget" : "Failed to create budget"),
         variant: "error",
       });
       return;
     }
+    toast({
+      title: isEdit ? "Budget renamed" : "Budget created",
+      variant: "success",
+    });
+    onClose();
     await onSaved();
   }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogHeader title="Add budget" onClose={onClose} />
+        <DialogHeader
+          title={isEdit ? "Rename budget" : "Add budget"}
+          description={
+            isEdit
+              ? "Scope, fiscal year, and defaults are locked once a budget is created. Line items are edited in the grid."
+              : undefined
+          }
+          onClose={onClose}
+        />
 
         <div className="space-y-3">
           <div>
@@ -151,6 +205,7 @@ export function AddBudgetModal({
                 <input
                   type="radio"
                   checked={scopeType === "Property"}
+                  disabled={isEdit}
                   onChange={() => {
                     setScopeType("Property");
                     setScopeId("");
@@ -162,6 +217,7 @@ export function AddBudgetModal({
                 <input
                   type="radio"
                   checked={scopeType === "Company"}
+                  disabled={isEdit}
                   onChange={() => {
                     setScopeType("Company");
                     setScopeId("");
@@ -178,8 +234,9 @@ export function AddBudgetModal({
             </Label>
             <select
               id="scope-id"
-              className="h-9 w-full rounded-md border border-border bg-bg-elevated px-2 text-sm"
+              className="h-9 w-full rounded-md border border-border bg-bg-elevated px-2 text-sm disabled:opacity-60"
               value={scopeId}
+              disabled={isEdit}
               onChange={(e) => setScopeId(e.target.value)}
             >
               <option value="">Select…</option>
@@ -215,6 +272,7 @@ export function AddBudgetModal({
                 id="fy"
                 type="number"
                 value={fiscalYear}
+                disabled={isEdit}
                 onChange={(e) =>
                   setFiscalYear(Number(e.target.value) || thisYear + 1)
                 }
@@ -226,8 +284,9 @@ export function AddBudgetModal({
               <Label htmlFor="fy-start">FY start month</Label>
               <select
                 id="fy-start"
-                className="h-9 w-full rounded-md border border-border bg-bg-elevated px-2 text-sm"
+                className="h-9 w-full rounded-md border border-border bg-bg-elevated px-2 text-sm disabled:opacity-60"
                 value={fiscalYearStart}
+                disabled={isEdit}
                 onChange={(e) =>
                   setFiscalYearStart(e.target.value as FiscalMonth)
                 }
@@ -249,6 +308,7 @@ export function AddBudgetModal({
                   <input
                     type="radio"
                     checked={defaultAmounts === opt}
+                    disabled={isEdit}
                     onChange={() => setDefaultAmounts(opt)}
                   />
                   {opt}
@@ -289,7 +349,7 @@ export function AddBudgetModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Create budget"}
+            {saving ? "Saving…" : isEdit ? "Save name" : "Create budget"}
           </Button>
         </DialogFooter>
       </DialogContent>

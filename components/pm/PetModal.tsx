@@ -20,6 +20,8 @@ interface PetModalProps {
   onSaved: () => void | Promise<void>;
   leaseId: string;
   leaseTenants: Array<{ tenantId: string; firstName: string; lastName: string }>;
+  /** When set, modal loads the pet and saves via PATCH. */
+  editingId?: string;
 }
 
 export function PetModal({
@@ -28,8 +30,10 @@ export function PetModal({
   onSaved,
   leaseId,
   leaseTenants,
+  editingId,
 }: PetModalProps) {
   const { toast } = useToast();
+  const isEdit = Boolean(editingId);
   const [name, setName] = React.useState("");
   const [petType, setPetType] = React.useState<PetType>("Dog");
   const [breed, setBreed] = React.useState("");
@@ -42,15 +46,44 @@ export function PetModal({
 
   React.useEffect(() => {
     if (!open) return;
-    setName("");
-    setPetType("Dog");
-    setBreed("");
-    setWeightLbs("");
-    setAgeYears("");
-    setLicenseNumber("");
-    setOwnerTenantId("");
-    setAssistanceAnimal(false);
-  }, [open]);
+    if (!editingId) {
+      setName("");
+      setPetType("Dog");
+      setBreed("");
+      setWeightLbs("");
+      setAgeYears("");
+      setLicenseNumber("");
+      setOwnerTenantId("");
+      setAssistanceAnimal(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/pm/leases/${leaseId}/pets/${editingId}`).then(async (r) => {
+      if (!r.ok || cancelled) return;
+      const p = (await r.json()) as {
+        name: string;
+        petType: PetType;
+        breed: string;
+        weightLbs: number | null;
+        ageYears: number | null;
+        licenseNumber: string;
+        ownerTenantId: string | null;
+        assistanceAnimal: boolean;
+      };
+      if (cancelled) return;
+      setName(p.name);
+      setPetType(p.petType);
+      setBreed(p.breed ?? "");
+      setWeightLbs(p.weightLbs != null ? String(p.weightLbs) : "");
+      setAgeYears(p.ageYears != null ? String(p.ageYears) : "");
+      setLicenseNumber(p.licenseNumber ?? "");
+      setOwnerTenantId(p.ownerTenantId ?? "");
+      setAssistanceAnimal(p.assistanceAnimal);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, editingId, leaseId]);
 
   async function save() {
     if (!name) {
@@ -68,8 +101,12 @@ export function PetModal({
       ownerTenantId: ownerTenantId || null,
       assistanceAnimal,
     };
-    const res = await fetch(`/api/pm/leases/${leaseId}/pets`, {
-      method: "POST",
+    const url = isEdit
+      ? `/api/pm/leases/${leaseId}/pets/${editingId}`
+      : `/api/pm/leases/${leaseId}/pets`;
+    const method = isEdit ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
@@ -83,7 +120,7 @@ export function PetModal({
       });
       return;
     }
-    toast({ title: "Pet added" });
+    toast({ title: isEdit ? "Pet updated" : "Pet added" });
     onClose();
     await onSaved();
   }
@@ -91,7 +128,7 @@ export function PetModal({
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader title="Add pet" />
+        <DialogHeader title={isEdit ? "Edit pet" : "Add pet"} />
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Name</Label>
@@ -174,7 +211,7 @@ export function PetModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Add pet"}
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Add pet"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -21,6 +21,7 @@ import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { AddProjectTasksModal } from "@/components/pm/AddProjectTasksModal";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 
 interface ProjectDetail {
   id: string;
@@ -208,12 +209,34 @@ export default function ProjectDetailPage() {
               <CardTitle>Identity</CardTitle>
             </CardHeader>
             <CardContent>
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Field label="Name" value={doc.name || "—"} />
-                <Field
-                  label="Status"
-                  value={doc.status}
-                />
+              <InlineFieldEditor
+                endpoint={`/api/pm/projects/${doc.id}`}
+                data={{
+                  name: doc.name,
+                  budget: doc.budget / 100,
+                  dueDate: doc.dueDate,
+                  description: doc.description,
+                } as Record<string, unknown>}
+                fields={[
+                  { key: "name", label: "Name", required: true },
+                  {
+                    key: "budget",
+                    label: "Budget (USD)",
+                    type: "number",
+                  },
+                  { key: "dueDate", label: "Due date", type: "date" },
+                  {
+                    key: "description",
+                    label: "Description",
+                    type: "textarea",
+                  },
+                ]}
+                title="Project"
+                canEdit={doc.status !== "Completed" && doc.status !== "Cancelled"}
+                onSaved={load}
+              />
+              <dl className="mt-4 grid gap-3 md:grid-cols-2">
+                <Field label="Status" value={doc.status} />
                 <Field
                   label="Project lead (user ID)"
                   value={doc.projectLeadUserId}
@@ -226,31 +249,9 @@ export default function ProjectDetailPage() {
                   label="Project type"
                   value={projectType?.name ?? doc.projectTypeId}
                 />
-                <Field
-                  label="Budget"
-                  value={`$${(doc.budget / 100).toFixed(2)}`}
-                />
-                <Field
-                  label="Due date"
-                  value={
-                    doc.dueDate
-                      ? new Date(doc.dueDate).toLocaleDateString()
-                      : "—"
-                  }
-                />
               </dl>
             </CardContent>
           </Card>
-          {doc.description && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Description</CardTitle>
-              </CardHeader>
-              <CardContent className="whitespace-pre-line text-sm text-fg">
-                {doc.description}
-              </CardContent>
-            </Card>
-          )}
         </TabsContent>
 
         <TabsContent value="tasks" className="mt-4 space-y-4">

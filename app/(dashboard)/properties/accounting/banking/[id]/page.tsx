@@ -20,6 +20,7 @@ import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { fromCents } from "@/lib/pm/currency";
 import { ReconciliationWizard } from "@/components/pm/ReconciliationWizard";
 import { BankFeedTab } from "@/components/pm/BankFeedTab";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import type { BankAccountType } from "@/types/pm";
 
 interface Detail {
@@ -47,21 +48,16 @@ export default function BankAccountDetailPage() {
   const [loading, setLoading] = React.useState(true);
   const [archiving, setArchiving] = React.useState(false);
 
-  React.useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/pm/bank-accounts/${id}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (cancelled) return;
-        if (d) setDoc(d as Detail);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    const r = await fetch(`/api/pm/bank-accounts/${id}`);
+    if (r.ok) setDoc((await r.json()) as Detail);
+    setLoading(false);
   }, [id]);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
 
   if (loading) {
     return <p className="text-sm text-fg-muted">Loading…</p>;
@@ -116,9 +112,27 @@ export default function BankAccountDetailPage() {
           <span className="text-xs italic text-fg-muted">{doc.purpose || ""}</span>
         </CardHeader>
         <CardContent>
-          <dl className="grid gap-3 md:grid-cols-2">
+          <InlineFieldEditor
+            endpoint={`/api/pm/bank-accounts/${doc.id}`}
+            data={{
+              name: doc.name,
+              purpose: doc.purpose,
+            } as Record<string, unknown>}
+            fields={[
+              { key: "name", label: "Account name", required: true },
+              { key: "purpose", label: "Purpose", type: "textarea" },
+            ]}
+            title="Bank account"
+            canEdit={doc.active}
+            onSaved={load}
+          />
+          <dl className="mt-4 grid gap-3 md:grid-cols-2">
             <Field label="Type" value={doc.type} />
-            <Field label="Account number" value={doc.accountNumberMasked} mono />
+            <Field
+              label="Account number"
+              value={doc.accountNumberMasked}
+              mono
+            />
             <Field
               label="ePay enabled"
               value={doc.epayEnabled ? "Yes" : "No"}

@@ -9,9 +9,9 @@ import { Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { AddBudgetModal } from "@/components/pm/AddBudgetModal";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
 
 interface BudgetRow {
   id: string;
@@ -34,13 +34,13 @@ interface PropertyOption {
 }
 
 export default function BudgetsPage() {
-  const { toast } = useToast();
   const [rows, setRows] = React.useState<BudgetRow[]>([]);
   const [properties, setProperties] = React.useState<PropertyOption[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [fyFilter, setFyFilter] = React.useState<string>("");
   const [includeArchived, setIncludeArchived] = React.useState(false);
   const [modalOpen, setModalOpen] = React.useState(false);
+  const [editingId, setEditingId] = React.useState<string | undefined>();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -94,7 +94,13 @@ export default function BudgetsPage() {
               />
               Include archived
             </label>
-            <Button size="sm" onClick={() => setModalOpen(true)}>
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingId(undefined);
+                setModalOpen(true);
+              }}
+            >
               <Plus className="h-3.5 w-3.5" /> Add budget
             </Button>
           </div>
@@ -117,6 +123,7 @@ export default function BudgetsPage() {
                   <th>End</th>
                   <th className="text-right">Total income</th>
                   <th className="text-right">Total expenses</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -149,6 +156,14 @@ export default function BudgetsPage() {
                     <td className="text-right">
                       <CurrencyAmount cents={b.totalExpensesCents} />
                     </td>
+                    <td className="text-right">
+                      <EditEntityButton
+                        onClick={() => {
+                          setEditingId(b.id);
+                          setModalOpen(true);
+                        }}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -159,10 +174,14 @@ export default function BudgetsPage() {
 
       <AddBudgetModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingId(undefined);
+        }}
+        editingId={editingId}
         onSaved={async () => {
           setModalOpen(false);
-          toast({ title: "Budget created", variant: "success" });
+          setEditingId(undefined);
           await load();
         }}
         properties={properties}

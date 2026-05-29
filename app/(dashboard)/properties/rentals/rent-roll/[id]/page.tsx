@@ -34,6 +34,7 @@ import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { EvictionToggleDialog } from "@/components/pm/EvictionToggleDialog";
 import { RentersInsuranceModal } from "@/components/pm/RentersInsuranceModal";
 import { PetModal } from "@/components/pm/PetModal";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
 
 interface LeaseDetail {
   id: string;
@@ -121,7 +122,11 @@ export default function LeaseDetailPage() {
   const [loading, setLoading] = React.useState(true);
   const [evictionOpen, setEvictionOpen] = React.useState(false);
   const [insuranceOpen, setInsuranceOpen] = React.useState(false);
+  const [insuranceEditingId, setInsuranceEditingId] = React.useState<
+    string | undefined
+  >();
   const [petOpen, setPetOpen] = React.useState(false);
+  const [petEditingId, setPetEditingId] = React.useState<string | undefined>();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -325,7 +330,13 @@ export default function LeaseDetailPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Renters insurance</CardTitle>
-                  <Button size="sm" onClick={() => setInsuranceOpen(true)}>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setInsuranceEditingId(undefined);
+                      setInsuranceOpen(true);
+                    }}
+                  >
                     <Plus className="h-3.5 w-3.5" /> Add policy
                   </Button>
                 </CardHeader>
@@ -350,6 +361,7 @@ export default function LeaseDetailPage() {
                           <th>Liability</th>
                           <th>Effective</th>
                           <th>Expires</th>
+                          <th />
                         </tr>
                       </thead>
                       <tbody>
@@ -368,6 +380,14 @@ export default function LeaseDetailPage() {
                             <td className="text-fg-muted">
                               {new Date(p.expirationDate).toLocaleDateString()}
                             </td>
+                            <td className="text-right">
+                              <EditEntityButton
+                                onClick={() => {
+                                  setInsuranceEditingId(p.id);
+                                  setInsuranceOpen(true);
+                                }}
+                              />
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -379,7 +399,13 @@ export default function LeaseDetailPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Pets</CardTitle>
-                  <Button size="sm" onClick={() => setPetOpen(true)}>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setPetEditingId(undefined);
+                      setPetOpen(true);
+                    }}
+                  >
                     <Plus className="h-3.5 w-3.5" /> Add pet
                   </Button>
                 </CardHeader>
@@ -389,14 +415,25 @@ export default function LeaseDetailPage() {
                   ) : (
                     <ul className="space-y-1">
                       {data.pets.map((p) => (
-                        <li key={p.id}>
-                          {p.name} · {p.petType}
-                          {p.breed ? ` (${p.breed})` : ""}
-                          {p.assistanceAnimal && (
-                            <Badge variant="outline" className="ml-2">
-                              Assistance
-                            </Badge>
-                          )}
+                        <li
+                          key={p.id}
+                          className="flex items-center justify-between"
+                        >
+                          <span>
+                            {p.name} · {p.petType}
+                            {p.breed ? ` (${p.breed})` : ""}
+                            {p.assistanceAnimal && (
+                              <Badge variant="outline" className="ml-2">
+                                Assistance
+                              </Badge>
+                            )}
+                          </span>
+                          <EditEntityButton
+                            onClick={() => {
+                              setPetEditingId(p.id);
+                              setPetOpen(true);
+                            }}
+                          />
                         </li>
                       ))}
                     </ul>
@@ -604,7 +641,11 @@ export default function LeaseDetailPage() {
       />
       <RentersInsuranceModal
         open={insuranceOpen}
-        onClose={() => setInsuranceOpen(false)}
+        onClose={() => {
+          setInsuranceOpen(false);
+          setInsuranceEditingId(undefined);
+        }}
+        editingId={insuranceEditingId}
         onSaved={load}
         leaseId={data.id}
         leaseTenants={data.tenants.map((t) => ({
@@ -615,7 +656,11 @@ export default function LeaseDetailPage() {
       />
       <PetModal
         open={petOpen}
-        onClose={() => setPetOpen(false)}
+        onClose={() => {
+          setPetOpen(false);
+          setPetEditingId(undefined);
+        }}
+        editingId={petEditingId}
         onSaved={load}
         leaseId={data.id}
         leaseTenants={data.tenants.map((t) => ({

@@ -26,6 +26,8 @@ import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
 import { VendorPortalActions } from "@/components/pm/VendorPortalActions";
+import { EditVendorModal } from "@/components/pm/EditVendorModal";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { useToast } from "@/components/ui/toast";
 import type { TaxIdentityType } from "@/types/pm";
 
@@ -88,6 +90,7 @@ export default function VendorDetailPage() {
   const { toast } = useToast();
   const [doc, setDoc] = React.useState<VendorDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [editOpen, setEditOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -128,23 +131,31 @@ export default function VendorDetailPage() {
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Vendors
         </Button>
-        {doc.active ? (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => setActive(false)}
-          >
-            Inactivate
-          </Button>
-        ) : (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setActive(true)}
-          >
-            Reactivate
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {doc.active && (
+            <EditEntityButton
+              variant="header"
+              onClick={() => setEditOpen(true)}
+            />
+          )}
+          {doc.active ? (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setActive(false)}
+            >
+              Inactivate
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setActive(true)}
+            >
+              Reactivate
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -372,6 +383,13 @@ export default function VendorDetailPage() {
           <ActivityLog parentType="Vendor" parentId={doc.id} />
         </CardContent>
       </Card>
+
+      <EditVendorModal
+        open={editOpen}
+        vendorId={doc.id}
+        onClose={() => setEditOpen(false)}
+        onSaved={load}
+      />
     </div>
   );
 }

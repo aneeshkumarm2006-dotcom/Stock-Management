@@ -29,6 +29,7 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { ChecklistItemToggle } from "@/components/pm/ChecklistItemToggle";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import {
   APPLICANT_STATUSES,
   APPLICANT_SCREENING_STATUSES,
@@ -232,19 +233,35 @@ export default function ApplicantDetailPage() {
                 <CardHeader>
                   <CardTitle>Identity</CardTitle>
                 </CardHeader>
+                <CardContent>
+                  <InlineFieldEditor
+                    endpoint={`/api/pm/applicants/${data.id}`}
+                    data={{
+                      firstName: data.firstName,
+                      lastName: data.lastName,
+                      email: data.email,
+                      applicantBirthDate: data.applicantBirthDate,
+                    } as Record<string, unknown>}
+                    fields={[
+                      { key: "firstName", label: "First name", required: true },
+                      { key: "lastName", label: "Last name", required: true },
+                      { key: "email", label: "Email", type: "email" },
+                      {
+                        key: "applicantBirthDate",
+                        label: "Birth date",
+                        type: "date",
+                      },
+                    ]}
+                    title="Applicant"
+                    onSaved={load}
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Other</CardTitle>
+                </CardHeader>
                 <CardContent className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-xs text-fg-muted">First name</div>
-                    <div>{data.firstName}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-fg-muted">Last name</div>
-                    <div>{data.lastName}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-fg-muted">Email</div>
-                    <div>{data.email || "—"}</div>
-                  </div>
                   <div>
                     <div className="text-xs text-fg-muted">Phones</div>
                     <div>
@@ -254,14 +271,6 @@ export default function ApplicantDetailPage() {
                             .map((p) => p.number)
                             .filter(Boolean)
                             .join(", ")}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-fg-muted">Birth date</div>
-                    <div>
-                      {data.applicantBirthDate
-                        ? new Date(data.applicantBirthDate).toLocaleDateString()
-                        : "—"}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

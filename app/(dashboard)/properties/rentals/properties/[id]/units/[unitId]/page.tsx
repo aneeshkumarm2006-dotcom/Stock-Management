@@ -29,6 +29,8 @@ import {
   EntityImageGallery,
   type GalleryImage,
 } from "@/components/pm/EntityImageGallery";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 
 interface UnitDetail {
   id: string;
@@ -66,6 +68,9 @@ export default function UnitDetailPage() {
   const [loading, setLoading] = React.useState(true);
   const [appliances, setAppliances] = React.useState<ApplianceRow[]>([]);
   const [addApplianceOpen, setAddApplianceOpen] = React.useState(false);
+  const [editingApplianceId, setEditingApplianceId] = React.useState<
+    string | undefined
+  >();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -150,14 +155,29 @@ export default function UnitDetailPage() {
               <CardTitle>Specs</CardTitle>
             </CardHeader>
             <CardContent>
-              <dl className="grid gap-3 md:grid-cols-3">
-                <Field label="Bedrooms" value={doc.bedrooms ?? "—"} />
-                <Field label="Bathrooms" value={doc.bathrooms || "—"} />
-                <Field
-                  label="Size (sqft)"
-                  value={doc.sizeSqft ?? "—"}
-                />
-              </dl>
+              <InlineFieldEditor
+                endpoint={`/api/pm/units/${doc.id}`}
+                data={{
+                  unitId: doc.unitId,
+                  bedrooms: doc.bedrooms,
+                  bathrooms: doc.bathrooms,
+                  sizeSqft: doc.sizeSqft,
+                  description: doc.description,
+                } as Record<string, unknown>}
+                fields={[
+                  { key: "unitId", label: "Unit ID", required: true },
+                  { key: "bedrooms", label: "Bedrooms", type: "number" },
+                  { key: "bathrooms", label: "Bathrooms", placeholder: "e.g. 1.5" },
+                  { key: "sizeSqft", label: "Size (sqft)", type: "number" },
+                  {
+                    key: "description",
+                    label: "Description",
+                    type: "textarea",
+                  },
+                ]}
+                title="Unit"
+                onSaved={load}
+              />
               {doc.description && (
                 <p className="mt-3 text-sm text-fg">{doc.description}</p>
               )}
@@ -231,7 +251,13 @@ export default function UnitDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>Appliances</CardTitle>
-              <Button size="sm" onClick={() => setAddApplianceOpen(true)}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingApplianceId(undefined);
+                  setAddApplianceOpen(true);
+                }}
+              >
                 <Plus className="h-3.5 w-3.5" /> Add appliance
               </Button>
             </CardHeader>
@@ -257,14 +283,22 @@ export default function UnitDetailPage() {
                             : "—"}
                         </td>
                         <td className="text-right">
-                          <button
-                            type="button"
-                            onClick={() => removeAppliance(a.id)}
-                            className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-error"
-                            aria-label="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <div className="inline-flex items-center gap-1">
+                            <EditEntityButton
+                              onClick={() => {
+                                setEditingApplianceId(a.id);
+                                setAddApplianceOpen(true);
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeAppliance(a.id)}
+                              className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-error"
+                              aria-label="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -276,7 +310,11 @@ export default function UnitDetailPage() {
           <AddApplianceModal
             unitId={doc.id}
             open={addApplianceOpen}
-            onClose={() => setAddApplianceOpen(false)}
+            editingId={editingApplianceId}
+            onClose={() => {
+              setAddApplianceOpen(false);
+              setEditingApplianceId(undefined);
+            }}
             onSaved={load}
           />
         </TabsContent>
@@ -295,36 +333,47 @@ export default function UnitDetailPage() {
   );
 }
 
-function Field({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-widest text-fg-muted">{label}</dt>
-      <dd className="text-sm text-fg">{value}</dd>
-    </div>
-  );
-}
-
 function AddApplianceModal({
   unitId,
   open,
   onClose,
   onSaved,
+  editingId,
 }: {
   unitId: string;
   open: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
+  editingId?: string;
 }) {
   const { toast } = useToast();
+  const isEdit = Boolean(editingId);
   const [name, setName] = React.useState("");
   const [installedDate, setInstalledDate] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    if (!editingId) {
+      setName("");
+      setInstalledDate("");
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/pm/appliances/${editingId}`).then(async (r) => {
+      if (!r.ok || cancelled) return;
+      const a = (await r.json()) as {
+        name: string;
+        installedDate: string | null;
+      };
+      if (cancelled) return;
+      setName(a.name);
+      setInstalledDate(a.installedDate ? a.installedDate.slice(0, 10) : "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, editingId]);
 
   async function save() {
     if (!name.trim()) {
@@ -332,16 +381,21 @@ function AddApplianceModal({
       return;
     }
     setSaving(true);
-    const res = await fetch("/api/pm/appliances", {
-      method: "POST",
+    const url = isEdit
+      ? `/api/pm/appliances/${editingId}`
+      : "/api/pm/appliances";
+    const method = isEdit ? "PATCH" : "POST";
+    const payload: Record<string, unknown> = {
+      name: name.trim(),
+      installedDate: installedDate
+        ? new Date(installedDate).toISOString()
+        : null,
+    };
+    if (!isEdit) payload.unitId = unitId;
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        unitId,
-        name: name.trim(),
-        installedDate: installedDate
-          ? new Date(installedDate).toISOString()
-          : null,
-      }),
+      body: JSON.stringify(payload),
     });
     setSaving(false);
     if (!res.ok) {
@@ -349,7 +403,10 @@ function AddApplianceModal({
       toast({ title: "Failed", description: err.error, variant: "error" });
       return;
     }
-    toast({ title: "Appliance added", variant: "success" });
+    toast({
+      title: isEdit ? "Appliance updated" : "Appliance added",
+      variant: "success",
+    });
     setName("");
     setInstalledDate("");
     onClose();
@@ -359,7 +416,10 @@ function AddApplianceModal({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
-        <DialogHeader title="Add appliance" onClose={onClose} />
+        <DialogHeader
+          title={isEdit ? "Edit appliance" : "Add appliance"}
+          onClose={onClose}
+        />
         <div className="space-y-3">
           <div className="space-y-1">
             <Label htmlFor="a-name">Name *</Label>
@@ -385,7 +445,7 @@ function AddApplianceModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

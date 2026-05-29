@@ -15,6 +15,7 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import type {
   ChartOfAccountDefaultFor,
   ChartOfAccountType,
@@ -70,6 +71,7 @@ export default function ChartOfAccountsPage() {
   const [rows, setRows] = React.useState<Row[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [modalOpen, setModalOpen] = React.useState(false);
+  const [editingId, setEditingId] = React.useState<string | undefined>();
   const [showInactive, setShowInactive] = React.useState(false);
 
   const load = React.useCallback(async () => {
@@ -123,7 +125,13 @@ export default function ChartOfAccountsPage() {
               />
               Show inactive
             </label>
-            <Button size="sm" onClick={() => setModalOpen(true)}>
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingId(undefined);
+                setModalOpen(true);
+              }}
+            >
               <Plus className="h-3.5 w-3.5" /> Add account
             </Button>
           </div>
@@ -170,15 +178,24 @@ export default function ChartOfAccountsPage() {
                       <td className="text-fg-muted">{r.defaultFor ?? "—"}</td>
                       <td className="text-fg-muted">{r.accountNumber || "—"}</td>
                       <td className="text-right">
-                        <button
-                          type="button"
-                          onClick={() => archive(r)}
-                          disabled={r.systemSeeded || !r.active}
-                          className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
-                          aria-label="Archive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        <div className="inline-flex items-center gap-1">
+                          <EditEntityButton
+                            onClick={() => {
+                              setEditingId(r.id);
+                              setModalOpen(true);
+                            }}
+                            disabled={r.systemSeeded}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => archive(r)}
+                            disabled={r.systemSeeded || !r.active}
+                            className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
+                            aria-label="Archive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -191,7 +208,11 @@ export default function ChartOfAccountsPage() {
 
       <AddAccountModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        editingId={editingId}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingId(undefined);
+        }}
         onSaved={load}
       />
     </div>
@@ -202,12 +223,15 @@ function AddAccountModal({
   open,
   onClose,
   onSaved,
+  editingId,
 }: {
   open: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
+  editingId?: string;
 }) {
   const { toast } = useToast();
+  const isEdit = Boolean(editingId);
   const [name, setName] = React.useState("");
   const [type, setType] = React.useState<ChartOfAccountType>("Operating Expense");
   const [defaultFor, setDefaultFor] = React.useState<string>("");
@@ -225,22 +249,56 @@ function AddAccountModal({
     setNotes("");
   }
 
+  React.useEffect(() => {
+    if (!open) return;
+    if (!editingId) {
+      reset();
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/pm/chart-of-accounts/${editingId}`).then(async (r) => {
+      if (!r.ok || cancelled) return;
+      const a = (await r.json()) as {
+        name: string;
+        type: ChartOfAccountType;
+        defaultFor: string | null;
+        cashFlowClassification: CashFlowClassification;
+        accountNumber: string;
+        notes: string;
+      };
+      if (cancelled) return;
+      setName(a.name);
+      setType(a.type);
+      setDefaultFor(a.defaultFor ?? "");
+      setCashFlow(a.cashFlowClassification);
+      setAccountNumber(a.accountNumber ?? "");
+      setNotes(a.notes ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, editingId]);
+
   async function save() {
     if (!name.trim()) {
       toast({ title: "Name required", variant: "error" });
       return;
     }
     setSaving(true);
-    const res = await fetch("/api/pm/chart-of-accounts", {
-      method: "POST",
+    const url = isEdit
+      ? `/api/pm/chart-of-accounts/${editingId}`
+      : "/api/pm/chart-of-accounts";
+    const method = isEdit ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: name.trim(),
         type,
         defaultFor: defaultFor || null,
         cashFlowClassification: cashFlow,
-        accountNumber: accountNumber.trim() || undefined,
-        notes: notes.trim() || undefined,
+        accountNumber: accountNumber.trim() || (isEdit ? "" : undefined),
+        notes: notes.trim() || (isEdit ? "" : undefined),
       }),
     });
     setSaving(false);
@@ -249,7 +307,10 @@ function AddAccountModal({
       toast({ title: "Failed", description: err.error, variant: "error" });
       return;
     }
-    toast({ title: "Account created", variant: "success" });
+    toast({
+      title: isEdit ? "Account updated" : "Account created",
+      variant: "success",
+    });
     reset();
     onClose();
     await onSaved();
@@ -258,7 +319,10 @@ function AddAccountModal({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogHeader title="Add account" onClose={onClose} />
+        <DialogHeader
+          title={isEdit ? "Edit account" : "Add account"}
+          onClose={onClose}
+        />
         <div className="space-y-3">
           <div className="space-y-1">
             <Label htmlFor="coa-name">Name *</Label>
@@ -341,7 +405,7 @@ function AddAccountModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

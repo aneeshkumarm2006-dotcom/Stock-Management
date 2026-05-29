@@ -3,12 +3,13 @@
 "use client";
 
 import * as React from "react";
-import { Trash2, Lock } from "lucide-react";
+import { Trash2, Lock, Check, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
 
 interface NamedRow {
   id: string;
@@ -29,6 +30,9 @@ export function NameCategoryList({ title, endpoint, placeholder }: Props) {
   const [rows, setRows] = React.useState<NamedRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [name, setName] = React.useState("");
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [editingName, setEditingName] = React.useState("");
+  const [savingEdit, setSavingEdit] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -69,6 +73,43 @@ export function NameCategoryList({ title, endpoint, placeholder }: Props) {
     await load();
   }
 
+  function startEdit(row: NamedRow) {
+    setEditingId(row.id);
+    setEditingName(row.name);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditingName("");
+  }
+
+  async function saveEdit(row: NamedRow) {
+    const trimmed = editingName.trim();
+    if (!trimmed) {
+      toast({ title: "Name is required", variant: "error" });
+      return;
+    }
+    if (trimmed === row.name) {
+      cancelEdit();
+      return;
+    }
+    setSavingEdit(true);
+    const res = await fetch(`${endpoint}/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed }),
+    });
+    setSavingEdit(false);
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      toast({ title: "Rename failed", description: err.error, variant: "error" });
+      return;
+    }
+    toast({ title: "Renamed", variant: "success" });
+    cancelEdit();
+    await load();
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -103,29 +144,76 @@ export function NameCategoryList({ title, endpoint, placeholder }: Props) {
               </tr>
             )}
             {!loading &&
-              rows.map((r) => (
-                <tr key={r.id} className="border-b border-border/40">
-                  <td className="py-2 text-fg">
-                    <span className="flex items-center gap-2">
-                      {r.name}
-                      {r.systemSeeded && (
-                        <Lock className="h-3 w-3 text-fg-muted" />
+              rows.map((r) => {
+                const isEditing = editingId === r.id;
+                return (
+                  <tr key={r.id} className="border-b border-border/40">
+                    <td className="py-2 text-fg">
+                      {isEditing ? (
+                        <Input
+                          autoFocus
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveEdit(r);
+                            if (e.key === "Escape") cancelEdit();
+                          }}
+                          disabled={savingEdit}
+                          className="h-7"
+                        />
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          {r.name}
+                          {r.systemSeeded && (
+                            <Lock className="h-3 w-3 text-fg-muted" />
+                          )}
+                        </span>
                       )}
-                    </span>
-                  </td>
-                  <td className="text-right">
-                    <button
-                      type="button"
-                      onClick={() => archive(r)}
-                      disabled={r.systemSeeded}
-                      className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
-                      aria-label="Archive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="text-right">
+                      {isEditing ? (
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => saveEdit(r)}
+                            disabled={savingEdit}
+                            aria-label="Save"
+                            className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-success disabled:opacity-30"
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEdit}
+                            disabled={savingEdit}
+                            aria-label="Cancel"
+                            className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-fg disabled:opacity-30"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-1">
+                          <EditEntityButton
+                            onClick={() => startEdit(r)}
+                            disabled={r.systemSeeded}
+                            label={r.systemSeeded ? "System-seeded" : "Rename"}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => archive(r)}
+                            disabled={r.systemSeeded}
+                            className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
+                            aria-label="Archive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
       </CardContent>

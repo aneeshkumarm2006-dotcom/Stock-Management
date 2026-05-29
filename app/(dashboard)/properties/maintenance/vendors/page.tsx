@@ -17,6 +17,8 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { EditVendorModal } from "@/components/pm/EditVendorModal";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
 
 interface VendorRow {
   id: string;
@@ -41,6 +43,7 @@ export default function VendorsPage() {
   const [filter, setFilter] = React.useState<ActiveFilter>("active");
   const [search, setSearch] = React.useState("");
   const [modalOpen, setModalOpen] = React.useState(false);
+  const [editVendorId, setEditVendorId] = React.useState<string | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -148,7 +151,18 @@ export default function VendorsPage() {
                       days={v.daysUntilInsuranceExpires}
                     />
                   </td>
-                  <td className="text-right">{!v.active && "Inactive"}</td>
+                  <td className="text-right">
+                    <div className="inline-flex items-center gap-2">
+                      {!v.active && (
+                        <span className="text-xs text-fg-muted">Inactive</span>
+                      )}
+                      {v.active && (
+                        <EditEntityButton
+                          onClick={() => setEditVendorId(v.id)}
+                        />
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -159,6 +173,12 @@ export default function VendorsPage() {
       <AddVendorModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        onSaved={load}
+      />
+      <EditVendorModal
+        open={Boolean(editVendorId)}
+        vendorId={editVendorId}
+        onClose={() => setEditVendorId(null)}
         onSaved={load}
       />
     </div>

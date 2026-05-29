@@ -40,13 +40,17 @@ export interface AddRecurringTaskModalProps {
   open: boolean;
   onClose: () => void;
   onSaved: () => Promise<void> | void;
+  /** When set, modal loads the recurring task by id and saves via PATCH. */
+  editingId?: string;
 }
 
 export function AddRecurringTaskModal({
   open,
   onClose,
   onSaved,
+  editingId,
 }: AddRecurringTaskModalProps) {
+  const isEdit = Boolean(editingId);
   const { toast } = useToast();
   const [properties, setProperties] = React.useState<PropertyOption[]>([]);
 
@@ -69,6 +73,40 @@ export function AddRecurringTaskModal({
       if (r.ok) setProperties((await r.json()) as PropertyOption[]);
     });
   }, [open]);
+
+  React.useEffect(() => {
+    if (!open || !editingId) return;
+    let cancelled = false;
+    fetch(`/api/pm/recurring-tasks/${editingId}`).then(async (r) => {
+      if (!r.ok || cancelled) return;
+      const t = (await r.json()) as {
+        title: string;
+        taskType: RecurringTaskType;
+        cadence: RecurringFrequency;
+        nextDate: string | null;
+        priority: WorkPriority;
+        propertyId: string | null;
+        duration: RecurringDuration;
+        occurrenceCount?: number | null;
+        description?: string;
+      };
+      if (cancelled) return;
+      setTitle(t.title);
+      setTaskType(t.taskType);
+      setCadence(t.cadence);
+      setNextDate(t.nextDate ? t.nextDate.slice(0, 10) : "");
+      setPriority(t.priority);
+      setPropertyId(t.propertyId ?? "");
+      setDuration(t.duration);
+      setOccurrenceCount(
+        t.occurrenceCount != null ? String(t.occurrenceCount) : "",
+      );
+      setDescription(t.description ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, editingId]);
 
   function reset() {
     setTitle("");
@@ -110,15 +148,25 @@ export function AddRecurringTaskModal({
       nextDate: new Date(nextDate).toISOString(),
       priority,
       duration,
-      description: description.trim() || undefined,
+      description: description.trim() || (isEdit ? "" : undefined),
     };
-    if (propertyId) payload.propertyId = propertyId;
+    if (isEdit) {
+      payload.propertyId = propertyId || null;
+    } else if (propertyId) {
+      payload.propertyId = propertyId;
+    }
     if (duration === "End after N") {
       payload.occurrenceCount = Number(occurrenceCount);
+    } else if (isEdit) {
+      payload.occurrenceCount = null;
     }
 
-    const res = await fetch("/api/pm/recurring-tasks", {
-      method: "POST",
+    const url = isEdit
+      ? `/api/pm/recurring-tasks/${editingId}`
+      : "/api/pm/recurring-tasks";
+    const method = isEdit ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
@@ -130,6 +178,10 @@ export function AddRecurringTaskModal({
     }
     reset();
     setSaving(false);
+    toast({
+      title: isEdit ? "Recurring task updated" : "Recurring task created",
+      variant: "success",
+    });
     onClose();
     await onSaved();
   }
@@ -138,7 +190,7 @@ export function AddRecurringTaskModal({
     <Dialog open={open} onOpenChange={(o) => (!o ? onClose() : undefined)}>
       <DialogContent className="max-w-xl">
         <DialogHeader
-          title="Add recurring task"
+          title={isEdit ? "Edit recurring task" : "Add recurring task"}
           description="The cadence engine creates a fresh Task each time nextDate is reached."
           onClose={onClose}
         />
@@ -287,7 +339,13 @@ export function AddRecurringTaskModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Creating…" : "Create recurring task"}
+            {saving
+              ? isEdit
+                ? "Saving…"
+                : "Creating…"
+              : isEdit
+                ? "Save changes"
+                : "Create recurring task"}
           </Button>
         </DialogFooter>
       </DialogContent>

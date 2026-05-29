@@ -17,6 +17,7 @@ import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { useToast } from "@/components/ui/toast";
 
 interface BillLine {
@@ -126,10 +127,31 @@ export default function BillDetailPage() {
         <TabsContent value="summary" className="mt-4 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Memo</CardTitle>
+              <CardTitle>Bill details</CardTitle>
             </CardHeader>
-            <CardContent className="whitespace-pre-line text-sm text-fg">
-              {doc.memo || "—"}
+            <CardContent>
+              <InlineFieldEditor
+                endpoint={`/api/pm/bills/${doc.id}`}
+                data={{
+                  refNo: doc.refNo,
+                  dueDate: doc.dueDate,
+                  memo: doc.memo,
+                } as Record<string, unknown>}
+                fields={[
+                  { key: "refNo", label: "Reference / invoice #" },
+                  { key: "dueDate", label: "Due date", type: "date" },
+                  { key: "memo", label: "Memo", type: "textarea" },
+                ]}
+                title="Bill"
+                canEdit={doc.status === "Draft"}
+                onSaved={load}
+              />
+              {doc.status !== "Draft" && (
+                <p className="mt-2 text-xs text-fg-muted">
+                  Bill is {doc.status.toLowerCase()}; fields are locked. Void
+                  and re-record to change.
+                </p>
+              )}
             </CardContent>
           </Card>
           <Card>

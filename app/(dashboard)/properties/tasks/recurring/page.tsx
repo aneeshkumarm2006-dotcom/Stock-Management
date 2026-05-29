@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { AddRecurringTaskModal } from "@/components/pm/AddRecurringTaskModal";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
 
 interface Row {
   id: string;
@@ -32,6 +33,7 @@ export default function RecurringTasksPage() {
   const [loading, setLoading] = React.useState(true);
   const [includeInactive, setIncludeInactive] = React.useState(false);
   const [modalOpen, setModalOpen] = React.useState(false);
+  const [editingId, setEditingId] = React.useState<string | undefined>();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -63,7 +65,13 @@ export default function RecurringTasksPage() {
       <Card>
         <CardHeader>
           <CardTitle>Recurring tasks</CardTitle>
-          <Button size="sm" onClick={() => setModalOpen(true)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditingId(undefined);
+              setModalOpen(true);
+            }}
+          >
             <Plus className="h-3.5 w-3.5" /> Add recurring task
           </Button>
         </CardHeader>
@@ -137,15 +145,25 @@ export default function RecurringTasksPage() {
                     </span>
                   </td>
                   <td className="text-right">
-                    {r.active && (
-                      <button
-                        type="button"
-                        onClick={() => deactivate(r.id)}
-                        className="text-xs text-fg-muted hover:text-error"
-                      >
-                        Deactivate
-                      </button>
-                    )}
+                    <div className="inline-flex items-center gap-2">
+                      {r.active && (
+                        <EditEntityButton
+                          onClick={() => {
+                            setEditingId(r.id);
+                            setModalOpen(true);
+                          }}
+                        />
+                      )}
+                      {r.active && (
+                        <button
+                          type="button"
+                          onClick={() => deactivate(r.id)}
+                          className="text-xs text-fg-muted hover:text-error"
+                        >
+                          Deactivate
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -156,10 +174,13 @@ export default function RecurringTasksPage() {
 
       <AddRecurringTaskModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingId(undefined);
+        }}
+        editingId={editingId}
         onSaved={async () => {
           await load();
-          toast({ title: "Recurring task created", variant: "success" });
         }}
       />
     </div>

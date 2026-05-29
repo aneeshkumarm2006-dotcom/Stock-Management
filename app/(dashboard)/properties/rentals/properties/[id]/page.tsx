@@ -36,6 +36,7 @@ import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
 import { PropertyVacancyWidget } from "@/components/pm/PropertyVacancyWidget";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import {
   EntityImageGallery,
   type GalleryImage,
@@ -226,24 +227,50 @@ export default function PropertyDetailPage() {
               <CardTitle>Identity</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              <InlineFieldEditor
+                endpoint={`/api/pm/properties/${doc.id}`}
+                data={{
+                  propertyName: doc.propertyName,
+                  line1: doc.address.line1,
+                  line2: doc.address.line2 ?? "",
+                  city: doc.address.city,
+                  state: doc.address.state,
+                  zip: doc.address.zip,
+                  listingDescription: doc.listingDescription,
+                } as Record<string, unknown>}
+                fields={[
+                  {
+                    key: "propertyName",
+                    label: "Property name",
+                    required: true,
+                  },
+                  { key: "line1", label: "Address line 1", required: true },
+                  { key: "line2", label: "Address line 2" },
+                  { key: "city", label: "City", required: true },
+                  { key: "state", label: "State", required: true },
+                  { key: "zip", label: "ZIP", required: true },
+                  {
+                    key: "listingDescription",
+                    label: "Listing description",
+                    type: "textarea",
+                  },
+                ]}
+                title="Property"
+                canEdit={doc.active}
+                onSaved={load}
+                payloadTransform={(p) => ({
+                  propertyName: p.propertyName,
+                  listingDescription: p.listingDescription,
+                  address: {
+                    line1: p.line1 ?? undefined,
+                    line2: p.line2 ?? undefined,
+                    city: p.city ?? undefined,
+                    state: p.state ?? undefined,
+                    zip: p.zip ?? undefined,
+                  },
+                })}
+              />
               <dl className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Address"
-                  value={
-                    <address className="not-italic text-sm text-fg">
-                      <div>{doc.address.line1}</div>
-                      {doc.address.line2 && <div>{doc.address.line2}</div>}
-                      {doc.address.line3 && <div>{doc.address.line3}</div>}
-                      <div>
-                        {doc.address.city}, {doc.address.state}{" "}
-                        {doc.address.zip}
-                      </div>
-                      {doc.address.country && doc.address.country !== "US" && (
-                        <div>{doc.address.country}</div>
-                      )}
-                    </address>
-                  }
-                />
                 <Field
                   label="Property manager"
                   value={doc.propertyManagerUserId ?? "Unassigned"}

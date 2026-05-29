@@ -19,6 +19,7 @@ import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { useToast } from "@/components/ui/toast";
 
 interface Phone {
@@ -52,12 +53,17 @@ export default function TenantDetailPage() {
   const [doc, setDoc] = React.useState<TenantDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
 
-  React.useEffect(() => {
-    fetch(`/api/pm/tenants/${id}`)
+  const load = React.useCallback(() => {
+    setLoading(true);
+    return fetch(`/api/pm/tenants/${id}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setDoc(d as TenantDetail | null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
 
   if (loading) return <p className="text-sm text-fg-muted">Loading…</p>;
   if (!doc) return notFound();
@@ -119,25 +125,31 @@ export default function TenantDetailPage() {
               <CardTitle>Contact</CardTitle>
             </CardHeader>
             <CardContent>
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Field label="Email" value={doc.email || "—"} />
-                <Field
-                  label="Date of birth"
-                  value={
-                    doc.dateOfBirth
-                      ? new Date(doc.dateOfBirth).toLocaleDateString()
-                      : "—"
-                  }
-                />
-                <Field
-                  label="SSN"
-                  value={doc.ssnLast4 ? `***-**-${doc.ssnLast4}` : "—"}
-                />
-                <Field
-                  label="Resident Center"
-                  value={doc.residentCenterAccess ? "Enabled" : "Disabled"}
-                />
-              </dl>
+              <InlineFieldEditor
+                endpoint={`/api/pm/tenants/${doc.id}`}
+                data={{
+                  firstName: doc.firstName,
+                  lastName: doc.lastName,
+                  email: doc.email,
+                  dateOfBirth: doc.dateOfBirth,
+                  ssnLast4: doc.ssnLast4,
+                } as Record<string, unknown>}
+                fields={[
+                  { key: "firstName", label: "First name", required: true },
+                  { key: "lastName", label: "Last name", required: true },
+                  { key: "email", label: "Email", type: "email" },
+                  { key: "dateOfBirth", label: "Date of birth", type: "date" },
+                  {
+                    key: "ssnLast4",
+                    label: "SSN last 4",
+                    placeholder: "1234",
+                    display: (v) => (v ? `***-**-${v}` : "—"),
+                  },
+                ]}
+                title="Tenant"
+                canEdit={doc.active}
+                onSaved={load}
+              />
               <ul className="mt-3 space-y-1.5 text-sm text-fg">
                 {PHONE_KEYS.map((key) => {
                   const p = doc.phones?.[key];

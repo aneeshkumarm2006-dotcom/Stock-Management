@@ -25,6 +25,8 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { AddWorkOrderModal } from "@/components/pm/AddWorkOrderModal";
+import { AddTaskModal } from "@/components/pm/AddTaskModal";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { RequestOwnerContributionModal } from "@/components/pm/RequestOwnerContributionModal";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { useToast } from "@/components/ui/toast";
@@ -83,6 +85,7 @@ export default function TaskDetailPage() {
   const [woModalOpen, setWoModalOpen] = React.useState(false);
   const [ocrLinks, setOcrLinks] = React.useState<OcrLink[]>([]);
   const [ocrModalOpen, setOcrModalOpen] = React.useState(false);
+  const [editTaskOpen, setEditTaskOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -175,6 +178,14 @@ export default function TaskDetailPage() {
           <ArrowLeft className="h-3.5 w-3.5" /> Tasks
         </Button>
         <div className="flex gap-2">
+          {doc.status !== "Closed" &&
+            doc.status !== "Completed" &&
+            doc.status !== "Cancelled" && (
+              <EditEntityButton
+                variant="header"
+                onClick={() => setEditTaskOpen(true)}
+              />
+            )}
           {doc.status === "New" && (
             <Button size="sm" onClick={() => updateStatus("In progress")}>
               Start
@@ -452,6 +463,15 @@ export default function TaskDetailPage() {
           toast({ title: "Contribution request created", variant: "success" });
         }}
         taskId={doc.id}
+      />
+
+      <AddTaskModal
+        open={editTaskOpen}
+        onClose={() => setEditTaskOpen(false)}
+        editingId={doc.id}
+        onSaved={async () => {
+          await load();
+        }}
       />
     </div>
   );

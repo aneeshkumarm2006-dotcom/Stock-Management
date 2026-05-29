@@ -25,6 +25,8 @@ interface RentersInsuranceModalProps {
   onSaved: () => void | Promise<void>;
   leaseId: string;
   leaseTenants: Array<{ tenantId: string; firstName: string; lastName: string }>;
+  /** When set, modal loads the policy and saves via PATCH. */
+  editingId?: string;
 }
 
 export function RentersInsuranceModal({
@@ -33,8 +35,10 @@ export function RentersInsuranceModal({
   onSaved,
   leaseId,
   leaseTenants,
+  editingId,
 }: RentersInsuranceModalProps) {
   const { toast } = useToast();
+  const isEdit = Boolean(editingId);
   const [carrier, setCarrier] =
     React.useState<RentersInsuranceCarrier>("Third Party");
   const [policyNumber, setPolicyNumber] = React.useState("");
@@ -46,13 +50,44 @@ export function RentersInsuranceModal({
 
   React.useEffect(() => {
     if (!open) return;
-    setCarrier("Third Party");
-    setPolicyNumber("");
-    setLiability("0");
-    setEffectiveDate("");
-    setExpirationDate("");
-    setCovered(new Set());
-  }, [open]);
+    if (!editingId) {
+      setCarrier("Third Party");
+      setPolicyNumber("");
+      setLiability("0");
+      setEffectiveDate("");
+      setExpirationDate("");
+      setCovered(new Set());
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/pm/leases/${leaseId}/renters-insurance/${editingId}`).then(
+      async (r) => {
+        if (!r.ok || cancelled) return;
+        const p = (await r.json()) as {
+          carrier: RentersInsuranceCarrier;
+          policyNumber: string;
+          liabilityCoverage: number;
+          effectiveDate: string;
+          expirationDate: string;
+          coveredResidents: string[];
+        };
+        if (cancelled) return;
+        setCarrier(p.carrier);
+        setPolicyNumber(p.policyNumber ?? "");
+        setLiability(String((p.liabilityCoverage ?? 0) / 100));
+        setEffectiveDate(
+          p.effectiveDate ? p.effectiveDate.slice(0, 10) : "",
+        );
+        setExpirationDate(
+          p.expirationDate ? p.expirationDate.slice(0, 10) : "",
+        );
+        setCovered(new Set(p.coveredResidents ?? []));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [open, editingId, leaseId]);
 
   async function save() {
     if (!effectiveDate || !expirationDate) {
@@ -75,8 +110,12 @@ export function RentersInsuranceModal({
       expirationDate,
       coveredResidents: Array.from(covered),
     };
-    const res = await fetch(`/api/pm/leases/${leaseId}/renters-insurance`, {
-      method: "POST",
+    const url = isEdit
+      ? `/api/pm/leases/${leaseId}/renters-insurance/${editingId}`
+      : `/api/pm/leases/${leaseId}/renters-insurance`;
+    const method = isEdit ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
@@ -90,9 +129,15 @@ export function RentersInsuranceModal({
       });
       return;
     }
-    const data = (await res.json()) as { warning?: string | null };
+    const data = (await res.json().catch(() => ({}))) as {
+      warning?: string | null;
+    };
     toast({
-      title: data.warning ? "Policy saved (warning)" : "Policy saved",
+      title: data.warning
+        ? "Policy saved (warning)"
+        : isEdit
+          ? "Policy updated"
+          : "Policy saved",
       description: data.warning ?? undefined,
       variant: data.warning ? "error" : "success",
     });
@@ -103,7 +148,13 @@ export function RentersInsuranceModal({
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-xl">
-        <DialogHeader title="Add renters insurance policy" />
+        <DialogHeader
+          title={
+            isEdit
+              ? "Edit renters insurance policy"
+              : "Add renters insurance policy"
+          }
+        />
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Carrier</Label>
@@ -190,7 +241,7 @@ export function RentersInsuranceModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

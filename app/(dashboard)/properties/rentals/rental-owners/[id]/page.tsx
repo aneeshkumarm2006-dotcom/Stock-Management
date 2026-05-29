@@ -21,6 +21,7 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
+import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { useToast } from "@/components/ui/toast";
 import type { TaxIdentityType } from "@/types/pm";
 
@@ -172,20 +173,33 @@ export default function RentalOwnerDetailPage() {
               <CardTitle>Contact</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Field label="Primary email" value={doc.primaryEmail || "—"} />
-                <Field
-                  label="Alternate email"
-                  value={doc.alternateEmail || "—"}
-                />
-                <Field
-                  label="Date of birth"
-                  value={
-                    doc.dateOfBirth
-                      ? new Date(doc.dateOfBirth).toLocaleDateString()
-                      : "—"
-                  }
-                />
+              <InlineFieldEditor
+                endpoint={`/api/pm/rental-owners/${doc.id}`}
+                data={{
+                  firstName: doc.firstName,
+                  lastName: doc.lastName,
+                  primaryEmail: doc.primaryEmail,
+                  alternateEmail: doc.alternateEmail,
+                  dateOfBirth: doc.dateOfBirth,
+                  comments: doc.comments,
+                } as Record<string, unknown>}
+                fields={[
+                  { key: "firstName", label: "First name", required: true },
+                  { key: "lastName", label: "Last name", required: true },
+                  { key: "primaryEmail", label: "Primary email", type: "email" },
+                  {
+                    key: "alternateEmail",
+                    label: "Alternate email",
+                    type: "email",
+                  },
+                  { key: "dateOfBirth", label: "Date of birth", type: "date" },
+                  { key: "comments", label: "Comments", type: "textarea" },
+                ]}
+                title="Rental owner"
+                canEdit={doc.active}
+                onSaved={load}
+              />
+              <dl className="mt-4 grid gap-3 md:grid-cols-2">
                 <Field
                   label="Agreement"
                   value={
