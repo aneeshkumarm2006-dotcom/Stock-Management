@@ -55,7 +55,7 @@ function TasksPageInner() {
   const params = useSearchParams();
 
   const initialSearchOption =
-    (params.get("searchOption") as SearchOption | null) ?? "me";
+    (params.get("searchOption") as SearchOption | null) ?? "all";
   const initialTab = params.get("tab") === "analytics" ? "analytics" : "tasks";
   // Dashboard Overdue widget deep-links here with `?overdue=1` (PROPERTY_TODO.md
   // Phase 10 [G-B-12]). We persist the flag in state so URL sync below
