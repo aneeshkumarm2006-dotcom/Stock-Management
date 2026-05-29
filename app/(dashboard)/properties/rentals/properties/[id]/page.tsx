@@ -262,11 +262,11 @@ export default function PropertyDetailPage() {
                   propertyName: p.propertyName,
                   listingDescription: p.listingDescription,
                   address: {
-                    line1: p.line1 ?? undefined,
-                    line2: p.line2 ?? undefined,
-                    city: p.city ?? undefined,
-                    state: p.state ?? undefined,
-                    zip: p.zip ?? undefined,
+                    line1: p.line1,
+                    line2: p.line2,
+                    city: p.city,
+                    state: p.state,
+                    zip: p.zip,
                   },
                 })}
               />

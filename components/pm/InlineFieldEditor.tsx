@@ -73,14 +73,14 @@ function dateToInput(v: unknown): string {
   return "";
 }
 
-function inputToDate(v: string): string | null {
-  return v ? new Date(v).toISOString() : null;
+function inputToDate(v: string): string | undefined {
+  return v ? new Date(v).toISOString() : undefined;
 }
 
-function numericToPayload(v: string): number | null {
-  if (v === "") return null;
+function numericToPayload(v: string): number | undefined {
+  if (v === "") return undefined;
   const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) ? n : undefined;
 }
 
 export function InlineFieldEditor<T extends Record<string, unknown>>({
@@ -132,7 +132,14 @@ export function InlineFieldEditor<T extends Record<string, unknown>>({
       } else if (f.type === "number") {
         payload[f.key] = numericToPayload(input);
       } else {
-        payload[f.key] = input.trim() === "" ? null : input.trim();
+        // Empty inputs are omitted (undefined → dropped by JSON.stringify) so
+        // the API treats them as "no change" rather than "clear to null". Many
+        // Zod schemas declare optional string fields as `.optional()` without
+        // `.nullable()`, so a null would 400 with "Invalid input". To support
+        // clearing a specific field, add `.nullable()` to its schema and use
+        // a custom `toPayload` that returns null on empty input.
+        const trimmed = input.trim();
+        payload[f.key] = trimmed === "" ? undefined : trimmed;
       }
     }
     const finalPayload = payloadTransform ? payloadTransform(payload) : payload;
