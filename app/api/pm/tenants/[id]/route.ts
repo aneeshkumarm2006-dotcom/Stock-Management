@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Tenant } from '@/lib/db/models/pm/Tenant';
+import { Lease } from '@/lib/db/models/pm/Lease';
+import { Property } from '@/lib/db/models/pm/Property';
+import { Unit } from '@/lib/db/models/pm/Unit';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -39,6 +42,57 @@ export async function GET(
     Object.assign(customFields, doc.customFields);
   }
 
+  // Resolve the active lease (set by leasingPromotion / recomputeLeaseStatuses)
+  // into a property/unit summary for the Lease card on the detail page.
+  let currentLease: {
+    id: string;
+    leaseNumber: number;
+    propertyId: string;
+    propertyName: string;
+    unitId: string;
+    unitName: string;
+    status: string;
+    leaseType: string;
+    startDate: Date | null;
+    endDate: Date | null;
+    primaryRentAmount: number; // cents
+  } | null = null;
+  if (doc.currentLeaseId) {
+    const lease = await Lease.findOne({
+      _id: doc.currentLeaseId,
+      organizationId: doc.organizationId,
+    }).lean();
+    if (lease) {
+      const [prop, unit] = await Promise.all([
+        Property.findOne({
+          _id: lease.propertyId,
+          organizationId: doc.organizationId,
+        })
+          .select({ propertyName: 1 })
+          .lean<{ propertyName?: string } | null>(),
+        Unit.findOne({
+          _id: lease.unitId,
+          organizationId: doc.organizationId,
+        })
+          .select({ unitId: 1 })
+          .lean<{ unitId?: string } | null>(),
+      ]);
+      currentLease = {
+        id: String(lease._id),
+        leaseNumber: lease.leaseNumber,
+        propertyId: String(lease.propertyId),
+        propertyName: prop?.propertyName ?? '(Unknown property)',
+        unitId: String(lease.unitId),
+        unitName: unit?.unitId ?? '(Unknown unit)',
+        status: lease.status,
+        leaseType: lease.leaseType,
+        startDate: lease.startDate ?? null,
+        endDate: lease.endDate ?? null,
+        primaryRentAmount: lease.primaryRent?.amount ?? 0,
+      };
+    }
+  }
+
   return NextResponse.json({
     id: String(doc._id),
     firstName: doc.firstName,
@@ -53,8 +107,8 @@ export async function GET(
     residentCenterAccess: doc.residentCenterAccess,
     customFields,
     active: doc.active,
-    // Phase 3 wiring once Lease lands.
-    currentLeaseId: null,
+    currentLeaseId: doc.currentLeaseId ? String(doc.currentLeaseId) : null,
+    currentLease,
   });
 }
 

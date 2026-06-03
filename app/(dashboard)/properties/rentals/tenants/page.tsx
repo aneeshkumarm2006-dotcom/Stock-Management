@@ -24,6 +24,11 @@ interface TenantRow {
   cosignerFlag: boolean;
   displayName: string;
   active: boolean;
+  currentLease: {
+    propertyId: string;
+    propertyName: string;
+    unitName: string;
+  } | null;
 }
 
 type ActiveFilter = "active" | "inactive" | "all";
@@ -99,19 +104,20 @@ export default function TenantsPage() {
                 <th className="py-2">Name</th>
                 <th>Email</th>
                 <th>Role</th>
+                <th>Property / Unit</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={3} className="py-4 text-fg-muted">
+                  <td colSpan={4} className="py-4 text-fg-muted">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && visible.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="py-4 text-fg-muted">
+                  <td colSpan={4} className="py-4 text-fg-muted">
                     No tenants match.
                   </td>
                 </tr>
@@ -135,13 +141,25 @@ export default function TenantsPage() {
                   <td className="text-fg-muted">
                     {t.cosignerFlag ? "Cosigner" : "Tenant"}
                   </td>
+                  <td className="text-fg-muted">
+                    {t.currentLease ? (
+                      <Link
+                        href={`/properties/rentals/properties/${t.currentLease.propertyId}`}
+                        className="hover:underline"
+                      >
+                        {t.currentLease.propertyName} · {t.currentLease.unitName}
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
           <p className="text-xs text-fg-muted">
-            Lease bindings and renters-insurance status surface here once
-            Phase 3 lands.
+            Property / unit reflects each tenant’s current active lease. Assign a
+            tenant from their detail page or from a property’s Units tab.
           </p>
         </CardContent>
       </Card>

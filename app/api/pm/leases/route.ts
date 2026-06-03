@@ -5,6 +5,9 @@ import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Lease } from '@/lib/db/models/pm/Lease';
+import { Property } from '@/lib/db/models/pm/Property';
+import { Unit } from '@/lib/db/models/pm/Unit';
+import { Tenant } from '@/lib/db/models/pm/Tenant';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -14,7 +17,11 @@ import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
 import { LEASE_STATUSES } from '@/types/pm';
 import type { LeaseType, RentCycle } from '@/types/pm';
-import { computeLeaseStatus, daysRemaining } from '@/lib/pm/leaseStatus';
+import {
+  computeLeaseStatus,
+  daysRemaining,
+  recomputeLeaseStatuses,
+} from '@/lib/pm/leaseStatus';
 
 export const runtime = 'nodejs';
 
@@ -107,6 +114,100 @@ export async function POST(request: Request) {
 
   await connectToDatabase();
   const orgId = new Types.ObjectId(ctx.orgId);
+
+  // ── FK existence + assignment guards ────────────────────────────────────
+  // POST is the direct-create path (most leases arrive via draft-lease
+  // execute). It previously trusted the body blindly; assigning an existing
+  // tenant from the UI goes through here, so validate the references and
+  // protect the one-live-lease-per-unit / one-active-lease-per-tenant rules.
+  const propertyObjectId = new Types.ObjectId(parsed.data.propertyId);
+  const unitObjectId = new Types.ObjectId(parsed.data.unitId);
+
+  const property = await Property.findOne({
+    _id: propertyObjectId,
+    organizationId: orgId,
+  })
+    .select({ _id: 1 })
+    .lean();
+  if (!property) {
+    return NextResponse.json(
+      { error: 'propertyId does not reference a property in this org' },
+      { status: 400 },
+    );
+  }
+
+  const unit = await Unit.findOne({
+    _id: unitObjectId,
+    organizationId: orgId,
+    propertyId: propertyObjectId,
+  })
+    .select({ _id: 1 })
+    .lean();
+  if (!unit) {
+    return NextResponse.json(
+      { error: 'unitId does not reference a unit on this property' },
+      { status: 400 },
+    );
+  }
+
+  const tenantRefs = [
+    ...parsed.data.tenants,
+    ...(parsed.data.cosigners ?? []),
+  ];
+  const uniqueTenantIds = Array.from(
+    new Map(
+      tenantRefs.map((t) => [t.tenantId, new Types.ObjectId(t.tenantId)]),
+    ).values(),
+  );
+  const foundTenants = await Tenant.find({
+    _id: { $in: uniqueTenantIds },
+    organizationId: orgId,
+  })
+    .select({ _id: 1, firstName: 1, lastName: 1, currentLeaseId: 1 })
+    .lean<
+      {
+        _id: Types.ObjectId;
+        firstName: string;
+        lastName: string;
+        currentLeaseId?: unknown;
+      }[]
+    >();
+  if (foundTenants.length !== uniqueTenantIds.length) {
+    return NextResponse.json(
+      { error: 'One or more tenants do not exist in this org' },
+      { status: 400 },
+    );
+  }
+
+  // No double-booking: a unit carries at most one live (Active/Future) lease.
+  const occupying = await Lease.findOne({
+    organizationId: orgId,
+    unitId: unitObjectId,
+    status: { $in: ['Active', 'Future'] },
+  })
+    .select({ leaseNumber: 1 })
+    .lean<{ leaseNumber: number } | null>();
+  if (occupying) {
+    return NextResponse.json(
+      {
+        error: `Unit already has an active or future lease (#${occupying.leaseNumber}). End it before assigning a new tenant.`,
+      },
+      { status: 409 },
+    );
+  }
+
+  // A tenant holds only one active assignment (Tenant.currentLeaseId is single).
+  const alreadyAssigned = foundTenants.find((t) => Boolean(t.currentLeaseId));
+  if (alreadyAssigned) {
+    return NextResponse.json(
+      {
+        error: `${alreadyAssigned.firstName} ${alreadyAssigned.lastName} is already assigned to a property. Move them out first.`,
+      },
+      { status: 409 },
+    );
+  }
+  // ────────────────────────────────────────────────────────────────────────
+
   const last = await Lease.findOne({ organizationId: orgId })
     .sort({ leaseNumber: -1 })
     .select({ leaseNumber: 1 })
@@ -197,6 +298,15 @@ export async function POST(request: Request) {
       files: (parsed.data.files ?? []).map((id) => new Types.ObjectId(id)),
       customFields: parsed.data.customFields ?? {},
     });
+
+    // Point Tenant.currentLeaseId at this lease when it is Active (idempotent;
+    // leaves tenants on other Active leases untouched per the $or guard).
+    // Never let a sync hiccup fail a successful create — the lease exists.
+    try {
+      await recomputeLeaseStatuses(ctx.orgId);
+    } catch (syncErr) {
+      console.error('recomputeLeaseStatuses after lease create failed', syncErr);
+    }
 
     await logActivity({
       orgId: ctx.orgId,

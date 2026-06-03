@@ -6,6 +6,7 @@ import {
   Lease,
   currentDepositHeld,
 } from '@/lib/db/models/pm/Lease';
+import { Tenant } from '@/lib/db/models/pm/Tenant';
 import type {
   EsignatureStatus,
   LeaseStatus,
@@ -21,7 +22,11 @@ import {
 import { leaseUpdateSchema } from '@/lib/validation/pm/lease';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
-import { computeLeaseStatus, daysRemaining } from '@/lib/pm/leaseStatus';
+import {
+  computeLeaseStatus,
+  daysRemaining,
+  recomputeLeaseStatuses,
+} from '@/lib/pm/leaseStatus';
 
 export const runtime = 'nodejs';
 
@@ -333,6 +338,23 @@ export async function PATCH(
   }
   await doc.save();
 
+  // "End lease / Move out": a terminal status frees the tenants' pointer.
+  // recomputeLeaseStatuses only scans Active/Future/Expired, so a just-ended
+  // lease must be cleared explicitly here.
+  if (status === 'Ended' || status === 'Cancelled') {
+    await Tenant.updateMany(
+      {
+        organizationId: doc.organizationId,
+        _id: { $in: doc.tenants.map((t) => t.tenantId) },
+        currentLeaseId: doc._id,
+      },
+      { $set: { currentLeaseId: null } },
+    );
+  }
+  if (status !== undefined) {
+    await recomputeLeaseStatuses(ctx.orgId);
+  }
+
   await logActivity({
     orgId: ctx.orgId,
     parentType: 'Lease',
@@ -401,6 +423,15 @@ export async function DELETE(
 
   doc.status = 'Cancelled';
   await doc.save();
+  // Free the tenants' currentLeaseId pointer (consistency with PATCH terminate).
+  await Tenant.updateMany(
+    {
+      organizationId: doc.organizationId,
+      _id: { $in: doc.tenants.map((t) => t.tenantId) },
+      currentLeaseId: doc._id,
+    },
+    { $set: { currentLeaseId: null } },
+  );
   await logActivity({
     orgId: ctx.orgId,
     parentType: 'Lease',

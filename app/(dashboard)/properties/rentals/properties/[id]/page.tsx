@@ -37,6 +37,7 @@ import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
 import { PropertyVacancyWidget } from "@/components/pm/PropertyVacancyWidget";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
+import { AssignLeaseModal } from "@/components/pm/AssignLeaseModal";
 import {
   EntityImageGallery,
   type GalleryImage,
@@ -110,6 +111,13 @@ interface ApplianceRollupRow {
   installedDate: string | null;
 }
 
+interface ActiveLeaseRow {
+  id: string;
+  unitId: string;
+  status: string;
+  tenants: { tenantId: string; firstName: string; lastName: string }[];
+}
+
 export default function PropertyDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -118,24 +126,44 @@ export default function PropertyDetailPage() {
   const [loading, setLoading] = React.useState(true);
   const [units, setUnits] = React.useState<UnitRow[]>([]);
   const [appliances, setAppliances] = React.useState<ApplianceRollupRow[]>([]);
+  const [activeLeases, setActiveLeases] = React.useState<ActiveLeaseRow[]>([]);
   const [addUnitOpen, setAddUnitOpen] = React.useState(false);
+  const [assignOpen, setAssignOpen] = React.useState(false);
+  const [assignUnitId, setAssignUnitId] = React.useState<string | undefined>(
+    undefined,
+  );
 
   const load = React.useCallback(async () => {
     setLoading(true);
-    const [pRes, uRes, aRes] = await Promise.all([
+    const [pRes, uRes, aRes, lRes] = await Promise.all([
       fetch(`/api/pm/properties/${id}`),
       fetch(`/api/pm/units?propertyId=${id}`),
       fetch(`/api/pm/appliances?propertyId=${id}`),
+      fetch(`/api/pm/leases?propertyId=${id}&status=Active,Future`),
     ]);
     if (pRes.ok) setDoc((await pRes.json()) as PropertyDetail);
     if (uRes.ok) setUnits((await uRes.json()) as UnitRow[]);
     if (aRes.ok) setAppliances((await aRes.json()) as ApplianceRollupRow[]);
+    if (lRes.ok) setActiveLeases((await lRes.json()) as ActiveLeaseRow[]);
     setLoading(false);
   }, [id]);
 
   React.useEffect(() => {
     load();
   }, [load]);
+
+  // unitId → current occupants (prefer an Active lease over a Future one).
+  const occupantsByUnit = React.useMemo(() => {
+    const m = new Map<string, { names: string[]; status: string }>();
+    for (const l of activeLeases) {
+      const names = l.tenants.map((t) => `${t.firstName} ${t.lastName}`.trim());
+      const existing = m.get(l.unitId);
+      if (!existing || (existing.status !== "Active" && l.status === "Active")) {
+        m.set(l.unitId, { names, status: l.status });
+      }
+    }
+    return m;
+  }, [activeLeases]);
 
   if (loading) return <p className="text-sm text-fg-muted">Loading…</p>;
   if (!doc) return notFound();
@@ -638,9 +666,22 @@ export default function PropertyDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>Units ({units.length})</CardTitle>
-              <Button size="sm" onClick={() => setAddUnitOpen(true)}>
-                <Plus className="h-3.5 w-3.5" /> Add unit
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!doc.active}
+                  onClick={() => {
+                    setAssignUnitId(undefined);
+                    setAssignOpen(true);
+                  }}
+                >
+                  Assign tenant
+                </Button>
+                <Button size="sm" onClick={() => setAddUnitOpen(true)}>
+                  <Plus className="h-3.5 w-3.5" /> Add unit
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {units.length === 0 ? (
@@ -654,25 +695,47 @@ export default function PropertyDetailPage() {
                       <th>Baths</th>
                       <th>Size (sqft)</th>
                       <th>Appliances</th>
+                      <th>Occupant(s)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {units.map((u) => (
-                      <tr key={u.id} className="border-b border-border/40">
-                        <td className="py-2 text-fg">
-                          <Link
-                            href={`/properties/rentals/properties/${doc.id}/units/${u.id}`}
-                            className="font-medium hover:underline"
-                          >
-                            {u.unitId}
-                          </Link>
-                        </td>
-                        <td className="text-fg-muted">{u.bedrooms ?? "—"}</td>
-                        <td className="text-fg-muted">{u.bathrooms || "—"}</td>
-                        <td className="text-fg-muted">{u.sizeSqft ?? "—"}</td>
-                        <td className="text-fg-muted">{u.applianceCount}</td>
-                      </tr>
-                    ))}
+                    {units.map((u) => {
+                      const occ = occupantsByUnit.get(u.id);
+                      return (
+                        <tr key={u.id} className="border-b border-border/40">
+                          <td className="py-2 text-fg">
+                            <Link
+                              href={`/properties/rentals/properties/${doc.id}/units/${u.id}`}
+                              className="font-medium hover:underline"
+                            >
+                              {u.unitId}
+                            </Link>
+                          </td>
+                          <td className="text-fg-muted">{u.bedrooms ?? "—"}</td>
+                          <td className="text-fg-muted">{u.bathrooms || "—"}</td>
+                          <td className="text-fg-muted">{u.sizeSqft ?? "—"}</td>
+                          <td className="text-fg-muted">{u.applianceCount}</td>
+                          <td className="text-fg-muted">
+                            {occ && occ.names.length > 0 ? (
+                              occ.names.join(", ")
+                            ) : doc.active ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setAssignUnitId(u.id);
+                                  setAssignOpen(true);
+                                }}
+                              >
+                                Assign tenant
+                              </Button>
+                            ) : (
+                              "Vacant"
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -683,6 +746,20 @@ export default function PropertyDetailPage() {
             open={addUnitOpen}
             onClose={() => setAddUnitOpen(false)}
             onSaved={load}
+          />
+          <AssignLeaseModal
+            open={assignOpen}
+            onClose={() => {
+              setAssignOpen(false);
+              setAssignUnitId(undefined);
+            }}
+            presetPropertyId={doc.id}
+            presetUnitId={assignUnitId}
+            onSaved={async () => {
+              setAssignOpen(false);
+              setAssignUnitId(undefined);
+              await load();
+            }}
           />
         </TabsContent>
 
