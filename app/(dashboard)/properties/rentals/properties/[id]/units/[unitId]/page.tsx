@@ -3,6 +3,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useParams, useRouter, notFound } from "next/navigation";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import {
 } from "@/components/pm/EntityImageGallery";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
+import { AssignLeaseModal } from "@/components/pm/AssignLeaseModal";
 
 interface UnitDetail {
   id: string;
@@ -49,7 +51,12 @@ interface UnitDetail {
   description: string;
   amenities: string[];
   images: GalleryImage[];
-  currentTenants: Array<{ id: string; displayName: string }>;
+  currentTenants: Array<{
+    tenantId: string;
+    firstName: string;
+    lastName: string;
+    isCosigner: boolean;
+  }>;
   mostRecentEvent: { eventType: string; createdAt: string } | null;
 }
 
@@ -71,6 +78,7 @@ export default function UnitDetailPage() {
   const [editingApplianceId, setEditingApplianceId] = React.useState<
     string | undefined
   >();
+  const [assignOpen, setAssignOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -217,13 +225,30 @@ export default function UnitDetailPage() {
             </CardHeader>
             <CardContent>
               {doc.currentTenants.length === 0 ? (
-                <p className="text-sm text-fg-muted">
-                  No active tenants. Lease bindings wire up in Phase 3.
-                </p>
+                <div className="flex flex-col items-start gap-3">
+                  <p className="text-sm text-fg-muted">
+                    No tenant assigned to this unit yet.
+                  </p>
+                  <Button size="sm" onClick={() => setAssignOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Assign tenant to this unit
+                  </Button>
+                </div>
               ) : (
                 <ul className="space-y-1 text-sm text-fg">
                   {doc.currentTenants.map((t) => (
-                    <li key={t.id}>{t.displayName}</li>
+                    <li key={t.tenantId}>
+                      <Link
+                        href={`/properties/rentals/tenants/${t.tenantId}`}
+                        className="font-medium text-primary hover:underline"
+                      >
+                        {t.firstName} {t.lastName}
+                      </Link>
+                      {t.isCosigner && (
+                        <span className="ml-2 text-xs text-fg-muted">
+                          (cosigner)
+                        </span>
+                      )}
+                    </li>
                   ))}
                 </ul>
               )}
@@ -329,6 +354,17 @@ export default function UnitDetailPage() {
           <FilesPanel locationType="Unit" locationId={doc.id} />
         </TabsContent>
       </Tabs>
+
+      <AssignLeaseModal
+        open={assignOpen}
+        onClose={() => setAssignOpen(false)}
+        presetPropertyId={doc.propertyId}
+        presetUnitId={doc.id}
+        onSaved={async () => {
+          setAssignOpen(false);
+          await load();
+        }}
+      />
     </div>
   );
 }
