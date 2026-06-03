@@ -18,6 +18,7 @@ import { useSettingsStore } from "@/store/useSettingsStore";
 import { Dropdown, DropdownItem } from "@/components/ui/dropdown";
 import { getWorkspaceForPath } from "@/components/layout/nav";
 import { BellBadge } from "@/components/pm/BellBadge";
+import { useBreadcrumbOverrideLabel } from "@/components/layout/BreadcrumbOverride";
 import { cn } from "@/lib/utils/cn";
 
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "Portfolio";
@@ -143,9 +144,16 @@ function labelFor(seg: string): string {
 }
 
 function Breadcrumb({ pathname }: { pathname: string }) {
+  // STATE-015: a detail page can publish the resolved record name via the
+  // BreadcrumbOverride context; when present, it replaces the leaf crumb (which
+  // would otherwise be the opaque-ID fallback "Detail").
+  const overrideLeaf = useBreadcrumbOverrideLabel();
   const segs = pathname.split("/").filter(Boolean);
   const labels = segs.map(labelFor);
   if (labels.length === 0) labels.push(APP_NAME);
+  if (overrideLeaf && labels.length > 0) {
+    labels[labels.length - 1] = overrideLeaf;
+  }
   return (
     <nav
       aria-label="Breadcrumb"

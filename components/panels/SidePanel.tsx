@@ -11,6 +11,30 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
+// STATE-008: multiple SidePanels can be open at once (e.g. an edit panel that
+// opens a nested confirm sheet). A per-instance save/restore of
+// document.body.style.overflow corrupts the stack: the second panel saves the
+// already-"hidden" value, so when it closes it restores "hidden" and leaves the
+// page scroll-locked. A module-level open counter fixes this: we snapshot the
+// ORIGINAL overflow only on the 0→1 transition and restore it only on 1→0.
+let bodyLockCount = 0;
+let originalBodyOverflow = "";
+
+function lockBodyScroll() {
+  if (bodyLockCount === 0) {
+    originalBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+  }
+  bodyLockCount += 1;
+}
+
+function unlockBodyScroll() {
+  bodyLockCount = Math.max(0, bodyLockCount - 1);
+  if (bodyLockCount === 0) {
+    document.body.style.overflow = originalBodyOverflow;
+  }
+}
+
 interface SidePanelProps {
   open: boolean;
   onClose: () => void;
@@ -38,11 +62,11 @@ export function SidePanel({
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // STATE-008: ref-counted lock instead of a per-instance save/restore.
+    lockBodyScroll();
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      unlockBodyScroll();
     };
   }, [open, onClose]);
 

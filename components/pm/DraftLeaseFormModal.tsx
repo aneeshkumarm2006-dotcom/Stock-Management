@@ -154,6 +154,15 @@ export function DraftLeaseFormModal({
     // with no start date cannot be scheduled, and the Mongoose pre-validate
     // hook still enforces them. The Zod schema lets the body through; the
     // server returns a 400 only if those hard rules trip.
+    // BR-LL-1: a Fixed (or any non-At-will) lease must carry an end date.
+    // At-will leases intentionally have none. Guard before submit (ADD-008).
+    if (leaseType !== "At-will" && !endDate) {
+      toast({
+        title: "End date is required for a fixed-term lease",
+        variant: "error",
+      });
+      return;
+    }
     const cleanTenants = tenants.filter((t) => t.firstName && t.lastName);
     setSaving(true);
     const payload = {
@@ -200,7 +209,7 @@ export function DraftLeaseFormModal({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl">
         <DialogHeader title="New draft lease" />
         <div className="grid grid-cols-2 gap-3">

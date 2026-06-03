@@ -133,8 +133,13 @@ export type JournalEntryStatus = "Posted" | "Draft" | "Voided";
  * single entry (multi-property posting). */
 export type JournalEntryScopeType = "Property" | "Company";
 
-/** LockedPeriodPolicy.scope (PDR §3.27). Per-property requires `propertyId`. */
-export type LockedPeriodScope = "Global" | "Per-property";
+/** LockedPeriodPolicy.scope (PDR §3.27). Per-property requires `propertyId`;
+ * Per-bank-account requires `bankAccountId` (issued by reconciliation commit,
+ * BR-AC-17) and locks only the date window for that one bank's history. */
+export type LockedPeriodScope =
+  | "Global"
+  | "Per-property"
+  | "Per-bank-account";
 
 /** Deposit.status — Posted is the steady state; Voided is paired with the
  * underlying JE being voided. */

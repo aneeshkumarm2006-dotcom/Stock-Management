@@ -12,6 +12,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock, AlertTriangle, Mail } from "lucide-react";
 import {
   Tabs,
@@ -197,6 +198,8 @@ function useCount(params: {
   view: "sent" | "scheduled" | "drafts";
 }) {
   const [count, setCount] = React.useState<number | null>(null);
+  const [reloadKey, setReloadKey] = React.useState(0);
+  const reload = React.useCallback(() => setReloadKey((k) => k + 1), []);
   React.useEffect(() => {
     let cancelled = false;
     const qs = new URLSearchParams({
@@ -214,16 +217,20 @@ function useCount(params: {
     return () => {
       cancelled = true;
     };
-  }, [params.view, params.relatedEntityType, params.relatedEntityId]);
-  return count;
+  }, [params.view, params.relatedEntityType, params.relatedEntityId, reloadKey]);
+  return { count, reload };
 }
 
 function EmailList({
   rows,
   view,
+  onChanged,
 }: {
   rows: EmailRow[];
   view: "sent" | "scheduled" | "drafts";
+  /** STATE-007: called after a row action mutates data, so the parent can
+   *  re-fetch the affected list + count instead of hard-reloading the page. */
+  onChanged: () => void;
 }) {
   if (rows.length === 0) {
     return (
@@ -271,12 +278,12 @@ function EmailList({
           </div>
           {view === "scheduled" && (
             <div className="mt-2 flex gap-2">
-              <ScheduledRowActions id={row.id} />
+              <ScheduledRowActions id={row.id} onChanged={onChanged} />
             </div>
           )}
           {view === "drafts" && (
             <div className="mt-2 flex gap-2">
-              <DraftRowActions id={row.id} />
+              <DraftRowActions id={row.id} onChanged={onChanged} />
             </div>
           )}
         </li>
@@ -285,14 +292,23 @@ function EmailList({
   );
 }
 
-function ScheduledRowActions({ id }: { id: string }) {
+function ScheduledRowActions({
+  id,
+  onChanged,
+}: {
+  id: string;
+  onChanged: () => void;
+}) {
+  // STATE-007: re-fetch the affected lists/counts via the parent callback
+  // instead of `window.location.reload()` (which blew away all client state
+  // and the user's active tab).
   async function sendNow() {
     await fetch(`/api/pm/emails/${id}/send`, { method: "POST" });
-    window.location.reload();
+    onChanged();
   }
   async function cancel() {
     await fetch(`/api/pm/emails/${id}/cancel`, { method: "POST" });
-    window.location.reload();
+    onChanged();
   }
   return (
     <>
@@ -314,11 +330,18 @@ function ScheduledRowActions({ id }: { id: string }) {
   );
 }
 
-function DraftRowActions({ id }: { id: string }) {
+function DraftRowActions({
+  id,
+  onChanged,
+}: {
+  id: string;
+  onChanged: () => void;
+}) {
+  // STATE-007: re-fetch via parent callback instead of a hard page reload.
   async function del() {
     if (!confirm("Delete this draft?")) return;
     await fetch(`/api/pm/emails/${id}`, { method: "DELETE" });
-    window.location.reload();
+    onChanged();
   }
   return (
     <button
@@ -331,6 +354,9 @@ function DraftRowActions({ id }: { id: string }) {
   );
 }
 
+const TAB_VALUES = ["history", "scheduled", "drafts"] as const;
+type TabValue = (typeof TAB_VALUES)[number];
+
 export function CommunicationsTab({
   relatedEntityType,
   relatedEntityId,
@@ -338,6 +364,28 @@ export function CommunicationsTab({
 }: CommunicationsTabProps) {
   const [composeOpen, setComposeOpen] = React.useState(false);
   const [showSystemGenerated, setShowSystemGenerated] = React.useState(false);
+
+  // STATE-006: lift the active sub-tab into the URL (`?tab=`) so a deep link /
+  // refresh / back-forward lands on the same tab. The router replaces (not
+  // pushes) so tab switches don't spam history.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const activeTab: TabValue = (TAB_VALUES as readonly string[]).includes(
+    tabParam ?? "",
+  )
+    ? (tabParam as TabValue)
+    : "history";
+  const setActiveTab = React.useCallback(
+    (next: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("tab", next);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
+
   const sentCount = useCount({
     relatedEntityType,
     relatedEntityId,
@@ -373,6 +421,21 @@ export function CommunicationsTab({
     showSystemGenerated: false,
   });
 
+  // STATE-007: re-fetch the affected list AND its count badge when a row action
+  // (Send now / Cancel / Delete) mutates server data — replaces the old
+  // window.location.reload().
+  const reloadScheduled = React.useCallback(() => {
+    scheduled.reload();
+    scheduledCount.reload();
+    // Sending a scheduled email moves it to History.
+    sent.reload();
+    sentCount.reload();
+  }, [scheduled, scheduledCount, sent, sentCount]);
+  const reloadDrafts = React.useCallback(() => {
+    drafts.reload();
+    draftsCount.reload();
+  }, [drafts, draftsCount]);
+
   return (
     <div className="space-y-4">
       {!hideCompose && (
@@ -382,16 +445,17 @@ export function CommunicationsTab({
           </Button>
         </div>
       )}
-      <Tabs defaultValue="history">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="history">
-            History {sentCount !== null && `(${sentCount})`}
+            History {sentCount.count !== null && `(${sentCount.count})`}
           </TabsTrigger>
           <TabsTrigger value="scheduled">
-            Scheduled {scheduledCount !== null && `(${scheduledCount})`}
+            Scheduled{" "}
+            {scheduledCount.count !== null && `(${scheduledCount.count})`}
           </TabsTrigger>
           <TabsTrigger value="drafts">
-            Drafts {draftsCount !== null && `(${draftsCount})`}
+            Drafts {draftsCount.count !== null && `(${draftsCount.count})`}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="history" className="mt-3 space-y-3">
@@ -406,21 +470,36 @@ export function CommunicationsTab({
           {sent.loading ? (
             <p className="text-sm text-fg-muted">Loading…</p>
           ) : (
-            <EmailList rows={sent.data?.items ?? []} view="sent" />
+            <EmailList
+              rows={sent.data?.items ?? []}
+              view="sent"
+              onChanged={() => {
+                sent.reload();
+                sentCount.reload();
+              }}
+            />
           )}
         </TabsContent>
         <TabsContent value="scheduled" className="mt-3">
           {scheduled.loading ? (
             <p className="text-sm text-fg-muted">Loading…</p>
           ) : (
-            <EmailList rows={scheduled.data?.items ?? []} view="scheduled" />
+            <EmailList
+              rows={scheduled.data?.items ?? []}
+              view="scheduled"
+              onChanged={reloadScheduled}
+            />
           )}
         </TabsContent>
         <TabsContent value="drafts" className="mt-3">
           {drafts.loading ? (
             <p className="text-sm text-fg-muted">Loading…</p>
           ) : (
-            <EmailList rows={drafts.data?.items ?? []} view="drafts" />
+            <EmailList
+              rows={drafts.data?.items ?? []}
+              view="drafts"
+              onChanged={reloadDrafts}
+            />
           )}
         </TabsContent>
       </Tabs>
@@ -433,6 +512,10 @@ export function CommunicationsTab({
           sent.reload();
           scheduled.reload();
           drafts.reload();
+          // STATE-007: keep the count badges in sync after a compose/save too.
+          sentCount.reload();
+          scheduledCount.reload();
+          draftsCount.reload();
         }}
       />
     </div>

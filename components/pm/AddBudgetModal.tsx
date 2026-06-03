@@ -82,19 +82,23 @@ export function AddBudgetModal({
 
   React.useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     fetch("/api/pm/company-accounts").then(async (r) => {
-      if (r.ok) setCompanyAccounts((await r.json()) as CompanyAccountOption[]);
+      if (!r.ok || cancelled) return;
+      setCompanyAccounts((await r.json()) as CompanyAccountOption[]);
     });
     fetch("/api/pm/budgets?includeArchived=1").then(async (r) => {
-      if (r.ok) {
-        const list = (await r.json()) as Array<{
-          id: string;
-          name: string;
-          fiscalYear: number;
-        }>;
-        setExistingBudgets(list);
-      }
+      if (!r.ok || cancelled) return;
+      const list = (await r.json()) as Array<{
+        id: string;
+        name: string;
+        fiscalYear: number;
+      }>;
+      setExistingBudgets(list);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   React.useEffect(() => {
@@ -106,6 +110,10 @@ export function AddBudgetModal({
       setFiscalYearStart("January");
       setDefaultAmounts("Zero");
       setCopySourceBudgetId("");
+      // Drop the fetched option lists so a stale catalog from a previous open
+      // can't flash before the refetch resolves on the next open (ADD-012).
+      setCompanyAccounts([]);
+      setExistingBudgets([]);
     }
   }, [open, thisYear]);
 
@@ -136,9 +144,25 @@ export function AddBudgetModal({
   }, [open, editingId]);
 
   async function save() {
-    // Presence checks for scope, name, and copy-source moved to non-blocking
-    // warnings (BUDGET_MISSING_SCOPE, BUDGET_MISSING_NAME,
-    // BUDGET_MISSING_COPY_SOURCE). The API stamps them on the created row.
+    // Hard requirements on create (ADD-007). A budget with no scope target, or
+    // a "Copy existing budget" default with no source selected, produces an
+    // unusable/empty budget — block before the API call and prompt the user.
+    if (!isEdit) {
+      if (!scopeId) {
+        toast({
+          title:
+            scopeType === "Property"
+              ? "Pick a property for this budget"
+              : "Pick a company account for this budget",
+          variant: "error",
+        });
+        return;
+      }
+      if (defaultAmounts === "Copy existing budget" && !copySourceBudgetId) {
+        toast({ title: "Pick a source budget to copy from", variant: "error" });
+        return;
+      }
+    }
     setSaving(true);
     const url = isEdit ? `/api/pm/budgets/${editingId}` : "/api/pm/budgets";
     const method = isEdit ? "PATCH" : "POST";

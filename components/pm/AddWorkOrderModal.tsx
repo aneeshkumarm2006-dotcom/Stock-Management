@@ -220,13 +220,24 @@ export function AddWorkOrderModal({
         },
       );
       if (!sched.ok) {
+        // The work order WAS created, but the user explicitly asked to also
+        // schedule an event and that failed. Keep the modal open so they can
+        // retry scheduling rather than silently dropping their intent — don't
+        // reset() or onClose() (ADD-010). Refresh the parent so the new WO
+        // shows up, but leave this surface in place.
+        const schedErr = (await sched.json().catch(() => ({}))) as {
+          error?: string;
+        };
         toast({
-          title: "Work order saved, but scheduling failed",
+          title: "Work order saved, but scheduling the event failed",
+          description: schedErr.error,
           variant: "error",
         });
-      } else {
-        toast({ title: "Work order + calendar event saved", variant: "success" });
+        setSaving(false);
+        await onSaved();
+        return;
       }
+      toast({ title: "Work order + calendar event saved", variant: "success" });
     }
     setSaving(false);
     reset();

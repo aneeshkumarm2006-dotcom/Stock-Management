@@ -72,10 +72,25 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "spm-ui",
+      version: 1,
       storage: createJSONStorage(() => localStorage),
+      // STATE-001: skip the automatic on-create rehydration so the server-
+      // rendered markup and the client's first paint are identical (no React
+      // hydration mismatch on `sidebarCollapsed`). The persisted value is
+      // applied post-mount by StoreHydrator via `useUiStore.persist.rehydrate()`.
+      skipHydration: true,
       // Only persist the sidebar collapse preference. Everything else is
       // transient session state.
       partialize: (s) => ({ sidebarCollapsed: s.sidebarCollapsed }),
+      // STATE-003: coerce any missing/legacy field to a safe default so an old
+      // persisted blob (e.g. pre-`sidebarCollapsed`) never yields `undefined`.
+      migrate: (persisted) => {
+        const p = (persisted ?? {}) as Partial<{ sidebarCollapsed: boolean }>;
+        return {
+          sidebarCollapsed:
+            typeof p.sidebarCollapsed === "boolean" ? p.sidebarCollapsed : false,
+        };
+      },
     },
   ),
 );

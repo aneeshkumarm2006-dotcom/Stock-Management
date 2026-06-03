@@ -79,6 +79,23 @@ export function BudgetGridEditor({
   const [saving, setSaving] = React.useState(false);
   const flushTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // EDIT-005 concurrency control:
+  //  - `dirty` marks local edits not yet confirmed by the server. While dirty
+  //    we refuse to clobber `lines` from incoming props (a refetch landing
+  //    mid-edit must not roll the user back).
+  //  - `inFlight` allows only one PATCH at a time; if more edits arrive while a
+  //    flush is running we set `pending` and re-flush when it returns.
+  //  - `abortRef` cancels the in-flight refetch+PATCH on unmount.
+  //  - `linesRef` always holds the latest local lines for the async flush.
+  const dirtyRef = React.useRef(false);
+  const inFlightRef = React.useRef(false);
+  const pendingRef = React.useRef(false);
+  const abortRef = React.useRef<AbortController | null>(null);
+  const linesRef = React.useRef<LineDraft[]>(initialLines);
+  React.useEffect(() => {
+    linesRef.current = lines;
+  }, [lines]);
+
   // Filter accounts to the category type so the picker only shows
   // sensible options.
   const candidateAccounts = React.useMemo(
@@ -95,10 +112,23 @@ export function BudgetGridEditor({
     [accounts],
   );
 
-  // Reset whenever the underlying budget reloads from server.
+  // Adopt server-provided lines only when we have no unsaved local edits.
+  // Adopting while dirty would discard the user's in-progress changes when a
+  // sibling tab's onChanged() triggers a parent refetch (EDIT-005).
   React.useEffect(() => {
+    if (dirtyRef.current) return;
     setLines(initialLines);
   }, [initialLines]);
+
+  // Clear any pending debounced flush and abort an in-flight one when the
+  // category changes or the component unmounts (EDIT-004). Without this a
+  // stale timer/PATCH from the previous category could fire against new state.
+  React.useEffect(() => {
+    return () => {
+      if (flushTimer.current) clearTimeout(flushTimer.current);
+      abortRef.current?.abort();
+    };
+  }, [category]);
 
   function setCell(lineIdx: number, monthIdx: number, value: number) {
     setLines((prev) => {
@@ -145,6 +175,8 @@ export function BudgetGridEditor({
   }
 
   function scheduleFlush(delay = 600) {
+    // Any scheduled flush means there are unsaved local edits.
+    dirtyRef.current = true;
     if (flushTimer.current) clearTimeout(flushTimer.current);
     flushTimer.current = setTimeout(() => {
       void flush();
@@ -152,33 +184,97 @@ export function BudgetGridEditor({
   }
 
   async function flush() {
-    setSaving(true);
-    // Merge with the OTHER category's lines so we don't drop them.
-    const otherCategory: BudgetLineCategory =
-      category === "Income" ? "Expense" : "Income";
-    const otherLines = initialLines.filter((l) => l.category === otherCategory);
-    const payload = {
-      lines: [...lines, ...otherLines].map((l) => ({
-        accountId: l.accountId,
-        category: l.category,
-        monthlyAmounts: l.monthlyAmounts,
-      })),
-    };
-    const res = await fetch(`/api/pm/budgets/${budgetId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    setSaving(false);
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      toast({
-        title: body.error ?? "Failed to save budget",
-        variant: "error",
-      });
+    // Only one flush in flight at a time; coalesce concurrent requests into a
+    // single follow-up so a double-edit can't race two PATCHes (EDIT-005).
+    if (inFlightRef.current) {
+      pendingRef.current = true;
       return;
     }
-    onChanged();
+    inFlightRef.current = true;
+    setSaving(true);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const otherCategory: BudgetLineCategory =
+      category === "Income" ? "Expense" : "Income";
+
+    try {
+      // EDIT-004: the PATCH replaces the WHOLE lines[] array, but this editor
+      // only owns one category. The previous code merged `initialLines` — which
+      // the parent pre-filters to THIS category — so the other category was
+      // always empty and got wiped. Refetch the live budget to capture the
+      // current other-category lines (possibly edited in the sibling tab), then
+      // merge our local lines on top.
+      let otherLines: Array<{
+        accountId: string;
+        category: BudgetLineCategory;
+        monthlyAmounts: number[];
+      }> = [];
+      const liveRes = await fetch(`/api/pm/budgets/${budgetId}`, {
+        signal: controller.signal,
+      });
+      if (liveRes.ok) {
+        const live = (await liveRes.json()) as {
+          lines: Array<{
+            accountId: string;
+            category: BudgetLineCategory;
+            monthlyAmounts: number[];
+          }>;
+        };
+        otherLines = live.lines
+          .filter((l) => l.category === otherCategory)
+          .map((l) => ({
+            accountId: l.accountId,
+            category: l.category,
+            // Live other-category amounts come back in cents; convert to the
+            // dollar shape PATCH expects (it re-applies toCents server-side).
+            monthlyAmounts: l.monthlyAmounts.map((c) => c / 100),
+          }));
+      }
+
+      const localLines = linesRef.current;
+      const payload = {
+        lines: [
+          ...localLines.map((l) => ({
+            accountId: l.accountId,
+            category: l.category,
+            monthlyAmounts: l.monthlyAmounts,
+          })),
+          ...otherLines,
+        ],
+      };
+      const res = await fetch(`/api/pm/budgets/${budgetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        toast({
+          title: body.error ?? "Failed to save budget",
+          variant: "error",
+        });
+        return;
+      }
+      // Saved cleanly — local state now matches the server, so allow prop sync
+      // to resume. Keep `dirty` if newer edits queued up while we were saving
+      // (pendingRef), so the upcoming refetch can't clobber them.
+      if (!pendingRef.current) dirtyRef.current = false;
+      onChanged();
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return;
+      toast({ title: "Failed to save budget", variant: "error" });
+    } finally {
+      inFlightRef.current = false;
+      abortRef.current = null;
+      setSaving(false);
+      // If edits arrived while this flush ran, run exactly one more pass.
+      if (pendingRef.current) {
+        pendingRef.current = false;
+        void flush();
+      }
+    }
   }
 
   return (

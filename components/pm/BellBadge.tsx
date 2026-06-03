@@ -29,21 +29,41 @@ export function BellBadge() {
     items: [],
   });
 
-  const refresh = React.useCallback(async () => {
-    try {
-      const r = await fetch("/api/pm/notifications", { cache: "no-store" });
-      if (!r.ok) return;
-      setFeed((await r.json()) as FeedPayload);
-    } catch {
-      /* swallow */
-    }
-  }, []);
+  const refresh = React.useCallback(
+    // STATE-013: accept the poll's AbortSignal so an in-flight notifications
+    // request is cancelled on unmount (or before the next 60s tick).
+    async (signal?: AbortSignal) => {
+      try {
+        const r = await fetch("/api/pm/notifications", {
+          cache: "no-store",
+          signal,
+        });
+        if (!r.ok) return;
+        setFeed((await r.json()) as FeedPayload);
+      } catch {
+        /* swallow (includes AbortError) */
+      }
+    },
+    [],
+  );
 
   React.useEffect(() => {
     if (status !== "authenticated") return;
-    refresh();
-    const id = setInterval(refresh, 60_000);
-    return () => clearInterval(id);
+    // STATE-013: a single controller + cancelled flag covers the immediate
+    // fetch and every interval tick; abort + clear on unmount.
+    let cancelled = false;
+    const controller = new AbortController();
+    const tick = () => {
+      if (cancelled) return;
+      void refresh(controller.signal);
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      controller.abort();
+    };
   }, [status, refresh]);
 
   if (status !== "authenticated") return null;

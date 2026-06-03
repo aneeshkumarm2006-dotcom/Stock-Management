@@ -82,6 +82,13 @@ export function AddTaskModal({
   const [description, setDescription] = React.useState("");
   const [projectId, setProjectId] = React.useState(presetProjectId ?? "");
   const [saving, setSaving] = React.useState(false);
+  // Full project-link set for the task being edited. We only render a single
+  // project picker, but the task may belong to several projects; keep the
+  // rest so a PATCH doesn't drop them (ADD-013).
+  const [projectIds, setProjectIds] = React.useState<string[]>([]);
+  // Track open transitions so the preset effect only fires when the modal
+  // actually opens, not on every parent re-render (ADD-005).
+  const prevOpen = React.useRef(false);
 
   React.useEffect(() => {
     if (!open) return;
@@ -102,10 +109,16 @@ export function AddTaskModal({
     });
   }, [open]);
 
+  // Apply presets only on the open transition (false → true). Running this on
+  // every render would clobber the user's in-progress edits whenever the
+  // parent re-renders with the same stable preset props (ADD-005).
   React.useEffect(() => {
+    const justOpened = open && !prevOpen.current;
+    prevOpen.current = open;
+    if (!justOpened) return;
     if (presetPropertyId) setPropertyId(presetPropertyId);
     if (presetProjectId) setProjectId(presetProjectId);
-  }, [presetPropertyId, presetProjectId]);
+  }, [open, presetPropertyId, presetProjectId]);
 
   // Edit mode: load the existing task on open. Status, work orders, project
   // membership, and notifications are managed elsewhere — this form covers
@@ -136,6 +149,7 @@ export function AddTaskModal({
       setSourceOwnerId(t.sourceOwnerId ?? "");
       setDescription(t.description ?? "");
       setProjectId(t.projectIds?.[0] ?? "");
+      setProjectIds(t.projectIds ?? []);
     });
     return () => {
       cancelled = true;
@@ -152,6 +166,7 @@ export function AddTaskModal({
     setSourceOwnerId("");
     setDescription("");
     setProjectId(presetProjectId ?? "");
+    setProjectIds([]);
   }
 
   async function save() {
@@ -175,7 +190,13 @@ export function AddTaskModal({
       payload.sourceOwnerId = sourceOwnerId || null;
     }
     if (isEdit) {
-      payload.projectIds = projectId ? [projectId] : [];
+      // The picker only edits the first project link, but the task may belong
+      // to several projects. Replace just the first slot and round-trip the
+      // rest so other links aren't dropped (ADD-013).
+      const others = projectIds.filter((pid) => pid !== (projectIds[0] ?? ""));
+      payload.projectIds = projectId
+        ? [projectId, ...others.filter((pid) => pid !== projectId)]
+        : others;
       payload.dueDate = dueDate ? new Date(dueDate).toISOString() : null;
       payload.propertyId = propertyId || null;
     } else if (projectId) {

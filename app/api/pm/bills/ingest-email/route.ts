@@ -5,18 +5,19 @@
 // The MIME-parsing step is out of scope here; an upstream worker (Phase 6
 // or external) does that. This route trusts the parsed JSON payload.
 //
-// Auth model: the route requires a PM context like any other API route.
-// Production deployment would put this behind a webhook-signature guard,
-// but Phase 4 ships the contract first.
+// Auth & tenancy (DEL-004): this is a machine-to-machine webhook, NOT a
+// user-session route. We authenticate with a Bearer `INGEST_SECRET` (the same
+// secret the emails/ingest webhook uses) and resolve the owning organization
+// from the inbound recipient (`to`) address — matched against
+// `Organization.senderMailbox.defaultFrom` / any `perPropertyOverrides` value
+// — rather than from a session. When `INGEST_SECRET` is unset we fail closed
+// in production (403) and only fall through in non-production for local curl.
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { z } from 'zod';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Bill } from '@/lib/db/models/pm/Bill';
-import {
-  getPmContext,
-  unauthorizedResponse,
-} from '@/lib/auth/getCurrentUser';
+import { Organization } from '@/lib/db/models/pm/Organization';
 import { logActivity } from '@/lib/pm/activity';
 
 export const runtime = 'nodejs';
@@ -39,9 +40,63 @@ const ingestSchema = z.object({
   refNo: z.string().max(60).optional(),
 });
 
+/** Bearer INGEST_SECRET. Fails closed in production when the secret is unset;
+ *  dev/test fall through so local curl keeps working. */
+function isAuthorized(request: Request): boolean {
+  const secret = process.env.INGEST_SECRET;
+  if (!secret) {
+    // Fail closed in production — never accept unauthenticated ingest there.
+    return process.env.NODE_ENV !== 'production';
+  }
+  const header = request.headers.get('authorization');
+  return header === `Bearer ${secret}`;
+}
+
+interface OrgMailboxRow {
+  _id: Types.ObjectId;
+  ownerUserId: Types.ObjectId;
+  senderMailbox?: {
+    defaultFrom?: string;
+    perPropertyOverrides?: Map<string, string> | Record<string, string>;
+  };
+}
+
+/** Find the org whose mailbox configuration includes `address`. Mirrors the
+ *  emails/ingest resolver: default first, then a per-property override scan. */
+async function findOrgByMailbox(
+  address: string,
+): Promise<OrgMailboxRow | null> {
+  const lower = address.toLowerCase();
+  const byDefault = await Organization.findOne({
+    'senderMailbox.defaultFrom': lower,
+  })
+    .select('senderMailbox ownerUserId')
+    .lean<OrgMailboxRow | null>();
+  if (byDefault) return byDefault;
+
+  const allOrgs = await Organization.find({})
+    .select('senderMailbox ownerUserId')
+    .lean<OrgMailboxRow[]>();
+  for (const org of allOrgs) {
+    const overrides = org.senderMailbox?.perPropertyOverrides;
+    if (!overrides) continue;
+    if (overrides instanceof Map) {
+      for (const value of Array.from(overrides.values())) {
+        if (value.toLowerCase() === lower) return org;
+      }
+    } else {
+      for (const value of Object.values(overrides)) {
+        if (value.toLowerCase() === lower) return org;
+      }
+    }
+  }
+  return null;
+}
+
 export async function POST(request: Request) {
-  const ctx = await getPmContext();
-  if (!ctx) return unauthorizedResponse();
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   let body: unknown;
   try {
@@ -59,7 +114,17 @@ export async function POST(request: Request) {
   }
 
   await connectToDatabase();
-  const orgObjectId = new Types.ObjectId(ctx.orgId);
+
+  // Resolve the owning org from the recipient address — never from a session.
+  const owningOrg = await findOrgByMailbox(parsed.data.to);
+  if (!owningOrg) {
+    return NextResponse.json(
+      { error: 'Recipient mailbox does not match any organization config' },
+      { status: 404 },
+    );
+  }
+  const orgObjectId = owningOrg._id;
+  const actorUserId = owningOrg.ownerUserId;
 
   // Default to a 30-day net term — PMs can edit before posting.
   const due = new Date();
@@ -94,15 +159,15 @@ export async function POST(request: Request) {
       ? new Types.ObjectId(parsed.data.attachmentFileId)
       : null,
     createdBy: 'Email ingest',
-    createdByUserId: new Types.ObjectId(ctx.userId),
+    createdByUserId: actorUserId,
   });
 
   await logActivity({
-    orgId: ctx.orgId,
+    orgId: String(orgObjectId),
     parentType: 'Bill',
     parentId: bill._id,
     eventType: 'Bill drafted from email ingest',
-    actorUserId: ctx.userId,
+    actorUserId: String(actorUserId),
     payload: { from: parsed.data.from, to: parsed.data.to, subject: parsed.data.subject },
   });
 

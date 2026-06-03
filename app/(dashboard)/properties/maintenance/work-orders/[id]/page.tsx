@@ -61,6 +61,7 @@ export default function WorkOrderDetailPage() {
   const { toast } = useToast();
   const [doc, setDoc] = React.useState<WoDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -77,18 +78,23 @@ export default function WorkOrderDetailPage() {
   if (!doc) return notFound();
 
   async function updateStatus(status: string) {
-    if (!doc) return;
-    const res = await fetch(`/api/pm/work-orders/${doc.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    if (!res.ok) {
-      toast({ title: "Status update failed", variant: "error" });
-      return;
+    if (!doc || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/pm/work-orders/${doc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        toast({ title: "Status update failed", variant: "error" });
+        return;
+      }
+      toast({ title: `Status → ${status}`, variant: "success" });
+      await load();
+    } finally {
+      setBusy(false);
     }
-    toast({ title: `Status → ${status}`, variant: "success" });
-    await load();
   }
 
   return (
@@ -111,12 +117,20 @@ export default function WorkOrderDetailPage() {
             </Button>
           </Link>
           {doc.status === "New" && (
-            <Button size="sm" onClick={() => updateStatus("In progress")}>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => updateStatus("In progress")}
+            >
               Start work
             </Button>
           )}
           {doc.status === "In progress" && (
-            <Button size="sm" onClick={() => updateStatus("Completed")}>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => updateStatus("Completed")}
+            >
               Mark complete
             </Button>
           )}

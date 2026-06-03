@@ -31,13 +31,18 @@ export function ChecklistItemToggle({
   const [busy, setBusy] = React.useState(false);
 
   async function toggle() {
+    if (busy) return;
     setBusy(true);
+    // Send the absolute target state (`nextChecked`) rather than a relative
+    // flip. If the same toggle fires twice, both requests resolve to the same
+    // desired value instead of cancelling each other out (EDIT-014).
+    const nextChecked = !item.checked;
     const res = await fetch(
       `/api/pm/applicants/${applicantId}/checklist/${item.id}`,
       {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ checked: !item.checked }),
+        body: JSON.stringify({ nextChecked, checked: nextChecked }),
       },
     );
     setBusy(false);
@@ -48,6 +53,9 @@ export function ChecklistItemToggle({
         description: err.error ?? "Try again.",
         variant: "error",
       });
+      // Reconcile the row from the server so the checkbox doesn't show a
+      // state the backend never accepted (EDIT-014).
+      await onChanged();
       return;
     }
     await onChanged();

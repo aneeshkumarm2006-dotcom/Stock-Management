@@ -12,7 +12,9 @@ export interface LogActivityInput {
   parentType: ParentType;
   parentId: string | Types.ObjectId;
   eventType: string;
-  actorUserId: string | Types.ObjectId;
+  /** Acting user. Pass `null` for system-originated events that have no human
+   *  actor (DEL-006: inbound email ingest). */
+  actorUserId: string | Types.ObjectId | null;
   payload?: Record<string, unknown>;
 }
 
@@ -28,7 +30,7 @@ export async function logActivity(input: LogActivityInput): Promise<void> {
       parentType: input.parentType,
       parentId: toObjectId(input.parentId),
       eventType: input.eventType,
-      actorUserId: toObjectId(input.actorUserId),
+      actorUserId: input.actorUserId == null ? null : toObjectId(input.actorUserId),
       payload: input.payload,
     });
   } catch (err) {

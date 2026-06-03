@@ -39,6 +39,7 @@ async function resolveBankCashAccountId(
   const fallback = await ChartOfAccount.findOne({
     organizationId: orgObjectId,
     defaultFor: 'Operating Cash',
+    active: true,
   }).lean<{ _id: Types.ObjectId } | null>();
   return fallback ? fallback._id : null;
 }
@@ -132,7 +133,11 @@ export async function postBillPaymentToLedger(
     },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]);
-  const totalPaid = (paidAgg[0]?.total ?? 0) + input.amount; // include the JE we're about to record
+  // The current BillPayment row is created by the caller BEFORE this function
+  // runs (see app/api/pm/bill-payments/route.ts: BillPayment.create → then
+  // postBillPaymentToLedger), so it is ALREADY part of this aggregate. Do not
+  // add input.amount again or the current payment is double-counted.
+  const totalPaid = paidAgg[0]?.total ?? 0;
 
   let newStatus = bill.status;
   if (totalPaid >= bill.amount) {

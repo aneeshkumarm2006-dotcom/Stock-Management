@@ -66,6 +66,21 @@ export async function PATCH(
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  // DEL-018 — reconciliation-issued locks are audit-protected. They can only
+  // be removed by voiding the underlying reconciliation (which deactivates the
+  // policy through the reconciliation void path). Refuse direct PATCH so a lock
+  // can't be silently re-enabled/disabled or its window edited out of band.
+  if (doc.createdBy === 'Reconciliation commit') {
+    return NextResponse.json(
+      {
+        error:
+          'This lock was issued by a reconciliation commit and cannot be edited directly. Void the reconciliation to release it.',
+      },
+      { status: 409 },
+    );
+  }
+
+  const prevActive = doc.active;
   if (parsed.data.scope !== undefined) doc.scope = parsed.data.scope;
   if (parsed.data.propertyId !== undefined) {
     doc.propertyId = parsed.data.propertyId
@@ -94,6 +109,7 @@ export async function PATCH(
     parentId: doc._id,
     eventType: 'Locked period policy updated',
     actorUserId: ctx.userId,
+    payload: { activeBefore: prevActive, activeAfter: doc.active },
   });
 
   return NextResponse.json({ ok: true });
@@ -111,6 +127,20 @@ export async function DELETE(
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  // DEL-018 — reconciliation-issued locks are audit-protected: archiving one
+  // here would silently unlock a reconciled period. Force the caller through
+  // the reconciliation void path instead.
+  if (doc.createdBy === 'Reconciliation commit') {
+    return NextResponse.json(
+      {
+        error:
+          'This lock was issued by a reconciliation commit and cannot be archived directly. Void the reconciliation to release it.',
+      },
+      { status: 409 },
+    );
+  }
+
+  const prevActive = doc.active;
   doc.active = false;
   await doc.save();
 
@@ -120,6 +150,7 @@ export async function DELETE(
     parentId: doc._id,
     eventType: 'Locked period policy archived',
     actorUserId: ctx.userId,
+    payload: { activeBefore: prevActive, activeAfter: doc.active },
   });
 
   return NextResponse.json({ ok: true });

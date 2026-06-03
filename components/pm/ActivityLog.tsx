@@ -2,7 +2,7 @@
 
 // Polymorphic Event-history renderer (PDR_MASTER §3.38). Drop into the
 // `Event history` tab on every PM detail page.
-import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import type { ParentType } from "@/types/pm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,25 +22,32 @@ interface Props {
   parentId: string;
 }
 
-export function ActivityLog({ parentType, parentId }: Props) {
-  const [items, setItems] = React.useState<ActivityEntry[]>([]);
-  const [loading, setLoading] = React.useState(true);
+// STATE-009: shared key shape `['pm','activity',parentType,parentId]` so a
+// mutation elsewhere (e.g. adding a note, sending an email) can invalidate this
+// log with `queryClient.invalidateQueries({ queryKey: ['pm','activity'] })`
+// instead of the previous raw fetch that TanStack Query could never see.
+export function activityLogQueryKey(parentType: ParentType, parentId: string) {
+  return ["pm", "activity", parentType, parentId] as const;
+}
 
-  React.useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    fetch(`/api/pm/activity?parentType=${parentType}&parentId=${parentId}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => {
-        if (!cancelled) setItems(d as ActivityEntry[]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [parentType, parentId]);
+async function fetchActivity(
+  parentType: ParentType,
+  parentId: string,
+  signal?: AbortSignal,
+): Promise<ActivityEntry[]> {
+  const res = await fetch(
+    `/api/pm/activity?parentType=${parentType}&parentId=${parentId}`,
+    { signal },
+  );
+  if (!res.ok) return [];
+  return (await res.json()) as ActivityEntry[];
+}
+
+export function ActivityLog({ parentType, parentId }: Props) {
+  const { data: items = [], isPending: loading } = useQuery({
+    queryKey: activityLogQueryKey(parentType, parentId),
+    queryFn: ({ signal }) => fetchActivity(parentType, parentId, signal),
+  });
 
   return (
     <Card>

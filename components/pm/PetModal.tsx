@@ -126,7 +126,7 @@ export function PetModal({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader title={isEdit ? "Edit pet" : "Add pet"} />
         <div className="grid grid-cols-2 gap-3">

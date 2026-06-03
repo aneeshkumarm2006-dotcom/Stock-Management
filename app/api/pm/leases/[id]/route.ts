@@ -346,13 +346,59 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } },
 ) {
   const ctx = await getPmContext();
   if (!ctx) return unauthorizedResponse();
+
+  // DEL-010 — DELETE had no authorization or safety guard. Gate behind
+  // Admin/PropertyManager, then refuse to cancel an Active lease that still
+  // holds money or has charges that haven't been posted yet, unless the caller
+  // explicitly confirms (the `confirm` flag in the body).
+  const canCancel =
+    ctx.roles.includes('Admin') || ctx.roles.includes('PropertyManager');
+  if (!canCancel) {
+    return NextResponse.json(
+      { error: 'Only Admin or PropertyManager can cancel leases' },
+      { status: 403 },
+    );
+  }
+
+  let confirm = false;
+  try {
+    const body = (await request.json()) as { confirm?: unknown } | null;
+    confirm = body?.confirm === true;
+  } catch {
+    // No/invalid body — treat as unconfirmed.
+  }
+
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  if (doc.status === 'Active' && !confirm) {
+    const depositHeld = currentDepositHeld(
+      doc.securityDeposit ?? { received: 0, withheld: 0, refunded: 0 },
+    );
+    // "Unposted recurring charges" = a recurring charge whose nextDate is due
+    // now or in the past (it would still fire on the next posting run).
+    const now = Date.now();
+    const hasUnpostedRecurring = (doc.recurringCharges ?? []).some(
+      (c) => c.nextDate && c.nextDate.getTime() <= now,
+    );
+    if (depositHeld > 0 || hasUnpostedRecurring) {
+      return NextResponse.json(
+        {
+          error:
+            'Active lease has a held security deposit or unposted recurring charges. Resolve them or resend with { "confirm": true } to cancel anyway.',
+          securityDepositHeld: depositHeld,
+          hasUnpostedRecurring,
+        },
+        { status: 409 },
+      );
+    }
+  }
+
   doc.status = 'Cancelled';
   await doc.save();
   await logActivity({
@@ -361,6 +407,7 @@ export async function DELETE(
     parentId: doc._id,
     eventType: 'Lease cancelled',
     actorUserId: ctx.userId,
+    payload: confirm ? { confirmed: true } : undefined,
   });
   return NextResponse.json({ ok: true });
 }

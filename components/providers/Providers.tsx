@@ -10,6 +10,8 @@ import {
   QueryClientProvider,
 } from "@tanstack/react-query";
 import { ToastProvider } from "@/components/ui/toast";
+import { ErrorBoundary } from "@/components/providers/ErrorBoundary";
+import { StoreHydrator } from "@/components/providers/StoreHydrator";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -28,7 +30,15 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
-        <ToastProvider>{children}</ToastProvider>
+        {/* STATE-001/002: applies the persisted (skipHydration) Zustand stores
+            after the first paint commits, so server and client markup match. */}
+        <StoreHydrator />
+        <ToastProvider>
+          {/* STATE-012: section-level boundary so a thrown render error in one
+              PM panel shows a recoverable fallback instead of blanking the
+              whole shell (TopBar + Sidebar stay mounted). */}
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </ToastProvider>
       </QueryClientProvider>
     </SessionProvider>
   );

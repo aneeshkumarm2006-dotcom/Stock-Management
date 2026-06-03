@@ -58,7 +58,7 @@ export function CancelDraftLeaseDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader title="Cancel draft lease?" />
         <p className="text-sm text-muted-foreground">
@@ -75,11 +75,14 @@ export function CancelDraftLeaseDialog({
           />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Keep draft
-          </Button>
-          <Button onClick={save} disabled={saving}>
+          {/* DEL-015: the destructive action ("Cancel draft") is not the
+              prominent default. "Keep draft" holds the primary slot; cancelling
+              uses a destructive variant. */}
+          <Button variant="destructive" onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Cancel draft"}
+          </Button>
+          <Button onClick={onClose} disabled={saving}>
+            Keep draft
           </Button>
         </DialogFooter>
       </DialogContent>

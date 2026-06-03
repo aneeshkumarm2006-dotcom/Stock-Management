@@ -16,6 +16,7 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { parseCurrencyToDollars } from "@/lib/pm/currency";
 import {
   RECURRING_DURATIONS,
   RECURRING_FREQUENCIES,
@@ -47,7 +48,9 @@ interface BankOption {
 interface AmountRow {
   accountId: string;
   description: string;
-  amount: number;
+  // Raw text input (dollars). Parsed/validated on submit via
+  // parseCurrencyToDollars so "1,234.56" / "$1234.56" survive entry.
+  amount: string;
 }
 
 interface EditRecurringCheckModalProps {
@@ -88,7 +91,7 @@ export function EditRecurringCheckModal({
   const [queueForPrinting, setQueueForPrinting] = React.useState(false);
   const [active, setActive] = React.useState(true);
   const [amounts, setAmounts] = React.useState<AmountRow[]>([
-    { accountId: "", description: "", amount: 0 },
+    { accountId: "", description: "", amount: "" },
   ]);
   const [saving, setSaving] = React.useState(false);
 
@@ -146,14 +149,15 @@ export function EditRecurringCheckModal({
         d.amounts.map((a) => ({
           accountId: a.accountId,
           description: a.description,
-          amount: a.amount / 100,
+          // server returns cents; show dollars as editable text
+          amount: String(a.amount / 100),
         })),
       );
     });
   }, [open, mode, recurringId]);
 
   function addRow() {
-    setAmounts([...amounts, { accountId: "", description: "", amount: 0 }]);
+    setAmounts([...amounts, { accountId: "", description: "", amount: "" }]);
   }
   function removeRow(idx: number) {
     setAmounts(amounts.filter((_, i) => i !== idx));
@@ -203,9 +207,34 @@ export function EditRecurringCheckModal({
       toast({ title: "Payee is required for Check / Bill", variant: "error" });
       return;
     }
-    if (amounts.filter((a) => a.accountId).length === 0) {
+    const accountRows = amounts.filter((a) => a.accountId);
+    if (accountRows.length === 0) {
       toast({ title: "Add at least one line with an account", variant: "error" });
       return;
+    }
+    // Parse each currency input; reject non-numeric rather than coercing to NaN.
+    const parsedAmounts: Array<{
+      scopeType: string;
+      accountId: string;
+      description: string | undefined;
+      amount: number;
+    }> = [];
+    for (let i = 0; i < accountRows.length; i++) {
+      const a = accountRows[i]!;
+      const dollars = parseCurrencyToDollars(a.amount);
+      if (dollars === null) {
+        toast({
+          title: `Line ${i + 1}: enter a valid amount`,
+          variant: "error",
+        });
+        return;
+      }
+      parsedAmounts.push({
+        scopeType: "Company",
+        accountId: a.accountId,
+        description: a.description.trim() || undefined,
+        amount: dollars, // dollars; server toCents() converts
+      });
     }
     setSaving(true);
     const payload: Record<string, unknown> = {
@@ -222,14 +251,7 @@ export function EditRecurringCheckModal({
       duration,
       occurrenceCount:
         duration === "End after N" ? occurrenceCount : null,
-      amounts: amounts
-        .filter((a) => a.accountId)
-        .map((a) => ({
-          scopeType: "Company",
-          accountId: a.accountId,
-          description: a.description.trim() || undefined,
-          amount: Number(a.amount) || 0,
-        })),
+      amounts: parsedAmounts,
       queueForPrinting,
       active,
     };
@@ -473,11 +495,12 @@ export function EditRecurringCheckModal({
                     </td>
                     <td className="w-28">
                       <Input
-                        type="number"
-                        step="0.01"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.00"
                         value={a.amount}
                         onChange={(e) =>
-                          updateRow(i, "amount", Number(e.target.value))
+                          updateRow(i, "amount", e.target.value)
                         }
                       />
                     </td>

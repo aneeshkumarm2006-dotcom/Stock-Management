@@ -126,9 +126,29 @@ export async function DELETE(
     );
   }
 
-  // Lock-check the deposit date.
+  // DEL-017 — derive the property scope from the linked JE so the lock check
+  // matches Per-property policies, not just Global/Per-bank-account ones. A
+  // Property-scoped deposit reversal must be blocked by a lock on its own
+  // property. Load the JE once up front and reuse it for the reversal below.
+  const linkedJe = doc.journalEntryId
+    ? await JournalEntry.findOne({
+        _id: doc.journalEntryId,
+        organizationId: new Types.ObjectId(ctx.orgId),
+      })
+    : null;
+  const scopePropertyId =
+    linkedJe && linkedJe.scopeType === 'Property' && linkedJe.scopeId
+      ? String(linkedJe.scopeId)
+      : null;
+
+  // Lock-check the deposit date with the derived property scope.
   try {
-    await assertWriteAllowed({ orgId: ctx.orgId, txnDate: doc.date, ctx });
+    await assertWriteAllowed({
+      orgId: ctx.orgId,
+      txnDate: doc.date,
+      scopePropertyId,
+      ctx,
+    });
   } catch (err) {
     if (err instanceof LockedPeriodError) {
       return NextResponse.json(
@@ -141,11 +161,8 @@ export async function DELETE(
 
   // Void the linked JE by hand (mirror /void route logic so reversal posts
   // without re-running lock checks).
-  if (doc.journalEntryId) {
-    const je = await JournalEntry.findOne({
-      _id: doc.journalEntryId,
-      organizationId: new Types.ObjectId(ctx.orgId),
-    });
+  if (linkedJe) {
+    const je = linkedJe;
     if (je && je.status === 'Posted') {
       const reversingLines = je.lines.map((line) => ({
         accountId: line.accountId,

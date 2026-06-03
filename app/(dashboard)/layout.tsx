@@ -8,6 +8,7 @@ import { DashboardShell } from "@/components/layout/DashboardShell";
 import { FloatingActionCluster } from "@/components/layout/FloatingActionCluster";
 import { SettingsHydrator } from "@/components/settings/SettingsHydrator";
 import { NetworkStatus } from "@/components/providers/NetworkStatus";
+import { BreadcrumbOverrideProvider } from "@/components/layout/BreadcrumbOverride";
 
 export default function DashboardLayout({
   children,
@@ -19,12 +20,18 @@ export default function DashboardLayout({
       <SettingsHydrator />
       <NetworkStatus />
       <Sidebar />
-      <DashboardShell>
-        <TopBar />
-        <main className="flex-1 px-4 pb-24 pt-[22px] md:px-[28px] md:pb-[28px]">
-          {children}
-        </main>
-      </DashboardShell>
+      {/* STATE-015: shared breadcrumb-override store. Wraps both the TopBar
+          (reader) and the page content (where a detail page sets the leaf
+          label), so a record-detail route can show the resolved name instead
+          of the literal "Detail" crumb. */}
+      <BreadcrumbOverrideProvider>
+        <DashboardShell>
+          <TopBar />
+          <main className="flex-1 px-4 pb-24 pt-[22px] md:px-[28px] md:pb-[28px]">
+            {children}
+          </main>
+        </DashboardShell>
+      </BreadcrumbOverrideProvider>
       <MobileTabBar />
       <FloatingActionCluster />
     </div>

@@ -166,7 +166,28 @@ export function JournalEntryModal({
       }
       const d = Number(l.debit || 0);
       const c = Number(l.credit || 0);
-      if ((d > 0) === (c > 0)) {
+      if (!Number.isFinite(d) || !Number.isFinite(c)) {
+        toast({
+          title: `Line ${i + 1}: amounts must be valid numbers`,
+          variant: "error",
+        });
+        return;
+      }
+      if (d < 0 || c < 0) {
+        toast({
+          title: `Line ${i + 1}: amounts cannot be negative`,
+          variant: "error",
+        });
+        return;
+      }
+      if (d + c <= 0) {
+        toast({
+          title: `Line ${i + 1}: enter a debit or a credit`,
+          variant: "error",
+        });
+        return;
+      }
+      if (d > 0 && c > 0) {
         toast({
           title: `Line ${i + 1}: enter either a debit OR a credit`,
           variant: "error",
@@ -193,8 +214,8 @@ export function JournalEntryModal({
         scopeType: l.scopeType,
         scopeId: l.scopeType === "Property" ? l.scopeId : null,
         description: l.description.trim() || undefined,
-        debit: Number(l.debit || 0),
-        credit: Number(l.credit || 0),
+        debit: Number.isFinite(Number(l.debit || 0)) ? Number(l.debit || 0) : 0,
+        credit: Number.isFinite(Number(l.credit || 0)) ? Number(l.credit || 0) : 0,
       })),
       status: "Posted",
     };

@@ -21,7 +21,8 @@ function serialize(d: Record<string, unknown>) {
     parentType: d.parentType,
     parentId: String(d.parentId),
     eventType: d.eventType,
-    actorUserId: String(d.actorUserId),
+    // Null for system-originated events (DEL-006 inbound ingest).
+    actorUserId: d.actorUserId == null ? null : String(d.actorUserId),
     payload: d.payload ?? null,
     createdAt: d.createdAt,
   };

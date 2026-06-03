@@ -64,30 +64,33 @@ export default function AddProjectPage() {
   async function save() {
     if (!canSubmit) return;
     setSaving(true);
-    const payload: Record<string, unknown> = {
-      projectTypeId,
-      propertyId,
-      projectLeadUserId,
-      name: name.trim() || undefined,
-      description: description.trim() || undefined,
-    };
-    if (budget) payload.budget = Number(budget);
-    if (dueDate) payload.dueDate = new Date(dueDate).toISOString();
+    try {
+      const payload: Record<string, unknown> = {
+        projectTypeId,
+        propertyId,
+        projectLeadUserId,
+        name: name.trim() || undefined,
+        description: description.trim() || undefined,
+      };
+      if (budget) payload.budget = Number(budget);
+      if (dueDate) payload.dueDate = new Date(dueDate).toISOString();
 
-    const res = await fetch("/api/pm/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
+      const res = await fetch("/api/pm/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        toast({ title: "Failed", description: err.error, variant: "error" });
+        return;
+      }
+      const created = (await res.json()) as { id: string };
+      toast({ title: "Project created", variant: "success" });
+      router.push(`/properties/projects/${created.id}`);
+    } finally {
       setSaving(false);
-      const err = (await res.json().catch(() => ({}))) as { error?: string };
-      toast({ title: "Failed", description: err.error, variant: "error" });
-      return;
     }
-    const created = (await res.json()) as { id: string };
-    toast({ title: "Project created", variant: "success" });
-    router.push(`/properties/projects/${created.id}`);
   }
 
   return (

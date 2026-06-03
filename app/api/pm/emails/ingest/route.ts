@@ -23,7 +23,12 @@ export const runtime = 'nodejs';
 
 function isAuthorized(request: Request): boolean {
   const secret = process.env.INGEST_SECRET;
-  if (!secret) return true; // dev fallback
+  if (!secret) {
+    // DEL-005 — fail closed in production: never accept an unauthenticated
+    // ingest POST when the secret is unset on a prod deploy. Non-production
+    // keeps the dev fallback so local curl works.
+    return process.env.NODE_ENV !== 'production';
+  }
   const header = request.headers.get('authorization');
   return header === `Bearer ${secret}`;
 }
@@ -138,8 +143,11 @@ export async function POST(request: Request) {
   // Inbound replies are stored as Sent rows (status mirrors the human
   // compose path so the History view renders them uniformly). The
   // recipient mailbox becomes the "to" snapshot; the sender becomes
-  // the inbound `from`. senderUserId reuses the org owner because Phase
-  // 6 has no per-mailbox service-account; consumers can override later.
+  // the inbound `from`. senderUserId is NULL (DEL-006): an inbound reply
+  // has no PM user as its sender, and senderUserId is a `ref: 'User'`
+  // field — storing an Organization _id here broke `populate('senderUserId')`
+  // downstream. The inbound human is captured by `fromMailbox` /
+  // `senderDisplayName` instead.
   const message = await EmailMessage.create({
     organizationId: orgOid,
     fromMailbox: parsed.data.from.toLowerCase(),
@@ -153,7 +161,7 @@ export async function POST(request: Request) {
     cc: [],
     bcc: [],
     attachmentFileIds: [],
-    senderUserId: orgOid, // Phase 6 stub — real provider supplies a service account
+    senderUserId: null, // DEL-006 — inbound rows have no PM-user sender
     senderDisplayName: parsed.data.fromName || parsed.data.from,
     status: 'Sent',
     isSystemGenerated: false,
@@ -166,7 +174,7 @@ export async function POST(request: Request) {
     parentType: 'EmailMessage',
     parentId: message._id,
     eventType: 'Email reply received',
-    actorUserId: orgOid, // best-effort actor for an inbound event
+    actorUserId: null, // DEL-006 — inbound event has no human actor
     payload: {
       from: parsed.data.from,
       subject: parsed.data.subject,

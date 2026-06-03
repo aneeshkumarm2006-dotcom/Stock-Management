@@ -35,10 +35,15 @@ export function EvictionToggleDialog({
   const [saving, setSaving] = React.useState(false);
   const nextValue = !evictionPending;
 
+  // Read `currentNote` fresh through a ref so the seed effect can depend only
+  // on `open`. Depending on `currentNote` re-seeds (and wipes the user's edit)
+  // whenever the parent re-renders with a new prop reference (EDIT-012).
+  const currentNoteRef = React.useRef(currentNote);
+  currentNoteRef.current = currentNote;
+
   React.useEffect(() => {
-    if (!open) return;
-    setNote(currentNote ?? "");
-  }, [open, currentNote]);
+    if (open) setNote(currentNoteRef.current ?? "");
+  }, [open]);
 
   async function save() {
     setSaving(true);
@@ -68,7 +73,7 @@ export function EvictionToggleDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader
           title={nextValue ? "Flag eviction pending" : "Clear eviction pending"}

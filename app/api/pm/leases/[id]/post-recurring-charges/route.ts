@@ -14,7 +14,6 @@ import { z } from 'zod';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Lease } from '@/lib/db/models/pm/Lease';
 import { Property } from '@/lib/db/models/pm/Property';
-import { BankAccount } from '@/lib/db/models/pm/BankAccount';
 import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
 import {
@@ -101,43 +100,36 @@ export async function POST(
     );
   }
 
-  // Resolve operating-cash CoA via Property → BankAccount, falling back to
-  // the system-seeded `Operating Cash` CoA if the mapping is missing.
+  // A recurring rent CHARGE is an accrual (the tenant now owes us), not a
+  // cash receipt — cash arrives later when the payment is recorded. So the
+  // debit leg is Accounts Receivable (asset), NOT Operating Cash. Resolve the
+  // org's seeded `Accounts Receivable` default CoA (mirrors the A/P lookup in
+  // postBillPaymentToLedger).
   const property = await Property.findOne({
     _id: lease.propertyId,
     organizationId: orgId,
   })
-    .select({ operatingAccountId: 1, propertyName: 1 })
+    .select({ propertyName: 1 })
     .lean<{
       _id: Types.ObjectId;
-      operatingAccountId: Types.ObjectId;
       propertyName: string;
     } | null>();
   if (!property) {
     return NextResponse.json({ error: 'Property missing' }, { status: 409 });
   }
-  const opBank = await BankAccount.findOne({
-    _id: property.operatingAccountId,
+  const arCoa = await ChartOfAccount.findOne({
     organizationId: orgId,
+    defaultFor: 'Accounts Receivable',
+    active: true,
   })
-    .select({ chartOfAccountId: 1 })
-    .lean<{ chartOfAccountId?: Types.ObjectId | null } | null>();
-  let operatingCashCoaId = opBank?.chartOfAccountId ?? null;
-  if (!operatingCashCoaId) {
-    const fallback = await ChartOfAccount.findOne({
-      organizationId: orgId,
-      defaultFor: 'Operating Cash',
-      active: true,
-    })
-      .select({ _id: 1 })
-      .lean<{ _id: Types.ObjectId } | null>();
-    operatingCashCoaId = fallback?._id ?? null;
-  }
-  if (!operatingCashCoaId) {
+    .select({ _id: 1 })
+    .lean<{ _id: Types.ObjectId } | null>();
+  const accountsReceivableCoaId = arCoa?._id ?? null;
+  if (!accountsReceivableCoaId) {
     return NextResponse.json(
       {
         error:
-          'No Operating Cash chart-of-account configured; cannot post recurring charges.',
+          'No Accounts Receivable chart-of-account configured; cannot post recurring charges.',
       },
       { status: 409 },
     );
@@ -180,11 +172,11 @@ export async function POST(
       memo: `Recurring charge for lease #${lease.leaseNumber} (${charge.memo ?? charge.frequency})`,
       lines: [
         {
-          accountId: operatingCashCoaId,
+          accountId: accountsReceivableCoaId,
           scopeType: 'Property',
           scopeId: lease.propertyId,
           unitId: lease.unitId,
-          description: 'Recurring rent collected',
+          description: 'Recurring rent receivable',
           debit: charge.amount,
           credit: 0,
         },
@@ -205,6 +197,12 @@ export async function POST(
 
     const newNext = advance(charge.nextDate, charge.frequency);
     charge.nextDate = newNext;
+    // Persist the advanced nextDate ATOMICALLY with this charge's committed JE
+    // before moving on. If a later iteration throws, the JEs already posted in
+    // this run keep their advanced nextDate — a re-run cannot double-post them.
+    // (Saving once after the whole loop meant a mid-loop throw left committed
+    // JEs with un-advanced nextDates → double-posting on the next run.)
+    await lease.save();
     posted.push({
       chargeId: String((charge as { _id?: unknown })._id ?? ''),
       amount: charge.amount,
@@ -214,7 +212,6 @@ export async function POST(
   }
 
   if (posted.length > 0) {
-    await lease.save();
     await logActivity({
       orgId: ctx.orgId,
       parentType: 'Lease',
@@ -236,7 +233,9 @@ export async function POST(
       lease.primaryRent.nextDueDate,
       lease.rentCycle,
     );
-    if (posted.length === 0) await lease.save();
+    // Per-charge saves above don't cover this mutation (it happens after the
+    // loop), so persist it here unconditionally when primaryRent advanced.
+    await lease.save();
   }
 
   void DAY_MS;

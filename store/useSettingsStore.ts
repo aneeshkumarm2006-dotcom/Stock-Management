@@ -79,13 +79,43 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "spm-settings",
+      version: 1,
       storage: createJSONStorage(() => localStorage),
+      // STATE-002: skip on-create rehydration so currency/theme/numberFormat in
+      // localStorage don't desync the first client render from the server HTML.
+      // StoreHydrator runs `useSettingsStore.persist.rehydrate()` post-mount.
+      // (Theme FOUC is separately prevented by the inline themeBootScript in
+      // app/layout.tsx, which sets the dark/light class before React boots.)
+      skipHydration: true,
       // FX table + hydration flag are runtime-only; don't persist them.
       partialize: (s) => ({
         displayCurrency: s.displayCurrency,
         theme: s.theme,
         numberFormat: s.numberFormat,
       }),
+      // STATE-003: coerce missing/invalid persisted fields back to the store's
+      // safe defaults (USD / light / "1,234.56") so a partial or legacy blob
+      // never hydrates an `undefined` currency, theme, or number format.
+      migrate: (persisted) => {
+        const p = (persisted ?? {}) as Partial<{
+          displayCurrency: Currency;
+          theme: Theme;
+          numberFormat: NumberFormat;
+        }>;
+        return {
+          displayCurrency:
+            p.displayCurrency === "USD" || p.displayCurrency === "CAD"
+              ? p.displayCurrency
+              : "USD",
+          theme: p.theme === "dark" || p.theme === "light" ? p.theme : "light",
+          numberFormat:
+            p.numberFormat === "1,234.56" ||
+            p.numberFormat === "1.234,56" ||
+            p.numberFormat === "1234.56"
+              ? p.numberFormat
+              : "1,234.56",
+        };
+      },
     },
   ),
 );

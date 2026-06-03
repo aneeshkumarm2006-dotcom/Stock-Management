@@ -110,16 +110,31 @@ export async function escalatePastDueTasks(
 
   for (const t of overdue) {
     if (!t.assignees || t.assignees.length === 0) continue;
-    // Dedupe: skip if any past-due Notification for this task already exists.
-    const existing = await Notification.countDocuments({
+
+    // DEL-009: dedupe PER RECIPIENT, not org-wide. The previous code skipped
+    // the entire fan-out when ANY one assignee had a prior past-due
+    // notification for this task, so newly-added assignees were never
+    // notified. Fetch the set of recipients who already have a past-due
+    // notification for THIS task (single query), then insert only for the
+    // assignees missing from that set.
+    const existingRows = await Notification.find({
       organizationId: t.organizationId,
       title: PAST_DUE_TITLE,
       body: { $regex: `Task #${t.taskId}\\b` },
-    });
-    if (existing > 0) continue;
+    })
+      .select('recipientUserId')
+      .lean<Array<{ recipientUserId: Types.ObjectId }>>();
+    const alreadyNotified = new Set(
+      existingRows.map((r) => String(r.recipientUserId)),
+    );
+
+    const toNotify = t.assignees.filter(
+      (uid) => !alreadyNotified.has(String(uid)),
+    );
+    if (toNotify.length === 0) continue;
 
     await Notification.insertMany(
-      t.assignees.map((uid) => ({
+      toNotify.map((uid) => ({
         organizationId: t.organizationId,
         recipientUserId: uid,
         kind: 'warning',
@@ -129,7 +144,7 @@ export async function escalatePastDueTasks(
       })),
       { ordered: false },
     );
-    written += t.assignees.length;
+    written += toNotify.length;
     taskIds.push(t.taskId);
   }
 

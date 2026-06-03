@@ -45,3 +45,23 @@ export function fromCents(cents: number): number {
   if (!Number.isFinite(cents)) return 0;
   return cents / 100;
 }
+
+/** Parse a free-text currency input (e.g. "1,234.56", "$1234.56", "1.005")
+ * into a clean dollar number. Strips a leading "$", thousands commas and
+ * surrounding whitespace, then rounds to whole cents so sub-cent precision
+ * ("1.005" → 1.01) cannot leak through. Returns `null` for empty or
+ * non-numeric input so callers can REJECT rather than coerce to NaN.
+ *
+ * Note: returns DOLLARS (not cents). The API routes still call `toCents`,
+ * so callers must send the dollar value this returns — do not multiply by
+ * 100 on the client. */
+export function parseCurrencyToDollars(input: string | number): number | null {
+  if (typeof input === 'number') {
+    return Number.isFinite(input) ? Math.round(input * 100) / 100 : null;
+  }
+  const cleaned = input.trim().replace(/^\$/, '').replace(/,/g, '');
+  if (cleaned === '') return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 100) / 100;
+}

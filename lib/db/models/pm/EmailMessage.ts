@@ -55,7 +55,11 @@ export interface IEmailMessage {
   attachmentFileIds: Types.ObjectId[];
   /** Stamped when the email transitions out of `Draft` / `Scheduled`. */
   sentAt?: Date | null;
-  senderUserId: Types.ObjectId;
+  /** User who authored/sent the message. NULL for inbound-ingested rows
+   *  (DEL-006): an inbound reply has no PM user as sender, and we must never
+   *  store a non-User id (e.g. an Organization _id) in a `ref: 'User'` field.
+   *  Every compose / system / scheduled path still stamps a real user id. */
+  senderUserId: Types.ObjectId | null;
   senderDisplayName: string;
   status: EmailStatus;
   isSystemGenerated: boolean;
@@ -131,9 +135,11 @@ const EmailMessageSchema = new Schema<IEmailMessage>(
     },
     sentAt: { type: Date, default: null },
     senderUserId: {
+      // Nullable (DEL-006): inbound-ingested rows have no PM-user sender.
+      // Compose / system / scheduled writers always set a real user id.
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      default: null,
     },
     senderDisplayName: { type: String, required: true, trim: true },
     status: {

@@ -114,26 +114,42 @@ export function EmailsListView({ mode }: { mode: ListMode }) {
   const [loading, setLoading] = React.useState(true);
   const [showSystemGenerated, setShowSystemGenerated] = React.useState(false);
   const [q, setQ] = React.useState("");
+  // STATE-004: debounce the raw input so keystrokes don't fire a request each.
+  const [debouncedQ, setDebouncedQ] = React.useState("");
   const [composeOpen, setComposeOpen] = React.useState(false);
   const [reload, setReload] = React.useState(0);
 
   React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  React.useEffect(() => {
     let cancelled = false;
+    // STATE-004: cancel any in-flight request when q/mode/filters change so a
+    // slow earlier response can't overwrite a newer one (response-order race).
+    const controller = new AbortController();
     setLoading(true);
     const qs = new URLSearchParams({ view: mode });
     if (mode === "sent" && showSystemGenerated) qs.set("showSystemGenerated", "1");
-    if (q.trim()) qs.set("q", q.trim());
-    fetch(`/api/pm/emails?${qs.toString()}`)
+    if (debouncedQ.trim()) qs.set("q", debouncedQ.trim());
+    fetch(`/api/pm/emails?${qs.toString()}`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: ListResponse | null) => {
         if (cancelled) return;
         setData(d);
         setLoading(false);
+      })
+      .catch((err) => {
+        if (err?.name === "AbortError") return;
+        if (cancelled) return;
+        setLoading(false);
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [mode, showSystemGenerated, q, reload]);
+  }, [mode, showSystemGenerated, debouncedQ, reload]);
 
   async function sendNow(id: string) {
     await fetch(`/api/pm/emails/${id}/send`, { method: "POST" });

@@ -8,6 +8,7 @@ import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
 import { BankAccount } from '@/lib/db/models/pm/BankAccount';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
 import { Bill } from '@/lib/db/models/pm/Bill';
+import { BillPayment } from '@/lib/db/models/pm/BillPayment';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -204,14 +205,47 @@ export async function POST(
 
     // If linked to a Bill, roll up its status. (BillPayment is the typical
     // path; this branch covers EFTs that pay a Bill directly.)
+    //
+    // DEL-008: do NOT unconditionally flip to "Paid". Compute the true total
+    // paid against the bill = sum(BillPayment.amount) + sum(approved
+    // EftRequest.amount), then mark "Paid" only when that total covers the
+    // bill amount, else "Partially paid". All amounts are integer cents.
+    //
+    // Write-order note (mirrors DEL-001): this EFT was already persisted with
+    // status='Approved' immediately above (eft.save()), so the approved-EFT
+    // aggregate below ALREADY includes it. Do not add eft.amount again or the
+    // current EFT is double-counted.
     if (eft.billId) {
       const bill = await Bill.findOne({
         _id: eft.billId,
         organizationId: orgObjectId,
       });
       if (bill && bill.status !== 'Paid' && bill.status !== 'Voided') {
-        bill.status = 'Paid';
-        bill.paidDate = eft.date;
+        const [paymentAgg, eftAgg] = await Promise.all([
+          BillPayment.aggregate<{ _id: null; total: number }>([
+            { $match: { organizationId: orgObjectId, billId: bill._id } },
+            { $group: { _id: null, total: { $sum: '$amount' } } },
+          ]),
+          EftRequest.aggregate<{ _id: null; total: number }>([
+            {
+              $match: {
+                organizationId: orgObjectId,
+                billId: bill._id,
+                status: 'Approved',
+              },
+            },
+            { $group: { _id: null, total: { $sum: '$amount' } } },
+          ]),
+        ]);
+        const totalPaid =
+          (paymentAgg[0]?.total ?? 0) + (eftAgg[0]?.total ?? 0);
+
+        if (totalPaid >= bill.amount) {
+          bill.status = 'Paid';
+          bill.paidDate = eft.date;
+        } else {
+          bill.status = 'Partially paid';
+        }
         await bill.save();
       }
     }

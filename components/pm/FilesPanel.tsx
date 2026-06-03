@@ -170,6 +170,12 @@ export function FilesPanel({ locationType, locationId }: Props) {
   }
 
   async function remove(id: string) {
+    if (
+      !window.confirm(
+        "Delete this file? The cloud copy is also removed and cannot be undone.",
+      )
+    )
+      return;
     const res = await fetch(`/api/pm/files/${id}`, { method: "DELETE" });
     if (!res.ok) {
       toast({ title: "Delete failed", variant: "error" });

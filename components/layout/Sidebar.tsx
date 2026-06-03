@@ -71,26 +71,34 @@ export function Sidebar() {
   const user = session?.user;
   const userInitial = (user?.name ?? user?.email ?? "?").charAt(0).toUpperCase();
 
+  // STATE-010: read the persisted open-sections synchronously in a lazy
+  // useState initializer so the very first client render already reflects the
+  // user's saved expand/collapse state — no "all collapsed → snap open"
+  // flicker on mount. On the server `loadOpenSections()` returns null (guarded
+  // by `typeof window`), so the server renders an empty set; the `mounted`
+  // flag (below) gates the collapsible markup until the client takes over,
+  // keeping the SSR/first-paint markup deterministic.
   const [openSections, setOpenSections] = React.useState<Set<string>>(
-    () => new Set(),
+    () => loadOpenSections() ?? new Set<string>(),
   );
-  const hydratedRef = React.useRef(false);
+  const [mounted, setMounted] = React.useState(false);
 
-  // Hydrate from localStorage on mount, then auto-open the section that
-  // contains the active route so the user always sees their current location.
+  // After hydration commits, mark mounted (reveals persisted collapsible state)
+  // and auto-open the section containing the active route.
   React.useEffect(() => {
-    const stored = loadOpenSections();
-    const next = stored ?? new Set<string>();
-    for (const section of sections) {
-      if (
-        section.title &&
-        section.items.some((item) => isActivePath(pathname, item.href))
-      ) {
-        next.add(section.title);
+    setMounted(true);
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      for (const section of sections) {
+        if (
+          section.title &&
+          section.items.some((item) => isActivePath(pathname, item.href))
+        ) {
+          next.add(section.title);
+        }
       }
-    }
-    setOpenSections(next);
-    hydratedRef.current = true;
+      return next;
+    });
     // Run once on mount — subsequent route changes are handled below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -98,7 +106,7 @@ export function Sidebar() {
   // On route change, ensure the active route's section is open without
   // disturbing the user's other choices.
   React.useEffect(() => {
-    if (!hydratedRef.current) return;
+    if (!mounted) return;
     setOpenSections((prev) => {
       let changed = false;
       const next = new Set(prev);
@@ -114,11 +122,11 @@ export function Sidebar() {
       }
       return changed ? next : prev;
     });
-  }, [pathname, sections]);
+  }, [pathname, sections, mounted]);
 
   // Persist user choices.
   React.useEffect(() => {
-    if (!hydratedRef.current) return;
+    if (!mounted) return;
     try {
       window.localStorage.setItem(
         COLLAPSE_STORAGE_KEY,
@@ -127,7 +135,7 @@ export function Sidebar() {
     } catch {
       // localStorage may be unavailable (private mode); silently ignore.
     }
-  }, [openSections]);
+  }, [openSections, mounted]);
 
   const toggleSection = React.useCallback((title: string) => {
     setOpenSections((prev) => {
@@ -150,7 +158,11 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-2 pb-3 pt-1">
         {sections.map((section, i) => {
           const isCollapsible = section.title !== null;
-          const isOpen = isCollapsible && openSections.has(section.title!);
+          // STATE-010: until `mounted`, render the deterministic SSR state
+          // (collapsible sections closed) so the first client paint matches the
+          // server HTML; once mounted, reflect the persisted/lazy-loaded set.
+          const isOpen =
+            isCollapsible && mounted && openSections.has(section.title!);
           const sectionId = `sidebar-section-${section.title ?? `untitled-${i}`}`;
           return (
             <div key={section.title ?? `untitled-${i}`} className="mt-[10px]">

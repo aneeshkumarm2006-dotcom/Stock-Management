@@ -14,7 +14,10 @@ export interface IActivityLogEntry {
   parentType: ParentType;
   parentId: Types.ObjectId;
   eventType: string;
-  actorUserId: Types.ObjectId;
+  /** Acting user. NULL only for system-originated events that have no human
+   *  actor (DEL-006: inbound email ingest). Every human-triggered route still
+   *  stamps `ctx.userId`. */
+  actorUserId: Types.ObjectId | null;
   payload?: Record<string, unknown>;
   createdAt: Date;
 }
@@ -30,9 +33,11 @@ const ActivityLogEntrySchema = new Schema<IActivityLogEntry>(
     parentId: { type: Schema.Types.ObjectId, required: true },
     eventType: { type: String, required: true, trim: true },
     actorUserId: {
+      // Nullable (DEL-006): system-originated events (inbound email ingest)
+      // have no human actor. Human-triggered routes always pass ctx.userId.
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      default: null,
     },
     payload: { type: Schema.Types.Mixed },
   },

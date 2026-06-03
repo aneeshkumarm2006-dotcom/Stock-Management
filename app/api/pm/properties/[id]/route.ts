@@ -336,6 +336,18 @@ export async function DELETE(
 ) {
   const ctx = await getPmContext();
   if (!ctx) return unauthorizedResponse();
+
+  // DEL-011 — gate archive behind Admin/PropertyManager, mirroring the
+  // reactivate route (the two were asymmetric: archive had no role check).
+  const canArchive =
+    ctx.roles.includes('Admin') || ctx.roles.includes('PropertyManager');
+  if (!canArchive) {
+    return NextResponse.json(
+      { error: 'Only Admin or PropertyManager can archive properties' },
+      { status: 403 },
+    );
+  }
+
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   doc.active = false;

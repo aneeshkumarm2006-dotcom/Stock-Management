@@ -86,6 +86,7 @@ export default function TaskDetailPage() {
   const [ocrLinks, setOcrLinks] = React.useState<OcrLink[]>([]);
   const [ocrModalOpen, setOcrModalOpen] = React.useState(false);
   const [editTaskOpen, setEditTaskOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -148,23 +149,28 @@ export default function TaskDetailPage() {
   if (!doc) return notFound();
 
   async function updateStatus(status: string) {
-    if (!doc) return;
-    const res = await fetch(`/api/pm/tasks/${doc.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    if (!res.ok) {
-      const err = (await res.json().catch(() => ({}))) as { error?: string };
-      toast({
-        title: "Status update failed",
-        description: err.error,
-        variant: "error",
+    if (!doc || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/pm/tasks/${doc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
       });
-      return;
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        toast({
+          title: "Status update failed",
+          description: err.error,
+          variant: "error",
+        });
+        return;
+      }
+      toast({ title: `Status → ${status}`, variant: "success" });
+      await load();
+    } finally {
+      setBusy(false);
     }
-    toast({ title: `Status → ${status}`, variant: "success" });
-    await load();
   }
 
   return (
@@ -187,12 +193,20 @@ export default function TaskDetailPage() {
               />
             )}
           {doc.status === "New" && (
-            <Button size="sm" onClick={() => updateStatus("In progress")}>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => updateStatus("In progress")}
+            >
               Start
             </Button>
           )}
           {doc.status === "In progress" && (
-            <Button size="sm" onClick={() => updateStatus("Completed")}>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => updateStatus("Completed")}
+            >
               Mark complete
             </Button>
           )}
@@ -200,6 +214,7 @@ export default function TaskDetailPage() {
             <Button
               size="sm"
               variant="outline"
+              disabled={busy}
               onClick={() => updateStatus("Cancelled")}
             >
               Cancel

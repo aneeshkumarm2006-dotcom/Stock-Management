@@ -50,6 +50,7 @@ export default function BillDetailPage() {
   const { toast } = useToast();
   const [doc, setDoc] = React.useState<BillDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -66,23 +67,28 @@ export default function BillDetailPage() {
   if (!doc) return notFound();
 
   async function post() {
-    if (!doc) return;
-    const res = await fetch(`/api/pm/bills/${doc.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "Due" }),
-    });
-    if (!res.ok) {
-      const err = (await res.json().catch(() => ({}))) as { error?: string };
-      toast({
-        title: "Post failed",
-        description: err.error,
-        variant: "error",
+    if (!doc || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/pm/bills/${doc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "Due" }),
       });
-      return;
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        toast({
+          title: "Post failed",
+          description: err.error,
+          variant: "error",
+        });
+        return;
+      }
+      toast({ title: "Bill posted", variant: "success" });
+      await load();
+    } finally {
+      setBusy(false);
     }
-    toast({ title: "Bill posted", variant: "success" });
-    await load();
   }
 
   return (
@@ -96,7 +102,7 @@ export default function BillDetailPage() {
           <ArrowLeft className="h-3.5 w-3.5" /> Bills
         </Button>
         {doc.status === "Draft" && (
-          <Button size="sm" onClick={post}>
+          <Button size="sm" disabled={busy} onClick={post}>
             Post bill
           </Button>
         )}

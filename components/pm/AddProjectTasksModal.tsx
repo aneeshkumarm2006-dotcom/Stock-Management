@@ -43,18 +43,36 @@ export function AddProjectTasksModal({
   const [search, setSearch] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
+  // `excludeIds` is a fresh array on every parent render, so depending on it
+  // directly re-fires the fetch on each render. Collapse it to a stable string
+  // key (sorted join) and depend on that instead (ADD-015).
+  const excludeKey = React.useMemo(
+    () => [...excludeIds].sort().join(","),
+    [excludeIds],
+  );
+
+  // Debounce the search so typing doesn't fire a request per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = React.useState(search);
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   React.useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     const params = new URLSearchParams({ includeTerminal: "0" });
-    if (search.trim()) params.set("q", search.trim());
+    if (debouncedSearch.trim()) params.set("q", debouncedSearch.trim());
     fetch(`/api/pm/tasks?${params.toString()}`).then(async (r) => {
-      if (r.ok) {
-        const data = (await r.json()) as TaskRow[];
-        const exclude = new Set(excludeIds);
-        setRows(data.filter((t) => !exclude.has(t.id)));
-      }
+      if (!r.ok || cancelled) return;
+      const data = (await r.json()) as TaskRow[];
+      const exclude = new Set(excludeKey ? excludeKey.split(",") : []);
+      setRows(data.filter((t) => !exclude.has(t.id)));
     });
-  }, [open, search, excludeIds]);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, debouncedSearch, excludeKey]);
 
   function toggle(id: string) {
     const next = new Set(selected);

@@ -142,6 +142,13 @@ export default function PropertyDetailPage() {
 
   async function archive() {
     if (!doc) return;
+    if (
+      !window.confirm(
+        "Inactivate this property? It will be hidden from active lists. " +
+          "Reactivation is admin-only.",
+      )
+    )
+      return;
     const res = await fetch(`/api/pm/properties/${doc.id}`, {
       method: "DELETE",
     });

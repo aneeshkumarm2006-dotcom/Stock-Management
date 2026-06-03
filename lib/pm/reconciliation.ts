@@ -358,16 +358,34 @@ export async function commitReconciliation(
     );
   }
 
-  // Issue LockedPeriodPolicy covering [startDate, endDate]. Existing
-  // assertWriteAllowed picks this up without any helper extension.
+  // Issue a LockedPeriodPolicy covering ONLY this bank's statement window
+  // (DEL-002). The prior bug created a Global lock with fromDate=null, which
+  // locked ALL history across EVERY bank account up to this endDate. We now:
+  //   * scope to this one BankAccount ('Per-bank-account') so other banks'
+  //     history stays writable, and
+  //   * bound the lower edge to the prior completed reconciliation's endDate
+  //     (or this reconciliation's startDate when there is no prior run), so we
+  //     only lock the period this statement actually reconciled.
+  const priorReconciliation = await Reconciliation.findOne({
+    organizationId: orgObjectId,
+    bankAccountId: rec.bankAccountId,
+    status: 'Completed',
+    endDate: { $lt: rec.endDate },
+  })
+    .sort({ endDate: -1 })
+    .lean<{ endDate: Date } | null>();
+  const lockFromDate = priorReconciliation?.endDate ?? rec.startDate;
+
   const policy = await LockedPeriodPolicy.create({
     organizationId: orgObjectId,
-    scope: 'Global',
+    scope: 'Per-bank-account',
     propertyId: null,
-    fromDate: null,
+    bankAccountId: rec.bankAccountId,
+    fromDate: lockFromDate,
     toDate: rec.endDate,
-    message: `Reconciliation period locked through ${rec.endDate.toISOString().slice(0, 10)} (BR-AC-17).`,
+    message: `Reconciliation period locked ${lockFromDate.toISOString().slice(0, 10)} through ${rec.endDate.toISOString().slice(0, 10)} (BR-AC-17).`,
     active: true,
+    createdBy: 'Reconciliation commit',
     createdByUserId: new Types.ObjectId(input.ctx.userId),
   });
 

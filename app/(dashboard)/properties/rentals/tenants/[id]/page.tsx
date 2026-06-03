@@ -20,6 +20,7 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
+import { BreadcrumbOverride } from "@/components/layout/BreadcrumbOverride";
 import { useToast } from "@/components/ui/toast";
 
 interface Phone {
@@ -70,6 +71,15 @@ export default function TenantDetailPage() {
 
   async function archive() {
     if (!doc) return;
+    const leaseNote = doc.currentLeaseId
+      ? " This tenant is linked to a current lease."
+      : "";
+    if (
+      !window.confirm(
+        `Inactivate ${doc.displayName}?${leaseNote} They will be removed from active tenant lists.`,
+      )
+    )
+      return;
     const res = await fetch(`/api/pm/tenants/${doc.id}`, { method: "DELETE" });
     if (!res.ok) {
       toast({ title: "Archive failed", variant: "error" });
@@ -81,6 +91,9 @@ export default function TenantDetailPage() {
 
   return (
     <div className="space-y-4">
+      {/* STATE-015: replace the leaf "Detail" breadcrumb crumb with the
+          resolved tenant name once loaded. */}
+      <BreadcrumbOverride label={doc.displayName} />
       <div className="flex items-center justify-between">
         <Button
           variant="ghost"

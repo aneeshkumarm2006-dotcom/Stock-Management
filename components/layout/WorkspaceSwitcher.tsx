@@ -22,16 +22,31 @@ export function WorkspaceSwitcher() {
 
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
+  // STATE-014: keep a handle on the trigger so focus returns to it when the
+  // listbox closes (Escape / outside click / option pick).
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const listboxRef = React.useRef<HTMLDivElement>(null);
+
+  // STATE-014: close + return focus to the trigger in one place so every
+  // dismissal path is keyboard-accessible.
+  const close = React.useCallback((returnFocus = true) => {
+    setOpen(false);
+    if (returnFocus) triggerRef.current?.focus();
+  }, []);
 
   React.useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
+        // Outside click: don't yank focus back to the trigger.
+        close(false);
       }
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
     };
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("keydown", onKey);
@@ -39,13 +54,53 @@ export function WorkspaceSwitcher() {
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
     };
+  }, [open, close]);
+
+  // STATE-014: move focus into the listbox when it opens so Tab is trapped
+  // within it (and so screen-reader/keyboard users land on the options).
+  React.useEffect(() => {
+    if (!open) return;
+    const first = listboxRef.current?.querySelector<HTMLElement>(
+      '[role="option"]',
+    );
+    first?.focus();
   }, [open]);
+
+  // STATE-014: simple Tab trap — keep focus cycling among the options while the
+  // listbox is open instead of escaping to the rest of the page (no library).
+  const onListboxKeyDown = React.useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const options = Array.from(
+        listboxRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ??
+          [],
+      );
+      const first = options[0];
+      const last = options[options.length - 1];
+      if (!first || !last) return;
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && activeEl === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && activeEl === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    },
+    [close],
+  );
 
   const initial = APP_NAME.charAt(0).toUpperCase();
 
   return (
     <div ref={ref} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -71,7 +126,11 @@ export function WorkspaceSwitcher() {
 
       {open && (
         <div
+          ref={listboxRef}
           role="listbox"
+          aria-label="Switch workspace"
+          tabIndex={-1}
+          onKeyDown={onListboxKeyDown}
           className="absolute left-0 right-0 z-50 mt-2 overflow-hidden rounded-md border border-border bg-surface py-1 shadow-lg animate-fade-in"
         >
           {WORKSPACES.map((ws) => {
@@ -83,7 +142,7 @@ export function WorkspaceSwitcher() {
                 href={ws.landing}
                 role="option"
                 aria-selected={isActive}
-                onClick={() => setOpen(false)}
+                onClick={() => close(false)}
                 className={cn(
                   "flex items-center gap-2.5 px-3 py-2 text-[12.5px] transition-colors hover:bg-surface-lowest",
                   isActive ? "text-primary font-semibold" : "text-fg",

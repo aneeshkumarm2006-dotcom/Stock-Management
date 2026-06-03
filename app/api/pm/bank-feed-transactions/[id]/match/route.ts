@@ -17,6 +17,7 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { logActivity } from '@/lib/pm/activity';
+import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
 
 export const runtime = 'nodejs';
 
@@ -94,20 +95,56 @@ export async function POST(
   const jeObjectId = new Types.ObjectId(parsed.data.journalEntryId!);
   const lineObjectId = new Types.ObjectId(parsed.data.lineId!);
 
-  // Verify the JE + line exists and belongs to the org.
+  // Verify the JE + line exists and belongs to the org. Pull `date` + the
+  // matched line's scope so we can run the locked-period gate.
   const je = await JournalEntry.findOne(
     {
       _id: jeObjectId,
       organizationId: orgObjectId,
       'lines._id': lineObjectId,
     },
-    { 'lines.$': 1 },
-  ).lean<{ _id: Types.ObjectId; lines: { _id: Types.ObjectId }[] } | null>();
+    { date: 1, 'lines.$': 1 },
+  ).lean<{
+    _id: Types.ObjectId;
+    date: Date;
+    lines: {
+      _id: Types.ObjectId;
+      scopeType?: 'Property' | 'Company';
+      scopeId?: Types.ObjectId | null;
+    }[];
+  } | null>();
   if (!je) {
     return NextResponse.json(
       { error: 'Matching journal line not found.' },
       { status: 404 },
     );
+  }
+
+  // DEL-016 — matching a feed row flips the JE line to cleared, which is a
+  // write into the ledger. Enforce the locked-period gate (keyed on the JE
+  // date, with the line's property scope) BEFORE applying the $set so a
+  // matched row inside a reconciled/locked window is rejected, not silently
+  // cleared.
+  const matchedLine = je.lines[0];
+  const scopePropertyId =
+    matchedLine?.scopeType === 'Property' && matchedLine?.scopeId
+      ? String(matchedLine.scopeId)
+      : null;
+  try {
+    await assertWriteAllowed({
+      orgId: ctx.orgId,
+      txnDate: je.date,
+      scopePropertyId,
+      ctx,
+    });
+  } catch (err) {
+    if (err instanceof LockedPeriodError) {
+      return NextResponse.json(
+        { error: err.policyMessage, policyId: err.policyId },
+        { status: 423 },
+      );
+    }
+    throw err;
   }
 
   bft.status = 'Matched';

@@ -43,11 +43,14 @@ export function EmailsSubtabs({ active }: { active: View }) {
         return [value, d.count ?? 0] as const;
       }),
     ).then((pairs) => {
-      const next = { ...counts };
-      for (const [k, v] of pairs) next[k] = v;
-      setCounts(next);
+      // STATE-011: functional updater so we merge onto the latest state instead
+      // of a `counts` value captured at mount (stale closure).
+      setCounts((prev) => {
+        const next = { ...prev };
+        for (const [k, v] of pairs) next[k] = v;
+        return next;
+      });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
     <nav className="flex gap-2 border-b border-border">

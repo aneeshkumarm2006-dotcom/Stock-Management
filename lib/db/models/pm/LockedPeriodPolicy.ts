@@ -14,6 +14,7 @@ import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 export const LOCKED_PERIOD_SCOPES: LockedPeriodScope[] = [
   'Global',
   'Per-property',
+  'Per-bank-account',
 ];
 
 export interface ILockedPeriodPolicy {
@@ -21,11 +22,18 @@ export interface ILockedPeriodPolicy {
   organizationId: Types.ObjectId;
   scope: LockedPeriodScope;
   propertyId?: Types.ObjectId | null;
+  /** Required when scope='Per-bank-account' (BR-AC-17). Scopes a recon lock to
+   *  one bank's statement window so other banks' history stays writable. */
+  bankAccountId?: Types.ObjectId | null;
   fromDate?: Date | null;
   toDate?: Date | null;
   message?: string;
   active: boolean;
   createdByUserId: Types.ObjectId;
+  /** Provenance marker. 'Reconciliation commit' rows are audit-protected: the
+   *  locked-periods admin route refuses PATCH/DELETE on them (DEL-018). Null
+   *  for manually-created admin policies. */
+  createdBy?: string | null;
   warnings: IWarning[];
   createdAt: Date;
   updatedAt: Date;
@@ -49,6 +57,11 @@ const LockedPeriodPolicySchema = new Schema<ILockedPeriodPolicy>(
       ref: 'PmProperty',
       default: null,
     },
+    bankAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmBankAccount',
+      default: null,
+    },
     fromDate: { type: Date, default: null },
     toDate: { type: Date, default: null },
     message: { type: String, trim: true, maxlength: 500 },
@@ -58,6 +71,7 @@ const LockedPeriodPolicySchema = new Schema<ILockedPeriodPolicy>(
       ref: 'User',
       required: true,
     },
+    createdBy: { type: String, trim: true, default: null },
     warnings: { type: [WarningSchema], default: [] },
   },
   { timestamps: true, collection: 'pm_locked_period_policies' },
@@ -69,6 +83,12 @@ LockedPeriodPolicySchema.index({
   scope: 1,
   propertyId: 1,
 });
+LockedPeriodPolicySchema.index({
+  organizationId: 1,
+  active: 1,
+  scope: 1,
+  bankAccountId: 1,
+});
 
 // The "Per-property requires propertyId" check moved to computeWarnings
 // (LOCK_MISSING_PROPERTY). The relational fromDate <= toDate check is a TYPE
@@ -78,6 +98,13 @@ LockedPeriodPolicySchema.index({
 LockedPeriodPolicySchema.pre('validate', function (next) {
   if (this.scope === 'Global' && this.propertyId) {
     this.propertyId = null;
+  }
+  // Normalize cross-scope foreign keys: only the scope that owns a key keeps it.
+  if (this.scope !== 'Per-property' && this.propertyId) {
+    this.propertyId = null;
+  }
+  if (this.scope !== 'Per-bank-account' && this.bankAccountId) {
+    this.bankAccountId = null;
   }
   if (this.fromDate && this.toDate && this.fromDate > this.toDate) {
     return next(new Error('Locked period: fromDate must be on or before toDate.'));

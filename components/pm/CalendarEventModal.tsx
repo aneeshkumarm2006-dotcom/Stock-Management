@@ -242,9 +242,21 @@ export function CalendarEventModal({
   // The form can submit either way; the API stamps the warnings on the row.
 
   async function save() {
-    setSaving(true);
     const start = fromLocalInput(startDate, startTime, allDay);
     const end = fromLocalInput(endDate, endTime, allDay);
+
+    // An event cannot end at or before it starts (ADD-014). Reject before the
+    // API call so we don't post an inverted/zero-length window.
+    if (end.getTime() <= start.getTime()) {
+      toast({
+        title: "End must be after start",
+        description: "Adjust the end date/time so the event has a positive duration.",
+        variant: "error",
+      });
+      return;
+    }
+
+    setSaving(true);
 
     const payload: Record<string, unknown> = {
       eventName: eventName.trim(),

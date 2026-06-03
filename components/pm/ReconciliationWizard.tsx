@@ -84,9 +84,13 @@ export function ReconciliationWizard({
 
   const [clearedKeys, setClearedKeys] = React.useState<Set<string>>(new Set());
   const [saving, setSaving] = React.useState(false);
+  // True once the user has typed into the ending-balance field. While dirty,
+  // loadRec() must not overwrite their value with the server's (EDIT-006).
+  const endingBalanceDirty = React.useRef(false);
 
   React.useEffect(() => {
     if (!open) return;
+    endingBalanceDirty.current = false;
     if (resumeReconciliationId) {
       // Jump to step 2 with existing rec.
       setRecId(resumeReconciliationId);
@@ -105,7 +109,12 @@ export function ReconciliationWizard({
     if (!r.ok) return;
     const d = (await r.json()) as ReconciliationDetail;
     setRec(d);
-    setEndingBalance(String(fromCents(d.statementEndingBalance).toFixed(2)));
+    // Don't clobber an in-progress local edit of the ending balance with the
+    // server's value (EDIT-006). Only adopt the server value when the user
+    // hasn't typed into the field since this rec loaded.
+    if (!endingBalanceDirty.current) {
+      setEndingBalance(String(fromCents(d.statementEndingBalance).toFixed(2)));
+    }
     setClearedKeys(
       new Set(
         d.clearedLines.map((c) => `${c.journalEntryId}:${c.lineId}`),
@@ -139,7 +148,39 @@ export function ReconciliationWizard({
       return;
     }
     const created = (await r.json()) as { id: string };
+    endingBalanceDirty.current = false;
     setRecId(created.id);
+    setStep(2);
+  }
+
+  // Continue from step 1 when a reconciliation already exists (resumed, or the
+  // user went Back from step 2 and edited the balance). The previous code went
+  // straight to setStep(2), silently dropping any balance change (EDIT-006).
+  // Persist the new ending balance first, await it, then advance.
+  async function continueFromStep1() {
+    if (!recId) {
+      // No rec yet — fall through to the create path.
+      await startReconciliation();
+      return;
+    }
+    setSaving(true);
+    const r = await fetch(`/api/pm/reconciliations/${recId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ statementEndingBalance: Number(endingBalance) }),
+    });
+    setSaving(false);
+    if (!r.ok) {
+      const body = (await r.json().catch(() => ({}))) as { error?: string };
+      toast({
+        title: body.error ?? "Failed to update statement",
+        variant: "error",
+      });
+      return;
+    }
+    // The local endingBalance is now persisted; let loadRec resync uncleared
+    // lines without treating the field as dirty.
+    endingBalanceDirty.current = false;
     setStep(2);
   }
 
@@ -166,6 +207,12 @@ export function ReconciliationWizard({
       });
       return false;
     }
+    // The balance was just persisted with this flush, so a subsequent loadRec
+    // can safely re-adopt the server value (which now matches local).
+    endingBalanceDirty.current = false;
+    // loadRec re-GETs and recomputes bookEndingBalance from the just-saved
+    // cleared lines, so the Step 3 difference reflects the current cleared set
+    // rather than a stale book balance (EDIT-007).
     await loadRec();
     return true;
   }
@@ -261,7 +308,10 @@ export function ReconciliationWizard({
                 type="number"
                 step="0.01"
                 value={endingBalance}
-                onChange={(e) => setEndingBalance(e.target.value)}
+                onChange={(e) => {
+                  endingBalanceDirty.current = true;
+                  setEndingBalance(e.target.value);
+                }}
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -423,7 +473,17 @@ export function ReconciliationWizard({
           {step > 1 && (
             <Button
               variant="outline"
-              onClick={() => setStep((s) => (s - 1) as Step)}
+              onClick={async () => {
+                // EDIT-008: cleared-line toggles live only in local state until
+                // flushed. Going Back from step 2 without flushing loses them
+                // (loadRec would reload the server's older set). Persist first,
+                // then step back. From step 3, no cleared edits are made, so a
+                // plain step-back is safe.
+                if (step === 2) {
+                  if (!(await flushClearedSet())) return;
+                }
+                setStep((s) => (s - 1) as Step);
+              }}
               disabled={saving}
             >
               Back
@@ -435,7 +495,7 @@ export function ReconciliationWizard({
             </Button>
             {step === 1 && (
               <Button
-                onClick={recId ? () => setStep(2) : startReconciliation}
+                onClick={recId ? continueFromStep1 : startReconciliation}
                 disabled={saving}
               >
                 {recId ? "Continue" : "Start"}

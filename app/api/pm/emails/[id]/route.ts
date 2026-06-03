@@ -58,7 +58,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     readReceiptStatus: doc.readReceiptStatus,
     sentAt: doc.sentAt ?? null,
     scheduledSendTime: doc.scheduledSendTime ?? null,
-    senderUserId: String(doc.senderUserId),
+    senderUserId: doc.senderUserId ? String(doc.senderUserId) : null,
     senderDisplayName: doc.senderDisplayName,
     recipientCount: doc.recipientCount,
     templateId: doc.templateId ? String(doc.templateId) : null,

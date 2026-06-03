@@ -141,10 +141,22 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
           website: v.website ?? "",
           comments: v.comments ?? "",
           phones: {
-            mobile: { number: v.phones?.mobile?.number ?? "" },
-            home: { number: v.phones?.home?.number ?? "" },
-            work: { number: v.phones?.work?.number ?? "" },
-            fax: { number: v.phones?.fax?.number ?? "" },
+            mobile: {
+              number: v.phones?.mobile?.number ?? "",
+              smsOptIn: v.phones?.mobile?.smsOptIn,
+            },
+            home: {
+              number: v.phones?.home?.number ?? "",
+              smsOptIn: v.phones?.home?.smsOptIn,
+            },
+            work: {
+              number: v.phones?.work?.number ?? "",
+              smsOptIn: v.phones?.work?.smsOptIn,
+            },
+            fax: {
+              number: v.phones?.fax?.number ?? "",
+              smsOptIn: v.phones?.fax?.smsOptIn,
+            },
           },
           address: v.address ?? {},
           taxIdentityType: v.taxIdentityType ?? "",
@@ -177,24 +189,36 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
       toast({ title: "First and last name required", variant: "error" });
       return;
     }
+    // EDIT-016: when flagged as a company, a non-empty company name is required;
+    // when not, the stored company name must be cleared so a stale value can't
+    // linger on the record.
+    if (form.isCompany && !form.companyName.trim()) {
+      toast({ title: "Company name is required", variant: "error" });
+      return;
+    }
     setSaving(true);
     const phones: Record<string, PhoneInput> = {};
     for (const k of PHONE_KEYS) {
       const n = form.phones[k].number.trim();
-      if (n) phones[k] = { number: n };
+      // Round-trip smsOptIn for every label so a save doesn't silently reset
+      // the opt-in flags the API returned (EDIT-015).
+      if (n) phones[k] = { number: n, smsOptIn: form.phones[k].smsOptIn };
     }
     const insurance = {
       provider: form.insurance.provider.trim() || undefined,
       policyNumber: form.insurance.policyNumber.trim() || undefined,
+      // EDIT-017: send a bare YYYY-MM-DD instead of a UTC ISO timestamp so the
+      // date doesn't shift a day in negative-offset timezones.
       expirationDate: form.insurance.expirationDate
-        ? new Date(form.insurance.expirationDate).toISOString()
+        ? form.insurance.expirationDate
         : null,
     };
     const payload: Record<string, unknown> = {
       firstName: form.firstName.trim(),
       lastName: form.lastName.trim(),
       isCompany: form.isCompany,
-      companyName: form.companyName.trim() || undefined,
+      // EDIT-016: explicit null clears the persisted name when not a company.
+      companyName: form.isCompany ? form.companyName.trim() : null,
       accountNumber: form.accountNumber.trim() || undefined,
       primaryEmail: form.primaryEmail.trim() || undefined,
       alternateEmail: form.alternateEmail.trim() || undefined,
@@ -243,7 +267,13 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
                   type="checkbox"
                   checked={form.isCompany}
                   onChange={(e) =>
-                    setForm({ ...form, isCompany: e.target.checked })
+                    setForm({
+                      ...form,
+                      isCompany: e.target.checked,
+                      // Clear the company name the moment the flag turns off so
+                      // the field can't keep a stale value (EDIT-016).
+                      companyName: e.target.checked ? form.companyName : "",
+                    })
                   }
                 />
                 This is a company
@@ -346,7 +376,10 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
                           ...form,
                           phones: {
                             ...form.phones,
-                            [k]: { number: e.target.value },
+                            [k]: {
+                              ...form.phones[k],
+                              number: e.target.value,
+                            },
                           },
                         })
                       }

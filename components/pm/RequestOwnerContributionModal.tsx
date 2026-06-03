@@ -128,11 +128,16 @@ export function RequestOwnerContributionModal({
           variant: "error",
         });
         setSaving(false);
+        // The request WAS created — close so the user isn't stuck on the form
+        // re-submitting and creating duplicates (ADD-006).
+        onClose();
         await onSaved();
         return;
       }
     }
     setSaving(false);
+    toast({ title: "Owner contribution request created", variant: "success" });
+    onClose();
     await onSaved();
   }
 

@@ -64,6 +64,8 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
     new Date().toISOString().slice(0, 10),
   );
   const [saving, setSaving] = React.useState(false);
+  // Per-bill error markers from the last batch post, keyed by bill id (ADD-009).
+  const [rowErrors, setRowErrors] = React.useState<Record<string, string>>({});
 
   React.useEffect(() => {
     if (!open) return;
@@ -94,6 +96,7 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
       if (r.ok) setVendors((await r.json()) as VendorOption[]);
     });
     setSelected({});
+    setRowErrors({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -134,7 +137,11 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
       return;
     }
     setSaving(true);
+    setRowErrors({});
     const failures: string[] = [];
+    const nextErrors: Record<string, string> = {};
+    const succeededIds: string[] = [];
+    const attempted = Object.keys(selected).length;
     for (const row of Object.values(selected)) {
       const res = await fetch("/api/pm/bill-payments", {
         method: "POST",
@@ -150,23 +157,42 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
       });
       if (!res.ok) {
         const errBody = (await res.json().catch(() => ({}))) as { error?: string };
-        failures.push(
-          `${row.bill.id.slice(-6)} (${errBody.error ?? res.statusText})`,
-        );
+        const msg = errBody.error ?? res.statusText;
+        nextErrors[row.bill.id] = msg;
+        failures.push(`${row.bill.id.slice(-6)} (${msg})`);
+      } else {
+        succeededIds.push(row.bill.id);
       }
     }
     setSaving(false);
+
+    // Strip successfully-posted bills from the selection so a retry only
+    // re-attempts the failures and never double-posts a paid bill (ADD-009).
+    if (succeededIds.length > 0) {
+      setSelected((prev) => {
+        const next = { ...prev };
+        for (const billId of succeededIds) delete next[billId];
+        return next;
+      });
+    }
+    setRowErrors(nextErrors);
+
+    // Always refetch the parent so the table reflects current state, even on a
+    // partial failure (some payments posted, some didn't) — ADD-009.
+    await onSaved();
+
     if (failures.length === 0) {
       toast({
-        title: `Posted ${Object.keys(selected).length} payment(s)`,
+        title: `Posted ${attempted} payment(s)`,
         variant: "success",
       });
-      setSelected({});
       onClose();
-      await onSaved();
     } else {
       toast({
-        title: `Some payments failed`,
+        title:
+          succeededIds.length > 0
+            ? `Posted ${succeededIds.length} of ${attempted}; ${failures.length} failed`
+            : "Some payments failed",
         description: failures.join(", "),
         variant: "error",
       });
@@ -254,8 +280,15 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
               )}
               {bills.map((b) => {
                 const sel = selected[b.id];
+                const rowError = rowErrors[b.id];
                 return (
-                  <tr key={b.id} className="border-b border-border/40">
+                  <tr
+                    key={b.id}
+                    className={
+                      "border-b border-border/40 " +
+                      (rowError ? "bg-error/5" : "")
+                    }
+                  >
                     <td className="py-1 w-8">
                       <input
                         type="checkbox"
@@ -291,6 +324,14 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
                         />
                       ) : (
                         <span className="text-fg-muted">—</span>
+                      )}
+                      {rowError && (
+                        <span
+                          className="mt-0.5 block text-[10px] text-error"
+                          title={rowError}
+                        >
+                          ⚠ {rowError}
+                        </span>
                       )}
                     </td>
                   </tr>

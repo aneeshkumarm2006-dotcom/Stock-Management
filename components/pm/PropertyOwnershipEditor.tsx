@@ -51,7 +51,9 @@ export function PropertyOwnershipEditor({ value, onChange }: Props) {
   }, []);
 
   const total = value.reduce((acc, r) => acc + (Number.isFinite(r.ownershipPct) ? r.ownershipPct : 0), 0);
-  const valid = value.length === 0 || total === 100;
+  // Compare with an epsilon so valid splits like 33.33/33.33/33.34 (which sum
+  // to 100.00 but accumulate binary-float error) aren't rejected (EDIT-019).
+  const valid = value.length === 0 || Math.abs(total - 100) < 0.01;
 
   function add() {
     onChange([...value, { rentalOwnerId: "", ownershipPct: 0 }]);

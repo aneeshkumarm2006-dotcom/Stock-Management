@@ -69,6 +69,7 @@ export default function ProjectDetailPage() {
     null,
   );
   const [addOpen, setAddOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -121,17 +122,22 @@ export default function ProjectDetailPage() {
   }
 
   async function patchStatus(status: "In progress" | "Closed") {
-    if (!doc) return;
-    const res = await fetch(`/api/pm/projects/${doc.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    if (!res.ok) {
-      toast({ title: "Status update failed", variant: "error" });
-      return;
+    if (!doc || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/pm/projects/${doc.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        toast({ title: "Status update failed", variant: "error" });
+        return;
+      }
+      await load();
+    } finally {
+      setBusy(false);
     }
-    await load();
   }
 
   return (
@@ -149,6 +155,7 @@ export default function ProjectDetailPage() {
             <Button
               variant="outline"
               size="sm"
+              disabled={busy}
               onClick={() => patchStatus("Closed")}
             >
               Close project
@@ -157,6 +164,7 @@ export default function ProjectDetailPage() {
             <Button
               variant="outline"
               size="sm"
+              disabled={busy}
               onClick={() => patchStatus("In progress")}
             >
               Reopen project

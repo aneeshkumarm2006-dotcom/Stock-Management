@@ -28,23 +28,39 @@ export function EmailThreadsListView() {
   const [data, setData] = React.useState<ThreadsResponse | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [q, setQ] = React.useState("");
+  // STATE-005: debounce the search input.
+  const [debouncedQ, setDebouncedQ] = React.useState("");
+
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 250);
+    return () => clearTimeout(t);
+  }, [q]);
 
   React.useEffect(() => {
     let cancelled = false;
+    // STATE-005: abort any superseded request so an older response can't land
+    // after a newer one (response-order race).
+    const controller = new AbortController();
     setLoading(true);
     const qs = new URLSearchParams({ view: "threads" });
-    if (q.trim()) qs.set("q", q.trim());
-    fetch(`/api/pm/emails?${qs.toString()}`)
+    if (debouncedQ.trim()) qs.set("q", debouncedQ.trim());
+    fetch(`/api/pm/emails?${qs.toString()}`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: ThreadsResponse | null) => {
         if (cancelled) return;
         setData(d);
         setLoading(false);
+      })
+      .catch((err) => {
+        if (err?.name === "AbortError") return;
+        if (cancelled) return;
+        setLoading(false);
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [q]);
+  }, [debouncedQ]);
 
   return (
     <div className="space-y-3">
