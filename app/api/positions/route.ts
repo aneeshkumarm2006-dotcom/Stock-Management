@@ -8,11 +8,22 @@ import { z } from 'zod';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Position } from '@/lib/db/models/Position';
 import { StockMetadata } from '@/lib/db/models/StockMetadata';
+import { Company } from '@/lib/db/models/Company';
 import {
   getCurrentUserId,
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { getProfile } from '@/lib/api-clients/finnhub';
+
+// Optional "held-by" company. An empty string or null clears it; a value must
+// be a 24-char hex ObjectId (ownership is verified against the user's
+// companies before it is stored).
+const companyIdSchema = z
+  .preprocess(
+    (v) => (v === '' || v === null || v === undefined ? null : v),
+    z.union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid company'), z.null()]),
+  )
+  .optional();
 
 // Mongoose needs the Node runtime (not Edge).
 export const runtime = 'nodejs';
@@ -37,6 +48,7 @@ const createSchema = z.object({
     .toUpperCase()
     .regex(/^[A-Z]{3}$/, 'Currency must be a 3-letter ISO code'),
   buyDate: z.coerce.date().optional(),
+  companyId: companyIdSchema,
 });
 
 /** GET /api/positions — the user's holdings, enriched with cached metadata. */
@@ -62,8 +74,29 @@ export async function GET() {
     metaDocs.map((m) => [`${m.ticker}:${m.exchange}`, m]),
   );
 
+  // One batched Company join (id → name) so the holdings table can show the
+  // "held-by" column without a request per row. Scoped to userId so a stale or
+  // foreign companyId resolves to a null name rather than leaking another user.
+  const companyIds = Array.from(
+    new Set(
+      positions
+        .map((p) => p.companyId)
+        .filter((c): c is NonNullable<typeof c> => Boolean(c))
+        .map(String),
+    ),
+  );
+  const companyDocs = companyIds.length
+    ? await Company.find({ _id: { $in: companyIds }, userId })
+        .select('name')
+        .lean()
+    : [];
+  const companyNameById = new Map(
+    companyDocs.map((c) => [String(c._id), c.name]),
+  );
+
   const enriched = positions.map((p) => {
     const meta = metaByKey.get(`${p.ticker}:${p.exchange}`);
+    const companyId = p.companyId ? String(p.companyId) : null;
     return {
       id: String(p._id),
       ticker: p.ticker,
@@ -72,6 +105,8 @@ export async function GET() {
       avgBuyPrice: p.avgBuyPrice,
       currency: p.currency,
       buyDate: p.buyDate ?? null,
+      companyId,
+      companyName: companyId ? companyNameById.get(companyId) ?? null : null,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
       metadata: meta
@@ -111,8 +146,18 @@ export async function POST(request: Request) {
 
   const { ticker, exchange, quantity, avgBuyPrice, currency, buyDate } =
     parsed.data;
+  const companyId = parsed.data.companyId ?? null;
 
   await connectToDatabase();
+
+  // Verify the held-by company belongs to this user before storing the ref.
+  if (companyId) {
+    const owned = await Company.countDocuments({ _id: companyId, userId });
+    if (owned === 0) {
+      return NextResponse.json({ error: 'Invalid company' }, { status: 400 });
+    }
+  }
+
   const created = await Position.create({
     userId,
     ticker,
@@ -121,6 +166,7 @@ export async function POST(request: Request) {
     avgBuyPrice,
     currency,
     buyDate,
+    companyId,
   });
 
   // Fire-and-forget company metadata fetch (PDR §5.1). It is cached globally
@@ -139,6 +185,7 @@ export async function POST(request: Request) {
       avgBuyPrice: created.avgBuyPrice,
       currency: created.currency,
       buyDate: created.buyDate ?? null,
+      companyId: created.companyId ? String(created.companyId) : null,
       createdAt: created.createdAt,
       updatedAt: created.updatedAt,
     },

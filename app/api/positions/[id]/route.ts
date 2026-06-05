@@ -5,9 +5,10 @@
 // Refs: PDR.md §5.1, §5.3, §6 (Position), §11.
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { isValidObjectId } from 'mongoose';
+import { isValidObjectId, Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Position } from '@/lib/db/models/Position';
+import { Company } from '@/lib/db/models/Company';
 import {
   getCurrentUserId,
   unauthorizedResponse,
@@ -15,7 +16,16 @@ import {
 
 export const runtime = 'nodejs';
 
-// Direct edit: change quantity and/or avg buy price (at least one).
+// Optional "held-by" company. '' / null clears it; a value must be a 24-char
+// hex ObjectId (ownership verified before storing). Omitted = no change.
+const companyIdSchema = z
+  .preprocess(
+    (v) => (v === '' || v === null || v === undefined ? null : v),
+    z.union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid company'), z.null()]),
+  )
+  .optional();
+
+// Direct edit: change quantity, avg buy price, and/or held-by company.
 const replaceSchema = z
   .object({
     mode: z.literal('replace').optional(),
@@ -24,10 +34,15 @@ const replaceSchema = z
       .number()
       .min(0, 'Average buy price cannot be negative')
       .optional(),
+    companyId: companyIdSchema,
   })
-  .refine((d) => d.quantity !== undefined || d.avgBuyPrice !== undefined, {
-    message: 'Provide quantity and/or avgBuyPrice',
-  });
+  .refine(
+    (d) =>
+      d.quantity !== undefined ||
+      d.avgBuyPrice !== undefined ||
+      d.companyId !== undefined,
+    { message: 'Provide quantity, avgBuyPrice, and/or companyId' },
+  );
 
 // "Add to position" — supply the follow-on lot; the new average is the
 // quantity-weighted mean of the existing lot and the added lot.
@@ -47,6 +62,7 @@ function serialize(p: {
   avgBuyPrice: number;
   currency: string;
   buyDate?: Date | null;
+  companyId?: unknown;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -58,6 +74,7 @@ function serialize(p: {
     avgBuyPrice: p.avgBuyPrice,
     currency: p.currency,
     buyDate: p.buyDate ?? null,
+    companyId: p.companyId ? String(p.companyId) : null,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -108,6 +125,24 @@ export async function PATCH(
   } else {
     if (data.quantity !== undefined) position.quantity = data.quantity;
     if (data.avgBuyPrice !== undefined) position.avgBuyPrice = data.avgBuyPrice;
+    // Held-by: a value reassigns (after an ownership check), null clears it.
+    if (data.companyId !== undefined) {
+      if (data.companyId) {
+        const owned = await Company.countDocuments({
+          _id: data.companyId,
+          userId,
+        });
+        if (owned === 0) {
+          return NextResponse.json(
+            { error: 'Invalid company' },
+            { status: 400 },
+          );
+        }
+      }
+      position.companyId = data.companyId
+        ? new Types.ObjectId(data.companyId)
+        : null;
+    }
   }
 
   await position.save();

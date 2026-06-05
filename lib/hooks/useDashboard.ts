@@ -24,6 +24,7 @@ import {
   type Country,
 } from "@/lib/utils/portfolioMath";
 import type { Currency } from "@/lib/utils/convertCurrency";
+import { useCashValue } from "./useCompanies";
 
 /* ------------------------------------------------------------------ */
 /* Wire types                                                          */
@@ -37,6 +38,9 @@ export interface ApiPosition {
   avgBuyPrice: number;
   currency: Currency;
   buyDate: string | null;
+  /** Optional "held-by" company ref + its resolved name (null = unassigned). */
+  companyId: string | null;
+  companyName: string | null;
   metadata: {
     name: string | null;
     logo: string | null;
@@ -146,6 +150,10 @@ export interface DashboardData {
   summary: PortfolioSummary | null;
   /** Holdings joined with live price, sorted by current value desc. */
   holdings: Holding[];
+  /** Total uninvested cash across companies, in the display currency. */
+  cashValue: number;
+  /** Holdings value + cash (the headline portfolio value). */
+  totalValueWithCash: number;
   displayCurrency: Currency;
   hasPositions: boolean;
   isLoadingPositions: boolean;
@@ -163,6 +171,7 @@ export function useDashboardData(): DashboardData {
 
   const positionsQuery = usePositionsQuery();
   useFxSync();
+  const cashValue = useCashValue();
 
   const positions = useMemo(
     () => positionsQuery.data?.positions ?? [],
@@ -245,6 +254,8 @@ export function useDashboardData(): DashboardData {
   return {
     summary,
     holdings,
+    cashValue,
+    totalValueWithCash: (summary?.totalValue ?? 0) + cashValue,
     displayCurrency,
     hasPositions: positions.length > 0,
     isLoadingPositions: positionsQuery.isLoading,

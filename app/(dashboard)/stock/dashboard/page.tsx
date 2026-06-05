@@ -50,6 +50,8 @@ export default function DashboardPage() {
   const {
     summary,
     holdings,
+    cashValue,
+    totalValueWithCash,
     displayCurrency,
     hasPositions,
     isLoadingPositions,
@@ -101,7 +103,11 @@ export default function DashboardPage() {
           )}
 
           {/* 2. KPI strip. */}
-          <StatStrip summary={summary} />
+          <StatStrip
+            summary={summary}
+            cashValue={cashValue}
+            totalValueWithCash={totalValueWithCash}
+          />
 
           {/* 3. Performance + Sector allocation. */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">

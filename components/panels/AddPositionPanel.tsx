@@ -18,12 +18,13 @@ import {
   useSymbolSearch,
   type SymbolSearchResult,
 } from "@/lib/hooks/usePortfolio";
+import { useCompanies } from "@/lib/hooks/useCompanies";
 import { useToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { SidePanel } from "./SidePanel";
-import { Field, FieldError } from "./fields";
+import { Field, FieldError, SelectField } from "./fields";
 
 // Form values mirror the server contract in app/api/positions/route.ts:
 // exchange and currency are free uppercase strings so any venue Twelve Data
@@ -56,6 +57,8 @@ const schema = z.object({
     .trim()
     .regex(/^[A-Za-z]{3}$/, "Currency must be a 3-letter ISO code"),
   buyDate: z.string().optional(),
+  // Held-by company is optional; "" means unassigned.
+  companyId: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -211,6 +214,7 @@ export function AddPositionPanel() {
   const isOffline = useUiStore((s) => s.isOffline);
   const { toast } = useToast();
   const create = useCreatePosition();
+  const companies = useCompanies().data?.companies ?? [];
 
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -231,6 +235,7 @@ export function AddPositionPanel() {
       avgBuyPrice: "",
       currency: "USD",
       buyDate: "",
+      companyId: "",
     },
   });
 
@@ -273,6 +278,7 @@ export function AddPositionPanel() {
         avgBuyPrice: Number(values.avgBuyPrice),
         currency: values.currency,
         buyDate: values.buyDate ? values.buyDate : undefined,
+        companyId: values.companyId ? values.companyId : null,
       });
       toast({
         title: "Position added",
@@ -460,6 +466,20 @@ export function AddPositionPanel() {
           error={errors.buyDate?.message}
           {...register("buyDate")}
         />
+
+        <SelectField
+          label="Held by (optional)"
+          id="companyId"
+          error={errors.companyId?.message}
+          {...register("companyId")}
+        >
+          <option value="">None</option>
+          {companies.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </SelectField>
       </form>
     </SidePanel>
   );

@@ -109,6 +109,7 @@ const STOCKS_NAV: NavNode[] = [
   { href: "/stock/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/stock/portfolio", label: "Portfolio", icon: Wallet },
   { href: "/stock/analytics", label: "Analytics", icon: PieChart },
+  { href: "/stock/manage", label: "Manage", icon: Building2 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

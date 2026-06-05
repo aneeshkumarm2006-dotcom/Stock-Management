@@ -18,6 +18,8 @@ export interface IPosition {
   avgBuyPrice: number;
   currency: Currency;
   buyDate?: Date;
+  /** Optional "held-by" company (ref Company). Null/absent = unassigned. */
+  companyId?: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,13 +33,16 @@ const PositionSchema = new Schema<IPosition>(
     avgBuyPrice: { type: Number, required: true, min: 0 },
     currency: { type: String, required: true, uppercase: true, trim: true },
     buyDate: { type: Date },
+    companyId: { type: Schema.Types.ObjectId, ref: 'Company', default: null },
   },
   { timestamps: true, collection: 'positions' },
 );
 
 // Indexes: positions { userId: 1 }; { userId: 1, ticker: 1, exchange: 1 }.
+// { userId: 1, companyId: 1 } backs the held-by usage count + block-on-delete.
 PositionSchema.index({ userId: 1 });
 PositionSchema.index({ userId: 1, ticker: 1, exchange: 1 });
+PositionSchema.index({ userId: 1, companyId: 1 });
 
 export const Position: Model<IPosition> =
   (models.Position as Model<IPosition>) ??

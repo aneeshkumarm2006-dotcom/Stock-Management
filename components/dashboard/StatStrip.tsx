@@ -13,12 +13,28 @@ import { formatPercent } from "@/lib/utils/formatNumber";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { Stat } from "@/components/ui/stat";
 
-export function StatStrip({ summary }: { summary: PortfolioSummary }) {
+export function StatStrip({
+  summary,
+  cashValue = 0,
+  totalValueWithCash,
+}: {
+  summary: PortfolioSummary;
+  /** Total uninvested cash across companies, in the display currency. */
+  cashValue?: number;
+  /** Holdings value + cash; falls back to holdings-only when omitted. */
+  totalValueWithCash?: number;
+}) {
   const numberFormat = useSettingsStore((s) => s.numberFormat);
   const cur = summary.displayCurrency;
   const fmt = (v: number, signed = false) =>
     formatCurrency(v, cur, { format: numberFormat, signed });
   const pct = (v: number) => formatPercent(v, { format: numberFormat });
+
+  // The headline "Portfolio value" folds in cash; when any cash is present we
+  // show the holdings/cash split in the sub-line. P&L, weights, and allocations
+  // stay holdings-only (cash is not invested and has no cost basis).
+  const headlineValue = totalValueWithCash ?? summary.totalValue;
+  const hasCash = cashValue > 0;
 
   const pnlUp = summary.totalPnl >= 0;
   const dayUp = summary.todaysChange >= 0;
@@ -44,8 +60,12 @@ export function StatStrip({ summary }: { summary: PortfolioSummary }) {
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <Stat
         label="Portfolio value"
-        value={fmt(summary.totalValue)}
-        sub={`${cur} · live valuation`}
+        value={fmt(headlineValue)}
+        sub={
+          hasCash
+            ? `${fmt(summary.totalValue)} holdings · ${fmt(cashValue)} cash`
+            : `${cur} · live valuation`
+        }
       />
       <Stat
         label="Total invested"

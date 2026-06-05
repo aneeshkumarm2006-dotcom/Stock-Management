@@ -28,6 +28,7 @@ import {
 } from "@/lib/utils/portfolioMath";
 import type { Currency } from "@/lib/utils/convertCurrency";
 import { usePositionsQuery, useFxSync, type ApiPosition } from "./useDashboard";
+import { useCashValue } from "./useCompanies";
 
 /* ------------------------------------------------------------------ */
 /* Wire types                                                          */
@@ -77,6 +78,9 @@ export interface PortfolioRow {
   avgBuyPrice: number;
   /** Live price per share, native currency; null when the quote is missing. */
   price: number | null;
+  /** Optional "held-by" company ref + its resolved name (null = unassigned). */
+  companyId: string | null;
+  companyName: string | null;
   /** Display-currency metrics (invested / value / P&L / weight). */
   metrics: PositionMetrics;
 }
@@ -113,6 +117,10 @@ export interface PortfolioData {
   summary: PortfolioSummary | null;
   /** Distinct sectors present (for the filter dropdown). */
   sectors: string[];
+  /** Total uninvested cash across companies, in the display currency. */
+  cashValue: number;
+  /** Holdings value + cash (the headline portfolio value). */
+  totalValueWithCash: number;
   displayCurrency: Currency;
   hasPositions: boolean;
   isLoadingPositions: boolean;
@@ -128,6 +136,7 @@ export function usePortfolio(): PortfolioData {
 
   const positionsQuery = usePositionsQuery();
   useFxSync();
+  const cashValue = useCashValue();
 
   const positions = useMemo(
     () => positionsQuery.data?.positions ?? [],
@@ -211,6 +220,8 @@ export function usePortfolio(): PortfolioData {
           quantity: p.quantity,
           avgBuyPrice: p.avgBuyPrice,
           price: q?.price ?? null,
+          companyId: p.companyId,
+          companyName: p.companyName ?? null,
           metrics,
         },
       ];
@@ -262,6 +273,8 @@ export function usePortfolio(): PortfolioData {
     stats,
     summary,
     sectors,
+    cashValue,
+    totalValueWithCash: (summary?.totalValue ?? 0) + cashValue,
     displayCurrency,
     hasPositions: positions.length > 0,
     isLoadingPositions: positionsQuery.isLoading,
@@ -283,10 +296,18 @@ export interface CreatePositionInput {
   avgBuyPrice: number;
   currency: Currency;
   buyDate?: string;
+  /** Optional held-by company id; null/"" clears it. */
+  companyId?: string | null;
 }
 
 export type UpdatePositionInput =
-  | { mode?: "replace"; quantity?: number; avgBuyPrice?: number }
+  | {
+      mode?: "replace";
+      quantity?: number;
+      avgBuyPrice?: number;
+      /** Optional held-by company id; null/"" clears it. */
+      companyId?: string | null;
+    }
   | { mode: "add"; addQuantity: number; addPrice: number };
 
 /**

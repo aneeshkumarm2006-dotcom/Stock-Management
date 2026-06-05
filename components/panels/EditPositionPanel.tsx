@@ -17,13 +17,14 @@ import {
   useUpdatePosition,
   type PortfolioRow,
 } from "@/lib/hooks/usePortfolio";
+import { useCompanies } from "@/lib/hooks/useCompanies";
 import { useToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { formatNumber } from "@/lib/utils/formatNumber";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { SidePanel } from "./SidePanel";
-import { Field } from "./fields";
+import { Field, SelectField } from "./fields";
 import { cn } from "@/lib/utils/cn";
 
 const num = (v: string | undefined) => (v == null ? NaN : Number(v));
@@ -35,6 +36,8 @@ const schema = z
     avgBuyPrice: z.string().optional(),
     addQuantity: z.string().optional(),
     addPrice: z.string().optional(),
+    // Held-by company is independent of the replace/add validation below.
+    companyId: z.string().optional(),
   })
   .superRefine((d, ctx) => {
     if (d.mode === "replace") {
@@ -87,6 +90,7 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
   const numberFormat = useSettingsStore((s) => s.numberFormat);
   const { toast } = useToast();
   const update = useUpdatePosition();
+  const companies = useCompanies().data?.companies ?? [];
 
   const row = rows.find((r) => r.id === positionId) ?? null;
 
@@ -105,6 +109,7 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
       avgBuyPrice: "",
       addQuantity: "",
       addPrice: "",
+      companyId: "",
     },
   });
 
@@ -117,6 +122,7 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
         avgBuyPrice: String(row.avgBuyPrice),
         addQuantity: "",
         addPrice: "",
+        companyId: row.companyId ?? "",
       });
     }
   }, [row, reset]);
@@ -161,6 +167,13 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
       });
       return;
     }
+    // Held-by is orthogonal to the qty/avg recompute. It rides the replace
+    // path; in "add" mode it goes out as a small follow-up replace PATCH only
+    // when the company actually changed (the server's add schema has no
+    // companyId field).
+    const nextCompanyId = values.companyId ? values.companyId : null;
+    const companyChanged = nextCompanyId !== (row.companyId ?? null);
+
     try {
       if (values.mode === "add") {
         await update.mutateAsync({
@@ -171,16 +184,24 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
             addPrice: Number(values.addPrice),
           },
         });
+        if (companyChanged) {
+          await update.mutateAsync({
+            id: row.id,
+            input: { mode: "replace", companyId: nextCompanyId },
+          });
+        }
       } else {
         const input: {
           mode: "replace";
           quantity?: number;
           avgBuyPrice?: number;
+          companyId?: string | null;
         } = { mode: "replace" };
         if (values.quantity?.trim())
           input.quantity = Number(values.quantity);
         if (values.avgBuyPrice?.trim())
           input.avgBuyPrice = Number(values.avgBuyPrice);
+        if (companyChanged) input.companyId = nextCompanyId;
         await update.mutateAsync({ id: row.id, input });
       }
       toast({
@@ -364,6 +385,20 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
               </div>
             </>
           )}
+
+          <SelectField
+            label="Held by"
+            id="edit-companyId"
+            error={errors.companyId?.message}
+            {...register("companyId")}
+          >
+            <option value="">None</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </SelectField>
         </form>
       )}
     </SidePanel>
