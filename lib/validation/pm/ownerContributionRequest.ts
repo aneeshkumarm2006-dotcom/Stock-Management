@@ -3,19 +3,19 @@
 // cover only POST/PATCH for the cross-link with Task.
 import { z } from 'zod';
 import {
-  OWNER_CONTRIBUTION_PRIORITIES_DB,
-  OWNER_CONTRIBUTION_STATUSES_DB,
-} from '@/lib/db/models/pm/OwnerContributionRequest';
+  OWNER_CONTRIBUTION_PRIORITIES,
+  OWNER_CONTRIBUTION_STATUSES,
+} from '@/types/pm';
 
 const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid id');
 
 const baseFields = {
-  status: z.enum(OWNER_CONTRIBUTION_STATUSES_DB).default('New'),
+  status: z.enum(OWNER_CONTRIBUTION_STATUSES).default('New'),
   dueDate: z.string().datetime().or(z.string().date()).optional(),
   propertiesScope: z.string().max(200).optional(),
   taskDescription: z.string().max(2000).optional(),
   requestedFromOwnerId: objectIdSchema.optional(),
-  priority: z.enum(OWNER_CONTRIBUTION_PRIORITIES_DB).default('Normal'),
+  priority: z.enum(OWNER_CONTRIBUTION_PRIORITIES).default('Normal'),
   /** Dollars at the API boundary; persisted as cents. */
   requestedAmount: z.number().nonnegative().optional(),
   receivedAmount: z.number().nonnegative().optional(),

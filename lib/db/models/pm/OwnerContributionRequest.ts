@@ -7,23 +7,20 @@
 // reserved word + the Task entity sharing the namespace. The Task cross-link
 // is `taskId`.
 import { Schema, model, models, Types, type Model } from 'mongoose';
+import {
+  OWNER_CONTRIBUTION_STATUSES,
+  OWNER_CONTRIBUTION_PRIORITIES,
+  type OwnerContributionStatus,
+  type OwnerContributionPriority,
+} from '@/types/pm';
 import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
-export const OWNER_CONTRIBUTION_STATUSES_DB = [
-  'New',
-  'In progress',
-  'Completed',
-] as const;
-export type OwnerContributionStatus =
-  (typeof OWNER_CONTRIBUTION_STATUSES_DB)[number];
-
-export const OWNER_CONTRIBUTION_PRIORITIES_DB = [
-  'Low',
-  'Normal',
-  'High',
-] as const;
-export type OwnerContributionPriority =
-  (typeof OWNER_CONTRIBUTION_PRIORITIES_DB)[number];
+// Enum source of truth lives in the client-safe `@/types/pm` so UI components
+// can import the values without pulling Mongoose into the browser bundle. The
+// `_DB` aliases below feed this file's Schema `enum:` constraints.
+export const OWNER_CONTRIBUTION_STATUSES_DB = OWNER_CONTRIBUTION_STATUSES;
+export const OWNER_CONTRIBUTION_PRIORITIES_DB = OWNER_CONTRIBUTION_PRIORITIES;
+export type { OwnerContributionStatus, OwnerContributionPriority };
 
 export interface IOwnerContributionRequest {
   _id: Types.ObjectId;

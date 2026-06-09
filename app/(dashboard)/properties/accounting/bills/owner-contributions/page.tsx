@@ -20,7 +20,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { RequestOwnerContributionModal } from "@/components/pm/RequestOwnerContributionModal";
-import type { OwnerContributionStatus } from "@/lib/db/models/pm/OwnerContributionRequest";
+import type { OwnerContributionStatus } from "@/types/pm";
 import { WarningInline } from "@/components/pm/WarningBadge";
 import { getWarningMessage } from "@/lib/pm/warnings";
 

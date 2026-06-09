@@ -15,8 +15,10 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import type { OwnerContributionPriority } from "@/lib/db/models/pm/OwnerContributionRequest";
-import { OWNER_CONTRIBUTION_PRIORITIES_DB } from "@/lib/db/models/pm/OwnerContributionRequest";
+import {
+  OWNER_CONTRIBUTION_PRIORITIES,
+  type OwnerContributionPriority,
+} from "@/types/pm";
 
 interface RentalOwnerOption {
   id: string;
@@ -208,7 +210,7 @@ export function RequestOwnerContributionModal({
                 setPriority(e.target.value as OwnerContributionPriority)
               }
             >
-              {OWNER_CONTRIBUTION_PRIORITIES_DB.map((p) => (
+              {OWNER_CONTRIBUTION_PRIORITIES.map((p) => (
                 <option key={p} value={p}>
                   {p}
                 </option>

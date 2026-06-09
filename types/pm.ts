@@ -986,3 +986,27 @@ export const APPROVAL_DECISIONS: readonly ApprovalDecision[] = [
   "Approved",
   "Rejected",
 ] as const;
+
+/** OwnerContributionRequest.status — PDR §3.25. `New` is the inbox bucket;
+ *  flips to `In progress` server-side once the notify email sends. Lives here
+ *  (not in the Mongoose model) so client components — the Bills toolbar modal
+ *  and the Owner-contributions sub-tab — can import the value without dragging
+ *  Mongoose into the browser bundle. */
+export type OwnerContributionStatus = "New" | "In progress" | "Completed";
+
+// `as const` (not a `readonly T[]` annotation) so the literal tuple survives —
+// `z.enum()` needs a tuple to infer the narrow union for API payloads.
+export const OWNER_CONTRIBUTION_STATUSES = [
+  "New",
+  "In progress",
+  "Completed",
+] as const satisfies readonly OwnerContributionStatus[];
+
+/** OwnerContributionRequest.priority — PDR §3.25. */
+export type OwnerContributionPriority = "Low" | "Normal" | "High";
+
+export const OWNER_CONTRIBUTION_PRIORITIES = [
+  "Low",
+  "Normal",
+  "High",
+] as const satisfies readonly OwnerContributionPriority[];
