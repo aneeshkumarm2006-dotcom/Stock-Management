@@ -7,7 +7,7 @@
 //     in app/api/positions/[id]/route.ts ("add" mode).
 // Driven by useUiStore.editPanelPositionId; the row is resolved from the
 // portfolio rows passed by the page so the panel can show the current basis.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Loader2, Save } from "lucide-react";
@@ -118,18 +118,28 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
     },
   });
 
-  // Re-seed the form whenever a different position is opened.
+  // Re-seed the form ONLY when a different position is opened — keyed on the
+  // position id, not the `row` object. A background auto-refresh (useAutoRefresh
+  // refetches quotes every 60s) rebuilds the memoized rows, handing us a new
+  // `row` reference for the *same* holding; re-seeding on that would silently
+  // wipe an in-progress edit (e.g. a just-picked "Held by" company), so the
+  // PATCH would omit it and the save would "succeed" without applying it.
+  const seededIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (row) {
-      reset({
-        mode: "replace",
-        quantity: String(row.quantity),
-        avgBuyPrice: String(row.avgBuyPrice),
-        addQuantity: "",
-        addPrice: "",
-        companyId: row.companyId ?? "",
-      });
+    if (!row) {
+      seededIdRef.current = null;
+      return;
     }
+    if (seededIdRef.current === row.id) return;
+    seededIdRef.current = row.id;
+    reset({
+      mode: "replace",
+      quantity: String(row.quantity),
+      avgBuyPrice: String(row.avgBuyPrice),
+      addQuantity: "",
+      addPrice: "",
+      companyId: row.companyId ?? "",
+    });
   }, [row, reset]);
 
   const mode = watch("mode");

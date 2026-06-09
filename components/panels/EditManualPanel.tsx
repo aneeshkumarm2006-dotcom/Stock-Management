@@ -3,7 +3,7 @@
 // Edit Mutual fund / Cash. Replace-mode PATCH of the manual fields. The fund
 // variant exposes cost + current value + value-as-of; cash is just a single
 // value. Opens only when the resolved row is a MUTUAL_FUND or CASH.
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Loader2, Save } from "lucide-react";
@@ -70,18 +70,27 @@ export function EditManualPanel({ rows }: { rows: PortfolioRow[] }) {
     },
   });
 
+  // Re-seed only when a different holding is opened (keyed on id, not the `row`
+  // object). A background auto-refresh rebuilds rows and hands us a new `row`
+  // reference for the same holding; re-seeding then would clobber an in-progress
+  // edit such as a just-picked "Held by" company before the user can save it.
+  const seededIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (row) {
-      reset({
-        label: row.label ?? "",
-        currency: row.nativeCurrency,
-        costBasis: row.costBasis != null ? String(row.costBasis) : "",
-        currentValue:
-          row.currentValueNative != null ? String(row.currentValueNative) : "",
-        valueAsOf: toDateInputValue(row.valueAsOf),
-        companyId: row.companyId ?? "",
-      });
+    if (!row) {
+      seededIdRef.current = null;
+      return;
     }
+    if (seededIdRef.current === row.id) return;
+    seededIdRef.current = row.id;
+    reset({
+      label: row.label ?? "",
+      currency: row.nativeCurrency,
+      costBasis: row.costBasis != null ? String(row.costBasis) : "",
+      currentValue:
+        row.currentValueNative != null ? String(row.currentValueNative) : "",
+      valueAsOf: toDateInputValue(row.valueAsOf),
+      companyId: row.companyId ?? "",
+    });
   }, [row, reset]);
 
   async function onSubmit(values: FormValues) {

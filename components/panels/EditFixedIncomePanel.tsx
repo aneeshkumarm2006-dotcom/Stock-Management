@@ -3,7 +3,7 @@
 // Edit GIC / Bond. Replace-mode PATCH of the fixed-income fields with a live
 // re-preview of the maturity + accrued value. Opens only when the row resolved
 // from editPanelPositionId is a GIC or Bond; other types route elsewhere.
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Loader2, Save } from "lucide-react";
@@ -104,20 +104,29 @@ export function EditFixedIncomePanel({ rows }: { rows: PortfolioRow[] }) {
     },
   });
 
+  // Re-seed only when a different holding is opened (keyed on id, not the `row`
+  // object). A background auto-refresh rebuilds rows and hands us a new `row`
+  // reference for the same holding; re-seeding then would clobber an in-progress
+  // edit such as a just-picked "Held by" company before the user can save it.
+  const seededIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (row) {
-      reset({
-        label: row.label ?? "",
-        institution: row.institution ?? "",
-        principal: row.principal != null ? String(row.principal) : "",
-        currency: row.nativeCurrency,
-        startDate: toDateInputValue(row.startDate),
-        maturityDate: toDateInputValue(row.maturityDate),
-        interestRate: row.interestRate != null ? String(row.interestRate) : "",
-        payoutFrequency: row.payoutFrequency ?? "AT_MATURITY",
-        companyId: row.companyId ?? "",
-      });
+    if (!row) {
+      seededIdRef.current = null;
+      return;
     }
+    if (seededIdRef.current === row.id) return;
+    seededIdRef.current = row.id;
+    reset({
+      label: row.label ?? "",
+      institution: row.institution ?? "",
+      principal: row.principal != null ? String(row.principal) : "",
+      currency: row.nativeCurrency,
+      startDate: toDateInputValue(row.startDate),
+      maturityDate: toDateInputValue(row.maturityDate),
+      interestRate: row.interestRate != null ? String(row.interestRate) : "",
+      payoutFrequency: row.payoutFrequency ?? "AT_MATURITY",
+      companyId: row.companyId ?? "",
+    });
   }, [row, reset]);
 
   const v = watch();

@@ -32,36 +32,32 @@ export const Field = React.forwardRef<
 ));
 Field.displayName = "Field";
 
-export function SelectField({
-  label,
-  error,
-  id,
-  className,
-  children,
-  ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement> & {
-  label: string;
-  error?: string;
-}) {
-  return (
-    <div>
-      <Label htmlFor={id} className="mb-1.5 block">
-        {label}
-      </Label>
-      <select
-        id={id}
-        aria-invalid={error ? true : undefined}
-        className={cn(
-          "flex h-10 w-full rounded border border-border bg-surface-highest px-3 text-sm text-fg transition-colors",
-          "focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
-          "aria-[invalid=true]:border-error",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </select>
-      <FieldError message={error} />
-    </div>
-  );
-}
+export const SelectField = React.forwardRef<
+  HTMLSelectElement,
+  React.SelectHTMLAttributes<HTMLSelectElement> & {
+    label: string;
+    error?: string;
+  }
+>(({ label, error, id, className, children, ...props }, ref) => (
+  <div>
+    <Label htmlFor={id} className="mb-1.5 block">
+      {label}
+    </Label>
+    <select
+      ref={ref}
+      id={id}
+      aria-invalid={error ? true : undefined}
+      className={cn(
+        "flex h-10 w-full rounded border border-border bg-surface-highest px-3 text-sm text-fg transition-colors",
+        "focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
+        "aria-[invalid=true]:border-error",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </select>
+    <FieldError message={error} />
+  </div>
+));
+SelectField.displayName = "SelectField";
