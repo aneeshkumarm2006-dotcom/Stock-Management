@@ -16,9 +16,16 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { LEASE_TYPES, RENT_CYCLES, type LeaseType, type RentCycle } from "@/types/pm";
+import {
+  LEASE_TYPES,
+  RENT_CYCLES,
+  type LeaseType,
+  type RentCycle,
+  type RentMethod,
+} from "@/types/pm";
 import { computeWarnings } from "@/lib/pm/warnings";
 import { WarningInline } from "@/components/pm/WarningBadge";
+import { formatMoney } from "@/lib/pm/currency";
 
 interface PropertyOption {
   id: string;
@@ -27,11 +34,41 @@ interface PropertyOption {
 interface UnitOption {
   id: string;
   unitId: string;
+  sizeSqft: number | null;
 }
 interface AccountOption {
   id: string;
   name: string;
   type: string;
+}
+
+// §4 — three labeled revenue rows. Base Rent → primaryRent; OPEX/Tax Recovery
+// → two splitRentCharges, each against its own seeded income account.
+type RentRowKey = "base" | "opex" | "tax";
+interface RentRow {
+  key: RentRowKey;
+  label: string;
+  defaultAccountName: string;
+  amount: string; // dollars — Fixed method
+  rate: string; // dollars / sq ft / mo — RatePerSqft method
+  accountId: string;
+}
+const RENT_ROW_DEFS: {
+  key: RentRowKey;
+  label: string;
+  defaultAccountName: string;
+}[] = [
+  { key: "base", label: "Base Rent", defaultAccountName: "Base Rent" },
+  { key: "opex", label: "OPEX Recovery", defaultAccountName: "OPEX Recoveries" },
+  { key: "tax", label: "Tax Recovery", defaultAccountName: "Tax Recoveries" },
+];
+function defaultRentRows(): RentRow[] {
+  return RENT_ROW_DEFS.map((d) => ({
+    ...d,
+    amount: "0",
+    rate: "0",
+    accountId: "",
+  }));
 }
 
 interface TenantDraft {
@@ -71,8 +108,8 @@ export function DraftLeaseFormModal({
   const [startDate, setStartDate] = React.useState("");
   const [endDate, setEndDate] = React.useState("");
   const [rentCycle, setRentCycle] = React.useState<RentCycle>("Monthly");
-  const [rentAmount, setRentAmount] = React.useState("0");
-  const [rentAccountId, setRentAccountId] = React.useState("");
+  const [rentMethod, setRentMethod] = React.useState<RentMethod>("Fixed");
+  const [rentRows, setRentRows] = React.useState<RentRow[]>(defaultRentRows());
   const [rentMemo, setRentMemo] = React.useState("");
   const [securityDeposit, setSecurityDeposit] = React.useState("0");
   const [tenants, setTenants] = React.useState<TenantDraft[]>([newTenant()]);
@@ -87,8 +124,8 @@ export function DraftLeaseFormModal({
     setStartDate("");
     setEndDate("");
     setRentCycle("Monthly");
-    setRentAmount("0");
-    setRentAccountId("");
+    setRentMethod("Fixed");
+    setRentRows(defaultRentRows());
     setRentMemo("");
     setSecurityDeposit("0");
     setTenants([newTenant()]);
@@ -105,16 +142,35 @@ export function DraftLeaseFormModal({
           propertyName: row.propertyName,
         })),
       );
-      setAccounts(
-        (a as { id: string; name: string; type: string; active?: boolean }[])
-          .filter((row) => row.active !== false)
-          .map((row) => ({ id: row.id, name: row.name, type: row.type })),
+      const all = (a as {
+        id: string;
+        name: string;
+        type: string;
+        active?: boolean;
+        isGroup?: boolean;
+      }[])
+        .filter((row) => row.active !== false && !row.isGroup)
+        .map((row) => ({ id: row.id, name: row.name, type: row.type }));
+      setAccounts(all);
+      // §4 — pre-select each row's seeded income account when present.
+      const income = all.filter((x) => x.type === "Income");
+      setRentRows((prev) =>
+        prev.map((r) => {
+          const match = income.find((x) => x.name === r.defaultAccountName);
+          return match ? { ...r, accountId: match.id } : r;
+        }),
       );
     });
     return () => {
       cancelled = true;
     };
   }, [open]);
+
+  function updateRow(key: RentRowKey, patch: Partial<RentRow>) {
+    setRentRows((prev) =>
+      prev.map((r) => (r.key === key ? { ...r, ...patch } : r)),
+    );
+  }
 
   React.useEffect(() => {
     if (!propertyId) {
@@ -127,10 +183,13 @@ export function DraftLeaseFormModal({
       .then((data) => {
         if (cancelled) return;
         setUnits(
-          (data as { id: string; unitId: string }[]).map((r) => ({
-            id: r.id,
-            unitId: r.unitId,
-          })),
+          (data as { id: string; unitId: string; sizeSqft: number | null }[]).map(
+            (r) => ({
+              id: r.id,
+              unitId: r.unitId,
+              sizeSqft: r.sizeSqft ?? null,
+            }),
+          ),
         );
       });
     return () => {
@@ -148,6 +207,26 @@ export function DraftLeaseFormModal({
     setTenants((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
   }
 
+  // §3/§4 — the rent method applies to all three revenue rows; per-sqft rows
+  // resolve against the selected unit's sizeSqft.
+  const selectedUnitSqft = units.find((u) => u.id === unitId)?.sizeSqft ?? null;
+  const incomeAccounts = accounts.filter((a) => a.type === "Income");
+  const rowMonthlyDollars = React.useCallback(
+    (r: RentRow): number => {
+      if (rentMethod === "RatePerSqft") {
+        const rate = Number(r.rate) || 0;
+        return selectedUnitSqft && rate > 0 ? rate * selectedUnitSqft : 0;
+      }
+      return Number(r.amount) || 0;
+    },
+    [rentMethod, selectedUnitSqft],
+  );
+  const totalMonthlyDollars = rentRows.reduce(
+    (s, r) => s + rowMonthlyDollars(r),
+    0,
+  );
+  const baseRow = rentRows.find((r) => r.key === "base")!;
+
   async function save() {
     // Property/unit/rentAccount presence checks moved to non-blocking warnings.
     // startDate + Fixed-needs-endDate remain hard requirements — a draft lease
@@ -163,7 +242,35 @@ export function DraftLeaseFormModal({
       });
       return;
     }
+    // §3/§4 — price-per-sqft needs a positive Base Rent rate and a unit that
+    // has a sizeSqft (Base Rent maps to the required primaryRent).
+    if (rentMethod === "RatePerSqft") {
+      if (!(Number(baseRow.rate) > 0)) {
+        toast({
+          title: "Enter a Base Rent price-per-sq-ft rate above 0",
+          variant: "error",
+        });
+        return;
+      }
+      if (!(selectedUnitSqft && selectedUnitSqft > 0)) {
+        toast({
+          title: "Pick a unit with a square footage to use price per sq ft",
+          variant: "error",
+        });
+        return;
+      }
+    }
     const cleanTenants = tenants.filter((t) => t.firstName && t.lastName);
+    // §4 — OPEX/Tax Recovery → splitRentCharges (only positive-amount rows).
+    const splitRentCharges = rentRows
+      .filter((r) => r.key !== "base")
+      .map((r) => ({ row: r, dollars: rowMonthlyDollars(r) }))
+      .filter(({ row, dollars }) => dollars > 0 && Boolean(row.accountId))
+      .map(({ row, dollars }) => ({
+        accountId: row.accountId,
+        amount: dollars,
+        memo: row.label,
+      }));
     setSaving(true);
     const payload = {
       propertyId,
@@ -173,11 +280,17 @@ export function DraftLeaseFormModal({
       endDate: leaseType === "At-will" ? null : endDate || null,
       rentCycle,
       primaryRent: {
-        amount: Number(rentAmount) || 0,
-        accountId: rentAccountId,
+        // §3 — the server derives the cents amount for RatePerSqft from the
+        // rate × unit sizeSqft; send 0 here.
+        amount: rentMethod === "RatePerSqft" ? 0 : Number(baseRow.amount) || 0,
+        accountId: baseRow.accountId,
+        rentMethod,
+        ratePerSqft:
+          rentMethod === "RatePerSqft" ? Number(baseRow.rate) || 0 : undefined,
         nextDueDate: startDate,
         memo: rentMemo || undefined,
       },
+      splitRentCharges,
       securityDeposit: Number(securityDeposit) || 0,
       tenants: cleanTenants.map((t) => ({
         firstName: t.firstName,
@@ -293,31 +406,90 @@ export function DraftLeaseFormModal({
             />
           </div>
           <div>
-            <Label>Primary rent ($)</Label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={rentAmount}
-              onChange={(e) => setRentAmount(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label>Rent account (CoA)</Label>
+            <Label>Rent method</Label>
             <select
               className="w-full rounded border bg-background px-2 py-1.5 text-sm"
-              value={rentAccountId}
-              onChange={(e) => setRentAccountId(e.target.value)}
+              value={rentMethod}
+              onChange={(e) => setRentMethod(e.target.value as RentMethod)}
             >
-              <option value="">— select —</option>
-              {accounts
-                .filter((a) => a.type === "Income")
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
+              <option value="Fixed">Fixed amount</option>
+              <option value="RatePerSqft">Price per sq ft</option>
             </select>
+          </div>
+          <div aria-hidden />
+
+          {/* §4 — three labeled revenue rows: Base Rent / OPEX Recovery / Tax
+              Recovery, each against its own income account. */}
+          <div className="col-span-2 space-y-2">
+            <Label>
+              Revenue —{" "}
+              {rentMethod === "RatePerSqft" ? "$ / sq ft / mo" : "$ / mo"} per
+              category
+            </Label>
+            {rentRows.map((r) => (
+              <div
+                key={r.key}
+                className="grid grid-cols-12 items-center gap-2"
+              >
+                <div className="col-span-3 text-sm">
+                  {r.label}
+                  {r.key === "base" && (
+                    <span className="text-muted-foreground"> *</span>
+                  )}
+                </div>
+                <div className="col-span-4">
+                  {rentMethod === "Fixed" ? (
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={r.amount}
+                      onChange={(e) =>
+                        updateRow(r.key, { amount: e.target.value })
+                      }
+                    />
+                  ) : (
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={r.rate}
+                      onChange={(e) =>
+                        updateRow(r.key, { rate: e.target.value })
+                      }
+                    />
+                  )}
+                </div>
+                <div className="col-span-5">
+                  <select
+                    className="w-full rounded border bg-background px-2 py-1.5 text-sm"
+                    value={r.accountId}
+                    onChange={(e) =>
+                      updateRow(r.key, { accountId: e.target.value })
+                    }
+                  >
+                    <option value="">— income account —</option>
+                    {incomeAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                {rentMethod === "RatePerSqft"
+                  ? selectedUnitSqft && selectedUnitSqft > 0
+                    ? `Rates × ${selectedUnitSqft} sq ft`
+                    : "Select a unit with a square footage to use price per sq ft."
+                  : ""}
+              </span>
+              <span className="text-sm font-medium text-foreground">
+                Total: {formatMoney(Math.round(totalMonthlyDollars * 100))} / mo
+              </span>
+            </div>
           </div>
           <div className="col-span-2">
             <Label>Rent memo (max 100)</Label>
@@ -411,7 +583,7 @@ export function DraftLeaseFormModal({
             {
               propertyId,
               unitId,
-              primaryRent: { accountId: rentAccountId },
+              primaryRent: { accountId: baseRow.accountId },
             },
             "DraftLease",
           )}

@@ -9,9 +9,16 @@ export interface IUnit {
   organizationId: Types.ObjectId;
   propertyId: Types.ObjectId;
   unitId: string;
+  // changes.md §2 — bedrooms/bathrooms are residential-only at the UI level
+  // (hidden for Commercial properties) but kept on the schema so a unit's
+  // data survives a property class flip. No data is dropped for commercial
+  // units; the fields are simply not rendered.
   bedrooms?: number;
   bathrooms?: string;
   sizeSqft?: number;
+  // Future: commercial fields — unit type, floor number, CAM area… (Q7,
+  // awaiting client). Placeholder only — do not add real fields until the
+  // client confirms the exact set (changes.md §7).
   description?: string;
   amenities: string[];
   /** Image gallery — refs to PmFile rows tagged with locationType='Unit'. */

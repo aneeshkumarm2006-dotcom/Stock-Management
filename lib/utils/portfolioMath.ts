@@ -28,6 +28,14 @@ export interface PositionInput {
   price?: number | null;
   /** Per-share day change, native currency. */
   dayChange?: number | null;
+  /**
+   * Non-equity holding (GIC/Bond/fund/cash) valued without a live market
+   * quote. Its current value is fed via `price` (with `quantity` = 1 and
+   * `avgBuyPrice` = invested), but `hasQuote` is forced false so the
+   * performer stat cards and "live price" column skip it while totals and
+   * weights still include it.
+   */
+  manual?: boolean;
 }
 
 /** Per-position metrics, all monetary fields in the display currency. */
@@ -94,9 +102,14 @@ function computePositionMetrics(
     toDisplayCurrency(amount, p.currency, displayCurrency, rates);
 
   const invested = conv(p.quantity * p.avgBuyPrice);
-  const hasQuote = p.price != null && Number.isFinite(p.price);
-  // Without a live quote, fall back to cost basis so totals stay sane.
-  const currentValue = hasQuote
+  const hasLivePrice = p.price != null && Number.isFinite(p.price);
+  // Non-equity holdings carry a precomputed value via `price` but must not
+  // count as "quoted" (no live market, no performer ranking, no live-price
+  // column). Equities are quoted only when a real price is present.
+  const hasQuote = hasLivePrice && !p.manual;
+  // Use the supplied value (live quote, or precomputed for manual holdings);
+  // without one, fall back to cost basis so totals stay sane.
+  const currentValue = hasLivePrice
     ? conv(p.quantity * (p.price as number))
     : invested;
   const pnl = currentValue - invested;

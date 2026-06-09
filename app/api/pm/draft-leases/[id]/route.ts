@@ -7,6 +7,7 @@ import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { DraftLease } from '@/lib/db/models/pm/DraftLease';
 import { Lease } from '@/lib/db/models/pm/Lease';
+import { Unit } from '@/lib/db/models/pm/Unit';
 import type {
   EsignatureStatus,
   LeaseType,
@@ -23,6 +24,7 @@ import {
 } from '@/lib/validation/pm/draftLease';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
+import { rentCentsFromRateCents } from '@/lib/pm/rent';
 
 export const runtime = 'nodejs';
 
@@ -90,6 +92,8 @@ export async function GET(
     primaryRent: {
       amount: doc.primaryRent.amount,
       accountId: String(doc.primaryRent.accountId),
+      rentMethod: doc.primaryRent.rentMethod ?? 'Fixed',
+      ratePerSqftCents: doc.primaryRent.ratePerSqftCents ?? 0,
       nextDueDate: doc.primaryRent.nextDueDate ?? null,
       memo: doc.primaryRent.memo ?? '',
     },
@@ -277,11 +281,30 @@ export async function PATCH(
       : null;
   }
   if (primaryRent !== undefined) {
+    // §3 — store method + rate; best-effort resolve the amount against the
+    // (possibly just-updated) unit's sizeSqft. Drafts are lenient: a missing
+    // sizeSqft just yields amount 0; execute does the authoritative recompute.
+    const rentMethod =
+      primaryRent.rentMethod === 'RatePerSqft' ? 'RatePerSqft' : 'Fixed';
+    let amountCents = toCents(primaryRent.amount ?? 0);
+    let ratePerSqftCents = 0;
+    if (rentMethod === 'RatePerSqft') {
+      ratePerSqftCents = toCents(primaryRent.ratePerSqft ?? 0);
+      const unit = await Unit.findOne({
+        _id: doc.unitId,
+        organizationId: doc.organizationId,
+      })
+        .select({ sizeSqft: 1 })
+        .lean<{ sizeSqft?: number } | null>();
+      amountCents = rentCentsFromRateCents(ratePerSqftCents, unit?.sizeSqft ?? 0);
+    }
     doc.primaryRent = {
-      amount: toCents(primaryRent.amount ?? 0),
+      amount: amountCents,
       accountId: primaryRent.accountId
         ? new Types.ObjectId(primaryRent.accountId)
         : (null as unknown as Types.ObjectId),
+      rentMethod,
+      ratePerSqftCents,
       nextDueDate: primaryRent.nextDueDate ? new Date(primaryRent.nextDueDate) : null,
       memo: primaryRent.memo,
     };

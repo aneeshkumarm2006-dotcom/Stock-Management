@@ -15,6 +15,7 @@ import {
 import { leaseCreateSchema } from '@/lib/validation/pm/lease';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
+import { resolveRent, RentResolutionError } from '@/lib/pm/rent';
 import { LEASE_STATUSES } from '@/types/pm';
 import type { LeaseType, RentCycle } from '@/types/pm';
 import {
@@ -64,8 +65,10 @@ export async function GET(request: Request) {
       unitId: String(r.unitId),
       tenants: (r.tenants ?? []).map((t) => ({
         tenantId: String(t.tenantId),
+        tenantType: t.tenantType ?? 'Individual',
         firstName: t.firstName,
         lastName: t.lastName,
+        companyName: t.companyName ?? '',
       })),
       leaseType: r.leaseType,
       startDate: r.startDate,
@@ -75,6 +78,12 @@ export async function GET(request: Request) {
       evictionPendingNote: r.evictionPendingNote ?? '',
       rentCycle: r.rentCycle,
       primaryRentAmount: r.primaryRent?.amount ?? 0,
+      // §4 — total monthly rent = Base Rent (primaryRent) + the OPEX/Tax
+      // recovery splits. Lets the rent roll show the full charge while
+      // `primaryRentAmount` still exposes the base-only figure.
+      totalRentAmount:
+        (r.primaryRent?.amount ?? 0) +
+        (r.splitRentCharges ?? []).reduce((s, c) => s + (c.amount ?? 0), 0),
       securityDepositReceived: r.securityDeposit?.received ?? 0,
       securityDepositHeld:
         (r.securityDeposit?.received ?? 0) -
@@ -141,13 +150,31 @@ export async function POST(request: Request) {
     organizationId: orgId,
     propertyId: propertyObjectId,
   })
-    .select({ _id: 1 })
-    .lean();
+    .select({ _id: 1, sizeSqft: 1 })
+    .lean<{ _id: Types.ObjectId; sizeSqft?: number } | null>();
   if (!unit) {
     return NextResponse.json(
       { error: 'unitId does not reference a unit on this property' },
       { status: 400 },
     );
+  }
+
+  // §3 — resolve the monthly rent: Fixed flat amount, or rate × unit sizeSqft.
+  // Persist the RESOLVED cents into primaryRent.amount so no downstream reader
+  // learns the formula. Rejects a RatePerSqft lease whose unit has no sizeSqft.
+  let resolvedRent;
+  try {
+    resolvedRent = resolveRent({
+      rentMethod: parsed.data.primaryRent.rentMethod,
+      amount: parsed.data.primaryRent.amount,
+      ratePerSqft: parsed.data.primaryRent.ratePerSqft,
+      sizeSqft: unit.sizeSqft ?? null,
+    });
+  } catch (err) {
+    if (err instanceof RentResolutionError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
   }
 
   const tenantRefs = [
@@ -225,15 +252,19 @@ export async function POST(request: Request) {
         : null,
       tenants: parsed.data.tenants.map((t) => ({
         tenantId: new Types.ObjectId(t.tenantId),
-        firstName: t.firstName,
-        lastName: t.lastName,
+        tenantType: t.tenantType ?? 'Individual',
+        firstName: t.firstName ?? '',
+        lastName: t.lastName ?? '',
+        companyName: t.companyName,
         email: t.email,
         isCosigner: t.isCosigner ?? false,
       })),
       cosigners: (parsed.data.cosigners ?? []).map((t) => ({
         tenantId: new Types.ObjectId(t.tenantId),
-        firstName: t.firstName,
-        lastName: t.lastName,
+        tenantType: t.tenantType ?? 'Individual',
+        firstName: t.firstName ?? '',
+        lastName: t.lastName ?? '',
+        companyName: t.companyName,
         email: t.email,
         isCosigner: true,
       })),
@@ -248,8 +279,10 @@ export async function POST(request: Request) {
       evictionPending: false,
       rentCycle: (parsed.data.rentCycle ?? 'Monthly') as RentCycle,
       primaryRent: {
-        amount: toCents(parsed.data.primaryRent.amount),
+        amount: resolvedRent.amountCents,
         accountId: new Types.ObjectId(parsed.data.primaryRent.accountId),
+        rentMethod: resolvedRent.rentMethod,
+        ratePerSqftCents: resolvedRent.ratePerSqftCents,
         nextDueDate: parsed.data.primaryRent.nextDueDate
           ? new Date(parsed.data.primaryRent.nextDueDate)
           : null,

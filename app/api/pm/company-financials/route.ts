@@ -47,8 +47,16 @@ export async function GET(request: Request) {
 
   const org = await Organization.findById(orgObjectId).lean<{
     accountingMode: AccountingMode;
+    defaultCurrency?: 'USD' | 'CAD';
+    estimatedIncomeTaxRatePct?: number;
   } | null>();
   const mode: AccountingMode = org?.accountingMode ?? 'accrual';
+  const defaultCurrency: 'USD' | 'CAD' = org?.defaultCurrency ?? 'USD';
+  // §6 — per-company estimated income-tax rate (0C). Clamp to [0, 100].
+  const estimatedIncomeTaxRatePct = Math.min(
+    100,
+    Math.max(0, org?.estimatedIncomeTaxRatePct ?? 0),
+  );
 
   const cashJeIds =
     mode === 'cash'
@@ -66,8 +74,16 @@ export async function GET(request: Request) {
         organizationId: orgObjectId,
         type: { $in: ['Income', 'Operating Expense'] },
       },
-      { _id: 1, type: 1, name: 1 },
-    ).lean<Array<{ _id: Types.ObjectId; type: string; name: string }>>(),
+      { _id: 1, type: 1, name: 1, parentId: 1, defaultFor: 1 },
+    ).lean<
+      Array<{
+        _id: Types.ObjectId;
+        type: string;
+        name: string;
+        parentId?: Types.ObjectId | null;
+        defaultFor?: string | null;
+      }>
+    >(),
     BankAccount.find(
       { organizationId: orgObjectId, active: true, isCompanyCash: true },
       { _id: 1, name: 1, chartOfAccountId: 1 },
@@ -126,6 +142,24 @@ export async function GET(request: Request) {
   const accountTypeById = new Map(
     accounts.map((a) => [String(a._id), a.type]),
   );
+
+  // §6 — Investment revenue is addressed BY ROLE, not by a fragile name match.
+  // The seeded Investment Income group carries `defaultFor: 'Investment Income'`
+  // (0B); the postable leaves are its children. Build the set of account ids
+  // whose income should count as "Investment revenue" = the group + its leaves.
+  const investmentGroup = accounts.find(
+    (a) => a.defaultFor === 'Investment Income',
+  );
+  const investmentAccountIds = new Set<string>();
+  if (investmentGroup) {
+    investmentAccountIds.add(String(investmentGroup._id));
+    for (const a of accounts) {
+      if (a.parentId && String(a.parentId) === String(investmentGroup._id)) {
+        investmentAccountIds.add(String(a._id));
+      }
+    }
+  }
+  let investmentRevenueCents = 0;
   const propertyNameById = new Map(
     properties.map((p) => [String(p._id), p.propertyName] as const),
   );
@@ -164,6 +198,9 @@ export async function GET(request: Request) {
         const amount = (line.credit ?? 0) - (line.debit ?? 0);
         bucket.incomeCents += amount;
         mbucket.incomeCents += amount;
+        if (investmentAccountIds.has(String(line.accountId))) {
+          investmentRevenueCents += amount;
+        }
       } else if (acctType === 'Operating Expense') {
         const amount = (line.debit ?? 0) - (line.credit ?? 0);
         bucket.expenseCents += amount;
@@ -192,6 +229,21 @@ export async function GET(request: Request) {
     propertyRollup.reduce((s, p) => s + p.netCents, 0) +
     (companyBucket.incomeCents - companyBucket.expenseCents);
 
+  // §6 — total revenue = rent (+ other ordinary income) + investment revenue.
+  // `rentalRevenueCents` is "everything that isn't investment income" so the UI
+  // can show the two side by side; their sum is `totalRevenueCents`.
+  const totalRevenueCents =
+    propertyRollup.reduce((s, p) => s + p.incomeCents, 0) +
+    companyBucket.incomeCents;
+  const rentalRevenueCents = totalRevenueCents - investmentRevenueCents;
+
+  // §6 — estimated income taxes is a DERIVED display line (no GL write). Apply
+  // the org-level rate to positive net income only; afterTaxNet nets it out.
+  const estimatedIncomeTaxCents = Math.round(
+    (Math.max(0, netIncomeCents) * estimatedIncomeTaxRatePct) / 100,
+  );
+  const afterTaxNetCents = netIncomeCents - estimatedIncomeTaxCents;
+
   // Sort monthly by key and emit `{ month, netCents }` for the chart.
   const monthlyBalances = Array.from(monthly.entries())
     .sort(([a], [b]) => a.localeCompare(b))
@@ -202,12 +254,20 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     accountingMode: mode,
+    defaultCurrency,
     from,
     to,
     companyCashCents,
     unpaidBillsCents,
     overdueBillsCount,
     netIncomeCents,
+    // §6 — additive reporting fields. `totalRevenueCents = rental + investment`.
+    totalRevenueCents,
+    rentalRevenueCents,
+    investmentRevenueCents,
+    estimatedIncomeTaxRatePct,
+    estimatedIncomeTaxCents,
+    afterTaxNetCents,
     companyOnly: {
       incomeCents: companyBucket.incomeCents,
       expenseCents: companyBucket.expenseCents,

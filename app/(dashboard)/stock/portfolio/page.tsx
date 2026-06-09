@@ -27,10 +27,26 @@ import {
   type OptionalColumn,
 } from "@/components/portfolio/PortfolioFilters";
 import { HoldingsTable } from "@/components/portfolio/HoldingsTable";
+import { FixedIncomeTable } from "@/components/portfolio/FixedIncomeTable";
+import { ManualHoldingsTable } from "@/components/portfolio/ManualHoldingsTable";
+import { UpdateValueDialog } from "@/components/portfolio/UpdateValueDialog";
 import { DeletePositionDialog } from "@/components/portfolio/DeletePositionDialog";
-import { AddPositionPanel } from "@/components/panels/AddPositionPanel";
-import { EditPositionPanel } from "@/components/panels/EditPositionPanel";
+import { AddHoldingPanel } from "@/components/panels/add/AddHoldingPanel";
+import { EditHoldingPanel } from "@/components/panels/EditHoldingPanel";
 import { PageHead } from "@/components/layout/PageHead";
+
+function SectionHeading({ title, count }: { title: string; count: number }) {
+  return (
+    <div className="flex items-baseline gap-2 pt-2">
+      <h2 className="font-display text-sm font-bold uppercase tracking-wider text-fg">
+        {title}
+      </h2>
+      <span className="text-xs text-fg-muted">
+        {count} {count === 1 ? "holding" : "holdings"}
+      </span>
+    </div>
+  );
+}
 
 function PortfolioError({
   message,
@@ -72,10 +88,31 @@ export default function PortfolioPage() {
   const [optionalColumns, setOptionalColumns] =
     useState<Record<OptionalColumn, boolean>>(DEFAULT_OPTIONAL_COLUMNS);
   const [toDelete, setToDelete] = useState<PortfolioRow | null>(null);
+  const [toUpdateValue, setToUpdateValue] = useState<PortfolioRow | null>(null);
 
+  // Split holdings into per-type sections. Equities keep the filterable table;
+  // the rest get type-appropriate section tables.
+  const equityRows = useMemo(
+    () => rows.filter((r) => (r.assetType ?? "EQUITY") === "EQUITY"),
+    [rows],
+  );
+  const fixedIncomeRows = useMemo(
+    () => rows.filter((r) => r.assetType === "GIC" || r.assetType === "BOND"),
+    [rows],
+  );
+  const mutualFundRows = useMemo(
+    () => rows.filter((r) => r.assetType === "MUTUAL_FUND"),
+    [rows],
+  );
+  const cashRows = useMemo(
+    () => rows.filter((r) => r.assetType === "CASH"),
+    [rows],
+  );
+
+  // Filters apply to the equities section only.
   const filtered = useMemo(() => {
     const q = filter.query.trim().toLowerCase();
-    return rows.filter((r) => {
+    return equityRows.filter((r) => {
       if (filter.exchange !== "ALL" && r.exchange !== filter.exchange)
         return false;
       if (filter.country !== "ALL" && r.country !== filter.country)
@@ -91,17 +128,16 @@ export default function PortfolioPage() {
       }
       return true;
     });
-  }, [rows, filter]);
+  }, [equityRows, filter]);
 
   // Per-exchange counts for the filter pills — derived from the unfiltered
-  // row set so the pills always reflect the user's true distribution.
-  // Positions can now sit on any global venue (LSE, XETRA, HKEX, …) so the
-  // map is open-ended; the filter UI keeps the legacy NA pills as primary.
+  // equity rows so the pills always reflect the user's true distribution.
   const exchangeCounts = useMemo(() => {
     const counts: Record<string, number> = { NYSE: 0, NASDAQ: 0, TSX: 0 };
-    for (const r of rows) counts[r.exchange] = (counts[r.exchange] ?? 0) + 1;
+    for (const r of equityRows)
+      counts[r.exchange] = (counts[r.exchange] ?? 0) + 1;
     return counts;
-  }, [rows]);
+  }, [equityRows]);
 
   const distinctExchanges = (["NASDAQ", "NYSE", "TSX"] as const).filter(
     (id) => (exchangeCounts[id] ?? 0) > 0,
@@ -153,31 +189,75 @@ export default function PortfolioPage() {
 
           <PortfolioStatCards summary={summary} />
 
-          <PortfolioFilters
-            filter={filter}
-            onChange={setFilter}
-            sectors={sectors}
-            exchangeCounts={exchangeCounts}
-            optionalColumns={optionalColumns}
-            onOptionalColumnsChange={setOptionalColumns}
-          />
+          {/* Equities — the filterable/sortable table. */}
+          {equityRows.length > 0 && (
+            <>
+              <PortfolioFilters
+                filter={filter}
+                onChange={setFilter}
+                sectors={sectors}
+                exchangeCounts={exchangeCounts}
+                optionalColumns={optionalColumns}
+                onOptionalColumnsChange={setOptionalColumns}
+              />
+              <HoldingsTable
+                rows={filtered}
+                totalRowCount={equityRows.length}
+                displayCurrency={displayCurrency}
+                optionalColumns={optionalColumns}
+                onDelete={setToDelete}
+              />
+            </>
+          )}
 
-          <HoldingsTable
-            rows={filtered}
-            totalRowCount={rows.length}
-            displayCurrency={displayCurrency}
-            optionalColumns={optionalColumns}
-            onDelete={setToDelete}
-          />
+          {/* Fixed income — GICs & Bonds. */}
+          {fixedIncomeRows.length > 0 && (
+            <>
+              <SectionHeading title="Fixed income" count={fixedIncomeRows.length} />
+              <FixedIncomeTable
+                rows={fixedIncomeRows}
+                displayCurrency={displayCurrency}
+                onDelete={setToDelete}
+              />
+            </>
+          )}
+
+          {/* Private mutual funds — manual monthly value. */}
+          {mutualFundRows.length > 0 && (
+            <>
+              <SectionHeading title="Mutual funds" count={mutualFundRows.length} />
+              <ManualHoldingsTable
+                rows={mutualFundRows}
+                displayCurrency={displayCurrency}
+                variant="MUTUAL_FUND"
+                onDelete={setToDelete}
+                onUpdateValue={setToUpdateValue}
+              />
+            </>
+          )}
+
+          {/* Cash & other manual holdings. */}
+          {cashRows.length > 0 && (
+            <>
+              <SectionHeading title="Cash & other" count={cashRows.length} />
+              <ManualHoldingsTable
+                rows={cashRows}
+                displayCurrency={displayCurrency}
+                variant="CASH"
+                onDelete={setToDelete}
+              />
+            </>
+          )}
         </>
       )}
 
-      {/* Slide-in panels + delete confirmation (mounted once). */}
-      <AddPositionPanel />
-      <EditPositionPanel rows={rows} />
-      <DeletePositionDialog
-        row={toDelete}
-        onClose={() => setToDelete(null)}
+      {/* Slide-in panels + dialogs (mounted once). */}
+      <AddHoldingPanel />
+      <EditHoldingPanel rows={rows} />
+      <DeletePositionDialog row={toDelete} onClose={() => setToDelete(null)} />
+      <UpdateValueDialog
+        row={toUpdateValue}
+        onClose={() => setToUpdateValue(null)}
       />
     </div>
   );

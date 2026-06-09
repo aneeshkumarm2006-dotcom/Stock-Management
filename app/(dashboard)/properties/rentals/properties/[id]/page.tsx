@@ -42,9 +42,11 @@ import {
   EntityImageGallery,
   type GalleryImage,
 } from "@/components/pm/EntityImageGallery";
+import { tenantDisplayName } from "@/lib/pm/tenantName";
 import type {
   PropertyClass,
   PropertySubType,
+  TenantType,
 } from "@/types/pm";
 
 interface OwnerRef {
@@ -115,7 +117,13 @@ interface ActiveLeaseRow {
   id: string;
   unitId: string;
   status: string;
-  tenants: { tenantId: string; firstName: string; lastName: string }[];
+  tenants: {
+    tenantId: string;
+    tenantType?: TenantType;
+    firstName: string;
+    lastName: string;
+    companyName?: string;
+  }[];
 }
 
 export default function PropertyDetailPage() {
@@ -156,7 +164,7 @@ export default function PropertyDetailPage() {
   const occupantsByUnit = React.useMemo(() => {
     const m = new Map<string, { names: string[]; status: string }>();
     for (const l of activeLeases) {
-      const names = l.tenants.map((t) => `${t.firstName} ${t.lastName}`.trim());
+      const names = l.tenants.map((t) => tenantDisplayName(t));
       const existing = m.get(l.unitId);
       if (!existing || (existing.status !== "Active" && l.status === "Active")) {
         m.set(l.unitId, { names, status: l.status });
@@ -201,6 +209,11 @@ export default function PropertyDetailPage() {
     toast({ title: "Reactivated", variant: "success" });
     await load();
   }
+
+  // changes.md §2 — Commercial properties hide the residential Beds/Baths
+  // columns + inputs. The fields stay on the schema (no data loss on a class
+  // flip); we just don't render them here.
+  const isCommercial = doc.propertyClass === "Commercial";
 
   return (
     <div className="space-y-4">
@@ -691,8 +704,8 @@ export default function PropertyDetailPage() {
                   <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
                     <tr>
                       <th className="py-2">Unit</th>
-                      <th>Beds</th>
-                      <th>Baths</th>
+                      {!isCommercial && <th>Beds</th>}
+                      {!isCommercial && <th>Baths</th>}
                       <th>Size (sqft)</th>
                       <th>Appliances</th>
                       <th>Occupant(s)</th>
@@ -711,8 +724,16 @@ export default function PropertyDetailPage() {
                               {u.unitId}
                             </Link>
                           </td>
-                          <td className="text-fg-muted">{u.bedrooms ?? "—"}</td>
-                          <td className="text-fg-muted">{u.bathrooms || "—"}</td>
+                          {!isCommercial && (
+                            <td className="text-fg-muted">
+                              {u.bedrooms ?? "—"}
+                            </td>
+                          )}
+                          {!isCommercial && (
+                            <td className="text-fg-muted">
+                              {u.bathrooms || "—"}
+                            </td>
+                          )}
                           <td className="text-fg-muted">{u.sizeSqft ?? "—"}</td>
                           <td className="text-fg-muted">{u.applianceCount}</td>
                           <td className="text-fg-muted">
@@ -743,6 +764,7 @@ export default function PropertyDetailPage() {
           </Card>
           <AddUnitModal
             propertyId={doc.id}
+            isCommercial={isCommercial}
             open={addUnitOpen}
             onClose={() => setAddUnitOpen(false)}
             onSaved={load}
@@ -911,11 +933,13 @@ function PropertyTasksTab({ propertyId }: { propertyId: string }) {
 
 function AddUnitModal({
   propertyId,
+  isCommercial = false,
   open,
   onClose,
   onSaved,
 }: {
   propertyId: string;
+  isCommercial?: boolean;
   open: boolean;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -942,8 +966,10 @@ function AddUnitModal({
       body: JSON.stringify({
         propertyId,
         unitId: form.unitId.trim(),
-        bedrooms: form.bedrooms ? Number(form.bedrooms) : undefined,
-        bathrooms: form.bathrooms || undefined,
+        // §2 — Commercial units don't capture Beds/Baths; omit them entirely.
+        bedrooms:
+          !isCommercial && form.bedrooms ? Number(form.bedrooms) : undefined,
+        bathrooms: !isCommercial && form.bathrooms ? form.bathrooms : undefined,
         sizeSqft: form.sizeSqft ? Number(form.sizeSqft) : undefined,
         description: form.description || undefined,
       }),
@@ -974,30 +1000,38 @@ function AddUnitModal({
               placeholder="A or 101"
             />
           </div>
-          <div className="grid gap-3 md:grid-cols-3">
-            <div className="space-y-1">
-              <Label htmlFor="u-beds">Beds</Label>
-              <Input
-                id="u-beds"
-                type="number"
-                min={0}
-                value={form.bedrooms}
-                onChange={(e) =>
-                  setForm({ ...form, bedrooms: e.target.value })
-                }
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="u-baths">Baths</Label>
-              <Input
-                id="u-baths"
-                value={form.bathrooms}
-                onChange={(e) =>
-                  setForm({ ...form, bathrooms: e.target.value })
-                }
-                placeholder="1.5"
-              />
-            </div>
+          <div
+            className={
+              "grid gap-3 " + (isCommercial ? "md:grid-cols-1" : "md:grid-cols-3")
+            }
+          >
+            {!isCommercial && (
+              <div className="space-y-1">
+                <Label htmlFor="u-beds">Beds</Label>
+                <Input
+                  id="u-beds"
+                  type="number"
+                  min={0}
+                  value={form.bedrooms}
+                  onChange={(e) =>
+                    setForm({ ...form, bedrooms: e.target.value })
+                  }
+                />
+              </div>
+            )}
+            {!isCommercial && (
+              <div className="space-y-1">
+                <Label htmlFor="u-baths">Baths</Label>
+                <Input
+                  id="u-baths"
+                  value={form.bathrooms}
+                  onChange={(e) =>
+                    setForm({ ...form, bathrooms: e.target.value })
+                  }
+                  placeholder="1.5"
+                />
+              </div>
+            )}
             <div className="space-y-1">
               <Label htmlFor="u-size">Sqft</Label>
               <Input

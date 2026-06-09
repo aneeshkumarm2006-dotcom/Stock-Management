@@ -42,6 +42,8 @@ export async function GET(
     id: String(doc._id),
     name: doc.name,
     type: doc.type,
+    parentId: doc.parentId ? String(doc.parentId) : null,
+    isGroup: Boolean(doc.isGroup),
     defaultFor: doc.defaultFor ?? null,
     cashFlowClassification: doc.cashFlowClassification ?? 'N/A',
     accountNumber: doc.accountNumber ?? '',

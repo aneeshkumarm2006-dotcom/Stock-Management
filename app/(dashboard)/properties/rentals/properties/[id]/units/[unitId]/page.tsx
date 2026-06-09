@@ -33,11 +33,14 @@ import {
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { AssignLeaseModal } from "@/components/pm/AssignLeaseModal";
+import { tenantDisplayName } from "@/lib/pm/tenantName";
+import type { PropertyClass, TenantType } from "@/types/pm";
 
 interface UnitDetail {
   id: string;
   propertyId: string;
   propertyName: string;
+  propertyClass: PropertyClass;
   address: {
     line1?: string;
     city?: string;
@@ -53,8 +56,10 @@ interface UnitDetail {
   images: GalleryImage[];
   currentTenants: Array<{
     tenantId: string;
+    tenantType?: TenantType;
     firstName: string;
     lastName: string;
+    companyName?: string;
     isCosigner: boolean;
   }>;
   mostRecentEvent: { eventType: string; createdAt: string } | null;
@@ -120,6 +125,10 @@ export default function UnitDetailPage() {
     await load();
   }
 
+  // changes.md §2 — hide residential Beds/Baths for Commercial properties and
+  // surface a placeholder for the future commercial-only fields (Q7).
+  const isCommercial = doc.propertyClass === "Commercial";
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -174,8 +183,20 @@ export default function UnitDetailPage() {
                 } as Record<string, unknown>}
                 fields={[
                   { key: "unitId", label: "Unit ID", required: true },
-                  { key: "bedrooms", label: "Bedrooms", type: "number" },
-                  { key: "bathrooms", label: "Bathrooms", placeholder: "e.g. 1.5" },
+                  ...(isCommercial
+                    ? []
+                    : [
+                        {
+                          key: "bedrooms",
+                          label: "Bedrooms",
+                          type: "number" as const,
+                        },
+                        {
+                          key: "bathrooms",
+                          label: "Bathrooms",
+                          placeholder: "e.g. 1.5",
+                        },
+                      ]),
                   { key: "sizeSqft", label: "Size (sqft)", type: "number" },
                   {
                     key: "description",
@@ -203,6 +224,21 @@ export default function UnitDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {isCommercial && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Commercial details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-fg-muted">
+                  Commercial-specific fields (unit type, floor number, CAM
+                  area…) are coming soon. Bedrooms and bathrooms don’t apply to
+                  commercial units and are hidden here.
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>
@@ -241,7 +277,7 @@ export default function UnitDetailPage() {
                         href={`/properties/rentals/tenants/${t.tenantId}`}
                         className="font-medium text-primary hover:underline"
                       >
-                        {t.firstName} {t.lastName}
+                        {tenantDisplayName(t)}
                       </Link>
                       {t.isCosigner && (
                         <span className="ml-2 text-xs text-fg-muted">

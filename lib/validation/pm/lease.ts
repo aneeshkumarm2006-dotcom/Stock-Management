@@ -8,6 +8,8 @@ import {
   LEASE_TYPES,
   LEASE_STATUSES,
   RENT_CYCLES,
+  RENT_METHODS,
+  TENANT_TYPES,
 } from '@/types/pm';
 import { LEASE_INLINE_FILE_CAP } from '@/lib/db/models/pm/DraftLease';
 
@@ -19,8 +21,13 @@ const memo = z.string().max(100);
 
 const tenantRefSchema = z.object({
   tenantId: objectIdString,
-  firstName: z.string().min(1).max(80),
-  lastName: z.string().min(1).max(80),
+  // §1 — first/last relaxed to optional so a Company tenant ref (companyName,
+  // empty names) is accepted. The tenant doc itself enforces the conditional
+  // rule; the ref is just a denormalized snapshot.
+  tenantType: z.enum(TENANT_TYPES as unknown as [string, ...string[]]).optional(),
+  firstName: z.string().max(80).optional(),
+  lastName: z.string().max(80).optional(),
+  companyName: z.string().max(200).optional(),
   email: z.string().email().optional().or(z.literal('')),
   isCosigner: z.boolean().optional(),
 });
@@ -31,12 +38,31 @@ const splitRentSchema = z.object({
   memo: memo.optional(),
 });
 
-const primaryRentSchema = z.object({
-  amount: z.number().nonnegative(),
-  accountId: objectIdString,
-  nextDueDate: z.string().min(8).nullable().optional(),
-  memo: memo.optional(),
-});
+const primaryRentSchema = z
+  .object({
+    amount: z.number().nonnegative(),
+    accountId: objectIdString,
+    // §3 — rent method + per-sqft rate (dollars). The route resolves the final
+    // cents `amount` from these; `amount` may arrive as 0 for `RatePerSqft`.
+    rentMethod: z.enum(RENT_METHODS as unknown as [string, ...string[]]).optional(),
+    ratePerSqft: z.number().nonnegative().optional(),
+    nextDueDate: z.string().min(8).nullable().optional(),
+    memo: memo.optional(),
+  })
+  .superRefine((data, ctx) => {
+    // §3 — RatePerSqft requires a positive rate. The unit's sizeSqft is checked
+    // server-side (the validator has no unit context).
+    if (
+      data.rentMethod === 'RatePerSqft' &&
+      !(typeof data.ratePerSqft === 'number' && data.ratePerSqft > 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ratePerSqft'],
+        message: 'Rent per square foot requires a rate greater than 0.',
+      });
+    }
+  });
 
 const recurringChargeSchema = z.object({
   amount: z.number().nonnegative(),

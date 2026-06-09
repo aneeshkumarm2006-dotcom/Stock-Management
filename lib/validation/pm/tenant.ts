@@ -1,5 +1,6 @@
 // Zod validators for Tenant (skeleton — PDR §3.5).
 import { z } from 'zod';
+import { TENANT_TYPES } from '@/types/pm';
 
 const phoneSchema = z.object({
   number: z.string().max(40),
@@ -17,8 +18,14 @@ const addressSchema = z.object({
 });
 
 const base = {
-  firstName: z.string().min(1).max(80),
-  lastName: z.string().min(1).max(80),
+  // §1 — first/last are optional at the field level; the conditional rule
+  // (Individual ⇒ first+last, Company ⇒ companyName) is enforced by the
+  // shared `.superRefine` below.
+  tenantType: z.enum(TENANT_TYPES as unknown as [string, ...string[]]).optional(),
+  firstName: z.string().min(1).max(80).optional(),
+  lastName: z.string().min(1).max(80).optional(),
+  companyName: z.string().min(1).max(200).optional(),
+  contactPersonName: z.string().max(160).optional(),
   email: z.string().email().optional(),
   phones: z
     .object({
@@ -36,15 +43,59 @@ const base = {
   customFields: z.record(z.unknown()).optional(),
 };
 
-export const tenantCreateSchema = z.object(base);
+/** §1 — conditional-required rule shared by create + update. On create an
+ *  absent `tenantType` defaults to Individual (so names are required); on
+ *  update an absent type means "unchanged", and the model's pre('validate')
+ *  hook validates the merged document, so we only enforce what the caller
+ *  explicitly provides here. */
+function applyTenantTypeRule(isCreate: boolean) {
+  return (
+    data: {
+      tenantType?: string;
+      firstName?: string;
+      lastName?: string;
+      companyName?: string;
+    },
+    ctx: z.RefinementCtx,
+  ): void => {
+    const type = data.tenantType ?? (isCreate ? 'Individual' : undefined);
+    if (type === 'Company') {
+      if (!data.companyName || !data.companyName.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['companyName'],
+          message: 'Company tenants require a company name.',
+        });
+      }
+    } else if (type === 'Individual' && isCreate) {
+      if (!data.firstName || !data.firstName.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['firstName'],
+          message: 'Individual tenants require a first name.',
+        });
+      }
+      if (!data.lastName || !data.lastName.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['lastName'],
+          message: 'Individual tenants require a last name.',
+        });
+      }
+    }
+  };
+}
+
+export const tenantCreateSchema = z
+  .object(base)
+  .superRefine(applyTenantTypeRule(true));
 
 export const tenantUpdateSchema = z
   .object({
     ...base,
-    firstName: base.firstName.optional(),
-    lastName: base.lastName.optional(),
     active: z.boolean().optional(),
   })
+  .superRefine(applyTenantTypeRule(false))
   .refine((d) => Object.keys(d).length > 0, {
     message: 'No fields to update',
   });

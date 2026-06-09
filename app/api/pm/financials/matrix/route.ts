@@ -119,8 +119,18 @@ export async function GET(request: Request) {
     new Set(tagged.map((b) => b.associationName as string)),
   ).sort();
 
+  // §6 — surface the org-level estimated income-tax rate so the page can render
+  // a company-column-only derived tax footer (no GL write; matches the
+  // company-financials report). Defaults 0 ⇒ the footer reads $0.
+  const estimatedIncomeTaxRatePct = Math.min(
+    100,
+    Math.max(0, (org as { estimatedIncomeTaxRatePct?: number } | null)
+      ?.estimatedIncomeTaxRatePct ?? 0),
+  );
+
   return NextResponse.json({
     accountingMode: org?.accountingMode ?? 'accrual',
+    estimatedIncomeTaxRatePct,
     accounts: accounts.map((a) => ({
       id: String(a._id),
       name: a.name,

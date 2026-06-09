@@ -42,7 +42,7 @@ export async function GET(
     _id: doc.propertyId,
     organizationId: doc.organizationId,
   })
-    .select({ propertyName: 1, address: 1 })
+    .select({ propertyName: 1, address: 1, propertyClass: 1 })
     .lean();
 
   const lastEvent = await ActivityLogEntry.findOne({
@@ -73,8 +73,10 @@ export async function GET(
   const currentTenants =
     activeLease?.tenants?.map((t) => ({
       tenantId: String(t.tenantId),
+      tenantType: t.tenantType ?? 'Individual',
       firstName: t.firstName,
       lastName: t.lastName,
+      companyName: t.companyName ?? '',
       isCosigner: t.isCosigner,
     })) ?? [];
 
@@ -115,6 +117,7 @@ export async function GET(
     id: String(doc._id),
     propertyId: String(doc.propertyId),
     propertyName: property?.propertyName ?? '(unknown)',
+    propertyClass: property?.propertyClass ?? 'Residential',
     address: property?.address ?? null,
     unitId: doc.unitId,
     bedrooms: doc.bedrooms ?? null,

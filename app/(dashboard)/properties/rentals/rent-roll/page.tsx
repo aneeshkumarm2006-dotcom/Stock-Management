@@ -17,7 +17,8 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
-import { LEASE_STATUSES, type LeaseStatus } from "@/types/pm";
+import { LEASE_STATUSES, type LeaseStatus, type TenantType } from "@/types/pm";
+import { tenantDisplayName } from "@/lib/pm/tenantName";
 
 // Dashboard widgets deep-link with these query params (PROPERTY_TODO.md
 // Phase 10 [G-B-12]). Both filters are client-side overlays on top of the
@@ -53,13 +54,21 @@ interface LeaseRow {
   leaseNumber: number;
   propertyId: string;
   unitId: string;
-  tenants: Array<{ tenantId: string; firstName: string; lastName: string }>;
+  tenants: Array<{
+    tenantId: string;
+    tenantType?: TenantType;
+    firstName: string;
+    lastName: string;
+    companyName?: string;
+  }>;
   leaseType: string;
   startDate: string;
   endDate: string | null;
   status: LeaseStatus;
   evictionPending: boolean;
   primaryRentAmount: number;
+  /** §4 — Base Rent + OPEX/Tax recovery splits. */
+  totalRentAmount: number;
   securityDepositHeld: number;
   daysRemaining: number | null;
 }
@@ -117,7 +126,7 @@ function RentRollPageInner() {
         (row) =>
           String(row.leaseNumber).includes(q) ||
           row.tenants.some((t) =>
-            (t.firstName + " " + t.lastName).toLowerCase().includes(q),
+            tenantDisplayName(t).toLowerCase().includes(q),
           ),
       );
     }
@@ -254,9 +263,8 @@ function RentRollPageInner() {
                         )}
                       </td>
                       <td className="text-fg-muted">
-                        {l.tenants
-                          .map((t) => `${t.firstName} ${t.lastName}`)
-                          .join(", ") || "—"}
+                        {l.tenants.map((t) => tenantDisplayName(t)).join(", ") ||
+                          "—"}
                       </td>
                       <td className="text-fg-muted">{l.leaseType}</td>
                       <td className="text-fg-muted">
@@ -271,7 +279,15 @@ function RentRollPageInner() {
                         )}
                       </td>
                       <td>
-                        <CurrencyAmount cents={l.primaryRentAmount} />
+                        <CurrencyAmount
+                          cents={l.totalRentAmount ?? l.primaryRentAmount}
+                        />
+                        {(l.totalRentAmount ?? l.primaryRentAmount) >
+                          l.primaryRentAmount && (
+                          <div className="text-xs text-fg-muted">
+                            Base <CurrencyAmount cents={l.primaryRentAmount} />
+                          </div>
+                        )}
                       </td>
                       <td>
                         <CurrencyAmount cents={l.securityDepositHeld} />

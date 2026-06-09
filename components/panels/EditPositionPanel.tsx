@@ -92,7 +92,12 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
   const update = useUpdatePosition();
   const companies = useCompanies().data?.companies ?? [];
 
-  const row = rows.find((r) => r.id === positionId) ?? null;
+  const resolved = rows.find((r) => r.id === positionId) ?? null;
+  // This panel only edits equities; non-equity types route to their own
+  // panels (EditHoldingPanel). Treat a missing assetType as EQUITY (legacy).
+  const isEquityRow =
+    resolved != null && (resolved.assetType ?? "EQUITY") === "EQUITY";
+  const row = isEquityRow ? resolved : null;
 
   const {
     register,
@@ -222,7 +227,7 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
 
   return (
     <SidePanel
-      open={Boolean(positionId)}
+      open={Boolean(positionId) && isEquityRow}
       onClose={close}
       title={row ? `Edit ${row.ticker}` : "Edit Position"}
       description={

@@ -17,7 +17,8 @@ interface OrgPayload {
   timezone: string;
   fiscalYearStart: string;
   accountingMode: Mode;
-  defaultCurrency: string;
+  defaultCurrency: "USD" | "CAD";
+  estimatedIncomeTaxRatePct: number;
   senderMailbox: {
     defaultFrom: string | null;
     perPropertyOverrides: Record<string, string>;
@@ -163,6 +164,21 @@ export default function OrgSettingsPage() {
                 }
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="org-currency">Currency</Label>
+              <select
+                id="org-currency"
+                value={data.defaultCurrency}
+                onChange={(e) => save({ defaultCurrency: e.target.value })}
+                className="h-10 w-full rounded border border-border bg-surface-highest px-3 text-sm text-fg"
+              >
+                <option value="USD">USD — US dollar</option>
+                <option value="CAD">CAD — Canadian dollar</option>
+              </select>
+              <p className="text-xs text-fg-muted">
+                Reporting currency for every money amount (Change §0A).
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -192,6 +208,33 @@ export default function OrgSettingsPage() {
           <p className="mt-2 text-xs text-fg-muted">
             Recomputes financial views — never modifies journal rows (BR-AC-2).
           </p>
+
+          <div className="mt-4 max-w-xs space-y-2 border-t border-border pt-4">
+            <Label htmlFor="org-tax-rate">Estimated income-tax rate (%)</Label>
+            <Input
+              id="org-tax-rate"
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              defaultValue={data.estimatedIncomeTaxRatePct}
+              onBlur={(e) => {
+                const next = Number(e.target.value);
+                if (
+                  Number.isFinite(next) &&
+                  next >= 0 &&
+                  next <= 100 &&
+                  next !== data.estimatedIncomeTaxRatePct
+                ) {
+                  save({ estimatedIncomeTaxRatePct: next });
+                }
+              }}
+            />
+            <p className="text-xs text-fg-muted">
+              Drives the estimated income-taxes line on company financials
+              (Change §0C). Display only — never posts a GL liability.
+            </p>
+          </div>
         </CardContent>
       </Card>
 

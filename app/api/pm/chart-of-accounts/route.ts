@@ -5,13 +5,14 @@ import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
+import { Organization } from '@/lib/db/models/pm/Organization';
 import {
   getPmContext,
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { chartOfAccountCreateSchema } from '@/lib/validation/pm/chartOfAccount';
 import { logActivity } from '@/lib/pm/activity';
-import { seedSystemAccounts } from '@/lib/pm/seed';
+import { seedSystemAccounts, CHART_SEED_VERSION } from '@/lib/pm/seed';
 
 export const runtime = 'nodejs';
 
@@ -20,6 +21,8 @@ function serialize(d: Record<string, unknown>) {
     id: String(d._id),
     name: d.name,
     type: d.type,
+    parentId: d.parentId ? String(d.parentId) : null,
+    isGroup: Boolean(d.isGroup),
     defaultFor: d.defaultFor ?? null,
     cashFlowClassification: d.cashFlowClassification ?? 'N/A',
     accountNumber: d.accountNumber ?? '',
@@ -39,12 +42,14 @@ export async function GET(request: Request) {
   await connectToDatabase();
   const orgObjectId = new Types.ObjectId(ctx.orgId);
 
-  // Lazy backfill for orgs that pre-date the Phase 1 seed.
-  const seededCount = await ChartOfAccount.countDocuments({
-    organizationId: orgObjectId,
-    systemSeeded: true,
-  });
-  if (seededCount === 0) {
+  // Lazy seed / upgrade. Re-seed when the org's chart is behind the current
+  // version (Change §0B) — this covers both pre-Phase-1 orgs (version 0) and
+  // orgs that hold the old ~16-row chart but pre-date the Ramco upgrade. The
+  // seed itself is idempotent ($setOnInsert), so this never double-seeds.
+  const orgRow = await Organization.findById(orgObjectId)
+    .select('chartSeedVersion')
+    .lean<{ chartSeedVersion?: number } | null>();
+  if ((orgRow?.chartSeedVersion ?? 0) < CHART_SEED_VERSION) {
     await seedSystemAccounts(orgObjectId);
   }
 
@@ -82,6 +87,10 @@ export async function POST(request: Request) {
       organizationId: new Types.ObjectId(ctx.orgId),
       name: parsed.data.name,
       type: parsed.data.type,
+      parentId: parsed.data.parentId
+        ? new Types.ObjectId(parsed.data.parentId)
+        : null,
+      isGroup: parsed.data.isGroup ?? false,
       defaultFor: parsed.data.defaultFor ?? null,
       cashFlowClassification: parsed.data.cashFlowClassification ?? 'N/A',
       accountNumber: parsed.data.accountNumber,

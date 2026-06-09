@@ -4,7 +4,6 @@
 // On create we fire an async Finnhub metadata fetch (PDR §5.1).
 // Refs: PDR.md §5.1, §5.3, §6 (Position), §11; Tech_Stack.md §Folder Structure.
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Position } from '@/lib/db/models/Position';
 import { StockMetadata } from '@/lib/db/models/StockMetadata';
@@ -14,42 +13,10 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { getProfile } from '@/lib/api-clients/finnhub';
-
-// Optional "held-by" company. An empty string or null clears it; a value must
-// be a 24-char hex ObjectId (ownership is verified against the user's
-// companies before it is stored).
-const companyIdSchema = z
-  .preprocess(
-    (v) => (v === '' || v === null || v === undefined ? null : v),
-    z.union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid company'), z.null()]),
-  )
-  .optional();
+import { createHoldingSchema, serializeHolding } from '@/lib/validation/holding';
 
 // Mongoose needs the Node runtime (not Edge).
 export const runtime = 'nodejs';
-
-// `exchange` accepts any code the Twelve Data symbol search returns (LSE,
-// HKEX, NSE, ASX, XETRA, …) and `currency` accepts any ISO-4217 code from
-// the Exchange Rate API's conversion table. Length caps prevent free-text
-// abuse; uppercase is enforced so the unique index matches.
-const createSchema = z.object({
-  ticker: z.string().trim().toUpperCase().min(1, 'Ticker is required').max(20),
-  exchange: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .min(1, 'Exchange is required')
-    .max(32, 'Exchange code is too long'),
-  quantity: z.number().positive('Quantity must be greater than 0'),
-  avgBuyPrice: z.number().min(0, 'Average buy price cannot be negative'),
-  currency: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[A-Z]{3}$/, 'Currency must be a 3-letter ISO code'),
-  buyDate: z.coerce.date().optional(),
-  companyId: companyIdSchema,
-});
 
 /** GET /api/positions — the user's holdings, enriched with cached metadata. */
 export async function GET() {
@@ -62,11 +29,11 @@ export async function GET() {
     .lean();
 
   // One batched StockMetadata join (logo/name/sector) so the portfolio table
-  // does not have to issue one profile request per row.
-  const keys = positions.map((p) => ({
-    ticker: p.ticker,
-    exchange: p.exchange,
-  }));
+  // does not have to issue one profile request per row. Only equities carry a
+  // ticker/exchange — skip the rest so we never query (undefined, undefined).
+  const keys = positions
+    .filter((p) => (p.assetType ?? 'EQUITY') === 'EQUITY' && p.ticker && p.exchange)
+    .map((p) => ({ ticker: p.ticker, exchange: p.exchange }));
   const metaDocs = keys.length
     ? await StockMetadata.find({ $or: keys }).lean()
     : [];
@@ -95,18 +62,34 @@ export async function GET() {
   );
 
   const enriched = positions.map((p) => {
-    const meta = metaByKey.get(`${p.ticker}:${p.exchange}`);
+    const assetType = p.assetType ?? 'EQUITY';
+    const meta =
+      assetType === 'EQUITY'
+        ? metaByKey.get(`${p.ticker}:${p.exchange}`)
+        : undefined;
     const companyId = p.companyId ? String(p.companyId) : null;
     return {
       id: String(p._id),
-      ticker: p.ticker,
-      exchange: p.exchange,
-      quantity: p.quantity,
-      avgBuyPrice: p.avgBuyPrice,
+      assetType,
+      ticker: p.ticker ?? null,
+      exchange: p.exchange ?? null,
+      quantity: p.quantity ?? null,
+      avgBuyPrice: p.avgBuyPrice ?? null,
       currency: p.currency,
       buyDate: p.buyDate ?? null,
       companyId,
       companyName: companyId ? companyNameById.get(companyId) ?? null : null,
+      // Non-equity fields (null on equities).
+      label: p.label ?? null,
+      institution: p.institution ?? null,
+      principal: p.principal ?? null,
+      startDate: p.startDate ?? null,
+      maturityDate: p.maturityDate ?? null,
+      interestRate: p.interestRate ?? null,
+      payoutFrequency: p.payoutFrequency ?? null,
+      costBasis: p.costBasis ?? null,
+      currentValue: p.currentValue ?? null,
+      valueAsOf: p.valueAsOf ?? null,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
       metadata: meta
@@ -136,7 +119,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const parsed = createSchema.safeParse(body);
+  const parsed = createHoldingSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'Invalid input', issues: parsed.error.flatten().fieldErrors },
@@ -144,9 +127,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const { ticker, exchange, quantity, avgBuyPrice, currency, buyDate } =
-    parsed.data;
-  const companyId = parsed.data.companyId ?? null;
+  const data = parsed.data;
+  const companyId = data.companyId ?? null;
 
   await connectToDatabase();
 
@@ -158,37 +140,19 @@ export async function POST(request: Request) {
     }
   }
 
-  const created = await Position.create({
-    userId,
-    ticker,
-    exchange,
-    quantity,
-    avgBuyPrice,
-    currency,
-    buyDate,
-    companyId,
-  });
+  // Build the per-type create payload. The discriminated union guarantees the
+  // correct fields are present for each assetType.
+  const created = await Position.create({ ...data, userId, companyId });
 
-  // Fire-and-forget company metadata fetch (PDR §5.1). It is cached globally
-  // (StockMetadata, 7d TTL) and also lazily fetched by the stock-detail page,
-  // so a dropped serverless background task self-heals on the next read.
-  void getProfile(ticker, exchange).catch((e: unknown) => {
-    console.error('positions: async metadata fetch failed', ticker, e);
-  });
+  // Equities get an async company-profile fetch (PDR §5.1) — cached globally
+  // (StockMetadata, 7d TTL) and lazily re-fetched by the stock-detail page, so
+  // a dropped serverless background task self-heals on the next read. Other
+  // asset types have no ticker, so there is nothing to fetch.
+  if (data.assetType === 'EQUITY') {
+    void getProfile(data.ticker, data.exchange).catch((e: unknown) => {
+      console.error('positions: async metadata fetch failed', data.ticker, e);
+    });
+  }
 
-  return NextResponse.json(
-    {
-      id: String(created._id),
-      ticker: created.ticker,
-      exchange: created.exchange,
-      quantity: created.quantity,
-      avgBuyPrice: created.avgBuyPrice,
-      currency: created.currency,
-      buyDate: created.buyDate ?? null,
-      companyId: created.companyId ? String(created.companyId) : null,
-      createdAt: created.createdAt,
-      updatedAt: created.updatedAt,
-    },
-    { status: 201 },
-  );
+  return NextResponse.json(serializeHolding(created), { status: 201 });
 }

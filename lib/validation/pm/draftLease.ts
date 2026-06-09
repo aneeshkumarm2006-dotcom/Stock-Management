@@ -6,6 +6,7 @@ import {
   ESIGNATURE_STATUSES,
   LEASE_TYPES,
   RENT_CYCLES,
+  RENT_METHODS,
   DRAFT_LEASE_EXECUTION_STATUSES,
 } from '@/types/pm';
 import { LEASE_INLINE_FILE_CAP } from '@/lib/db/models/pm/DraftLease';
@@ -39,6 +40,11 @@ const splitRentSchema = z.object({
 const primaryRentSchema = z.object({
   amount: z.number().nonnegative().optional(),
   accountId: objectIdString.optional(),
+  // §3 — method + per-sqft rate (dollars). Drafts are lenient (presence is a
+  // warning, not a hard error); the amount is authoritatively resolved on
+  // execute, so no rate>0 superRefine here.
+  rentMethod: z.enum(RENT_METHODS as unknown as [string, ...string[]]).optional(),
+  ratePerSqft: z.number().nonnegative().optional(),
   nextDueDate: z.string().nullable().optional(),
   memo: memo.optional(),
 });

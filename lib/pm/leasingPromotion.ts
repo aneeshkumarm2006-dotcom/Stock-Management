@@ -26,6 +26,7 @@ import { DraftLease } from '@/lib/db/models/pm/DraftLease';
 import { Lease } from '@/lib/db/models/pm/Lease';
 import { Tenant } from '@/lib/db/models/pm/Tenant';
 import { Property } from '@/lib/db/models/pm/Property';
+import { Unit } from '@/lib/db/models/pm/Unit';
 import { BankAccount } from '@/lib/db/models/pm/BankAccount';
 import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
@@ -33,6 +34,7 @@ import { logActivity } from '@/lib/pm/activity';
 import { assertWriteAllowed } from '@/lib/pm/lockedPeriod';
 import { canOverrideLockedPeriod } from '@/lib/pm/roles';
 import { computeLeaseStatus } from '@/lib/pm/leaseStatus';
+import { rentCentsFromRateCents } from '@/lib/pm/rent';
 import type { PmContext } from '@/lib/auth/getCurrentUser';
 
 export class PromotionError extends Error {
@@ -380,6 +382,34 @@ export async function executeDraftLease(
   // Build the Lease snapshot from the Draft. Convert embedded ObjectIds via
   // toObject() so the new doc inserts cleanly.
   const draftObj = draft.toObject();
+
+  // §3 — for a per-sqft lease, recompute the resolved monthly rent against the
+  // unit's CURRENT sizeSqft (it may have changed since the draft was drafted).
+  // The resolved amount feeds both the lease snapshot and the move-in JE below.
+  let resolvedPrimaryRent = draftObj.primaryRent;
+  if (draftObj.primaryRent?.rentMethod === 'RatePerSqft') {
+    const unit = await Unit.findOne({
+      _id: draftObj.unitId,
+      organizationId: orgId,
+    })
+      .select({ sizeSqft: 1 })
+      .lean<{ sizeSqft?: number } | null>();
+    const sizeSqft = unit?.sizeSqft ?? 0;
+    if (!(sizeSqft > 0)) {
+      throw new PromotionError(
+        "This unit has no square footage set, so rent per square foot can't be computed. Set the unit size or switch the lease to a fixed rent before executing.",
+        400,
+      );
+    }
+    resolvedPrimaryRent = {
+      ...draftObj.primaryRent,
+      amount: rentCentsFromRateCents(
+        draftObj.primaryRent.ratePerSqftCents ?? 0,
+        sizeSqft,
+      ),
+    };
+  }
+
   const last = await Lease.findOne({ organizationId: orgId })
     .sort({ leaseNumber: -1 })
     .select({ leaseNumber: 1 })
@@ -396,8 +426,10 @@ export async function executeDraftLease(
       .filter((t) => t.tenantId)
       .map((t) => ({
         tenantId: t.tenantId as Types.ObjectId,
+        tenantType: t.tenantType ?? 'Individual',
         firstName: t.firstName,
         lastName: t.lastName,
+        companyName: t.companyName,
         email: t.email,
         isCosigner: false,
       })),
@@ -405,8 +437,10 @@ export async function executeDraftLease(
       .filter((t) => t.tenantId)
       .map((t) => ({
         tenantId: t.tenantId as Types.ObjectId,
+        tenantType: t.tenantType ?? 'Individual',
         firstName: t.firstName,
         lastName: t.lastName,
+        companyName: t.companyName,
         email: t.email,
         isCosigner: true,
       })),
@@ -420,7 +454,7 @@ export async function executeDraftLease(
     }),
     evictionPending: false,
     rentCycle: draftObj.rentCycle,
-    primaryRent: draftObj.primaryRent,
+    primaryRent: resolvedPrimaryRent,
     splitRentCharges: draftObj.splitRentCharges ?? [],
     securityDeposit: {
       received: draftObj.securityDeposit ?? 0,
@@ -450,9 +484,15 @@ export async function executeDraftLease(
   // still saves, but the route surfaces the warning so a PM can post a
   // manual JE.
   let journalEntryId: Types.ObjectId | null = null;
-  const rentCents = draft.primaryRent?.amount ?? 0;
+  const rentCents = resolvedPrimaryRent?.amount ?? 0;
+  // §4 — first month's rent also includes the OPEX/Tax recovery splits, each
+  // credited to its own income account so the recoveries report separately.
+  const splitCharges = (draftObj.splitRentCharges ?? []).filter(
+    (c) => (c.amount ?? 0) > 0 && c.accountId,
+  );
+  const splitCents = splitCharges.reduce((s, c) => s + (c.amount ?? 0), 0);
   const depositCents = draft.securityDeposit ?? 0;
-  const totalIn = rentCents + depositCents;
+  const totalIn = rentCents + splitCents + depositCents;
 
   if (operatingCashCoaId && totalIn > 0) {
     const lines: Array<Record<string, unknown>> = [];
@@ -474,6 +514,17 @@ export async function executeDraftLease(
         description: 'First month rent income',
         debit: 0,
         credit: rentCents,
+      });
+    }
+    for (const c of splitCharges) {
+      lines.push({
+        accountId: c.accountId,
+        scopeType: 'Property',
+        scopeId: lease.propertyId,
+        unitId: lease.unitId,
+        description: c.memo || 'First month recovery income',
+        debit: 0,
+        credit: c.amount,
       });
     }
     if (depositCents > 0 && securityDepositCoaId) {
@@ -539,12 +590,14 @@ export async function executeDraftLease(
       organizationId: orgId,
       _id: { $in: tenantIds },
     })
-      .select({ firstName: 1, lastName: 1, email: 1 })
+      .select({ firstName: 1, lastName: 1, email: 1, tenantType: 1, companyName: 1 })
       .lean();
     lease.tenants = tenants.map((t) => ({
       tenantId: t._id as Types.ObjectId,
+      tenantType: t.tenantType ?? 'Individual',
       firstName: t.firstName,
       lastName: t.lastName,
+      companyName: t.companyName ?? undefined,
       email: t.email ?? undefined,
       isCosigner: false,
     }));

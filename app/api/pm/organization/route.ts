@@ -35,7 +35,8 @@ function serialize(doc: Record<string, unknown>) {
     timezone: doc.timezone,
     fiscalYearStart: doc.fiscalYearStart,
     accountingMode: doc.accountingMode,
-    defaultCurrency: doc.defaultCurrency,
+    defaultCurrency: doc.defaultCurrency ?? 'USD',
+    estimatedIncomeTaxRatePct: doc.estimatedIncomeTaxRatePct ?? 0,
     senderMailbox: {
       defaultFrom: senderMailbox?.defaultFrom ?? null,
       perPropertyOverrides: overrides,

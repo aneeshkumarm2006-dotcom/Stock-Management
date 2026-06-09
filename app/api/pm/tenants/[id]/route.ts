@@ -12,6 +12,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { tenantUpdateSchema } from '@/lib/validation/pm/tenant';
 import { logActivity } from '@/lib/pm/activity';
+import { tenantDisplayName } from '@/lib/pm/tenantName';
 
 export const runtime = 'nodejs';
 
@@ -95,9 +96,12 @@ export async function GET(
 
   return NextResponse.json({
     id: String(doc._id),
+    tenantType: doc.tenantType ?? 'Individual',
     firstName: doc.firstName,
     lastName: doc.lastName,
-    displayName: `${doc.firstName} ${doc.lastName}`.trim(),
+    companyName: doc.companyName ?? '',
+    contactPersonName: doc.contactPersonName ?? '',
+    displayName: tenantDisplayName(doc),
     email: doc.email ?? '',
     phones: doc.phones ?? {},
     address: doc.address ?? {},

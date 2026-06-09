@@ -27,7 +27,15 @@ import {
   type Country,
 } from "@/lib/utils/portfolioMath";
 import type { Currency } from "@/lib/utils/convertCurrency";
-import { usePositionsQuery, useFxSync, type ApiPosition } from "./useDashboard";
+import { toPositionInput } from "@/lib/utils/buildPositionInput";
+import { valuateHolding } from "@/lib/utils/assetValuation";
+import {
+  usePositionsQuery,
+  useFxSync,
+  type ApiPosition,
+  type AssetType,
+  type PayoutFrequency,
+} from "./useDashboard";
 import { useCashValue } from "./useCompanies";
 
 /* ------------------------------------------------------------------ */
@@ -64,6 +72,7 @@ export interface SymbolSearchResult {
 /** One holding joined with metadata + its live quote, ready for the table. */
 export interface PortfolioRow {
   id: string;
+  assetType: AssetType;
   ticker: string;
   name: string | null;
   logo: string | null;
@@ -83,6 +92,20 @@ export interface PortfolioRow {
   companyName: string | null;
   /** Display-currency metrics (invested / value / P&L / weight). */
   metrics: PositionMetrics;
+  // --- Non-equity display fields (null on equities) ---
+  label: string | null;
+  institution: string | null;
+  principal: number | null;
+  interestRate: number | null;
+  payoutFrequency: PayoutFrequency | null;
+  startDate: string | null;
+  maturityDate: string | null;
+  /** Maturity value (GIC/Bond), native currency. */
+  maturityValue: number | null;
+  costBasis: number | null;
+  /** Manually-entered current value (fund/cash), native currency. */
+  currentValueNative: number | null;
+  valueAsOf: string | null;
 }
 
 /** The four PDR §5.3 stat cards. Null until at least one row is computed. */
@@ -143,26 +166,33 @@ export function usePortfolio(): PortfolioData {
     [positionsQuery.data],
   );
 
+  // Only equities have a live market quote; non-equity holdings are valued
+  // without one and must not hit /api/quote/undefined/undefined.
+  const equityPositions = useMemo(
+    () => positions.filter((p) => (p.assetType ?? "EQUITY") === "EQUITY"),
+    [positions],
+  );
+
   // One live quote per held symbol (no free-tier batch route; each is cached
   // + quota-gated server-side — Stage 4), exactly as the dashboard does.
   const quoteResults = useQueries({
-    queries: positions.map((p) => ({
+    queries: equityPositions.map((p) => ({
       queryKey: ["quote", p.exchange, p.ticker] as const,
       queryFn: () =>
         fetchJson<CacheResult<QuotePayload>>(
-          `/api/quote/${p.exchange}/${encodeURIComponent(p.ticker)}`,
+          `/api/quote/${p.exchange}/${encodeURIComponent(p.ticker ?? "")}`,
         ),
     })),
   });
 
   const quoteByKey = useMemo(() => {
     const map = new Map<string, QuotePayload>();
-    positions.forEach((p, i) => {
+    equityPositions.forEach((p, i) => {
       const data = quoteResults[i]?.data?.data;
       if (data) map.set(`${p.ticker}:${p.exchange}`, data);
     });
     return map;
-  }, [positions, quoteResults]);
+  }, [equityPositions, quoteResults]);
 
   const isFetchingQuotes = quoteResults.some((q) => q.isLoading);
   const hasStaleQuotes = quoteResults.some((q) => q.data?.stale === true);
@@ -182,21 +212,9 @@ export function usePortfolio(): PortfolioData {
       };
     }
 
-    const inputs: PositionInput[] = positions.map((p) => {
-      const q = quoteByKey.get(`${p.ticker}:${p.exchange}`);
-      return {
-        id: p.id,
-        ticker: p.ticker,
-        exchange: p.exchange,
-        quantity: p.quantity,
-        avgBuyPrice: p.avgBuyPrice,
-        currency: p.currency,
-        sector: p.metadata?.sector ?? null,
-        country: deriveCountry(p),
-        price: q?.price ?? null,
-        dayChange: q?.dayChange ?? null,
-      };
-    });
+    const inputs: PositionInput[] = positions.map((p) =>
+      toPositionInput(p, quoteByKey.get(`${p.ticker}:${p.exchange}`)),
+    );
 
     const computed = computePortfolio(inputs, { displayCurrency, rates });
     const metricsById = new Map(computed.positions.map((m) => [m.id, m]));
@@ -204,25 +222,53 @@ export function usePortfolio(): PortfolioData {
     const built: PortfolioRow[] = positions.flatMap((p) => {
       const metrics = metricsById.get(p.id);
       if (!metrics) return [];
+      const isEquity = (p.assetType ?? "EQUITY") === "EQUITY";
       const q = quoteByKey.get(`${p.ticker}:${p.exchange}`);
+      // Native-currency valuation for non-equity (maturity value, etc.).
+      const valuation = isEquity
+        ? null
+        : valuateHolding({
+            assetType: p.assetType,
+            currency: p.currency,
+            principal: p.principal,
+            interestRate: p.interestRate,
+            payoutFrequency: p.payoutFrequency,
+            startDate: p.startDate,
+            maturityDate: p.maturityDate,
+            costBasis: p.costBasis,
+            currentValue: p.currentValue,
+          });
       return [
         {
           id: p.id,
-          ticker: p.ticker,
-          name: p.metadata?.name ?? null,
+          assetType: p.assetType ?? "EQUITY",
+          ticker: p.ticker ?? "",
+          name: p.metadata?.name ?? p.label ?? null,
           logo: p.metadata?.logo ?? null,
-          exchange: p.exchange,
+          exchange: p.exchange ?? "",
           sector: p.metadata?.sector ?? null,
           industry: p.metadata?.industry ?? null,
           country: deriveCountry(p),
           nativeCurrency: p.currency,
           buyDate: p.buyDate,
-          quantity: p.quantity,
-          avgBuyPrice: p.avgBuyPrice,
-          price: q?.price ?? null,
+          quantity: p.quantity ?? 0,
+          avgBuyPrice: p.avgBuyPrice ?? 0,
+          price: isEquity ? q?.price ?? null : null,
           companyId: p.companyId,
           companyName: p.companyName ?? null,
           metrics,
+          // Non-equity display fields.
+          label: p.label ?? null,
+          institution: p.institution ?? null,
+          principal: p.principal ?? null,
+          interestRate: p.interestRate ?? null,
+          payoutFrequency: p.payoutFrequency ?? null,
+          startDate: p.startDate ?? null,
+          maturityDate: p.maturityDate ?? null,
+          maturityValue: valuation ? valuation.maturityValue : null,
+          costBasis: p.costBasis ?? null,
+          currentValueNative: valuation ? valuation.currentValue : null,
+          valueAsOf: p.valueAsOf ?? null,
         },
       ];
     });
@@ -289,7 +335,8 @@ export function usePortfolio(): PortfolioData {
 /* Mutations                                                           */
 /* ------------------------------------------------------------------ */
 
-export interface CreatePositionInput {
+interface CreateEquityInput {
+  assetType?: "EQUITY";
   ticker: string;
   exchange: Exchange;
   quantity: number;
@@ -300,15 +347,68 @@ export interface CreatePositionInput {
   companyId?: string | null;
 }
 
+interface CreateFixedIncomeInput {
+  assetType: "GIC" | "BOND";
+  label: string;
+  institution: string;
+  principal: number;
+  currency: Currency;
+  startDate: string;
+  maturityDate: string;
+  interestRate: number;
+  payoutFrequency: PayoutFrequency;
+  companyId?: string | null;
+}
+
+interface CreateMutualFundInput {
+  assetType: "MUTUAL_FUND";
+  label: string;
+  currency: Currency;
+  costBasis: number;
+  currentValue: number;
+  valueAsOf?: string;
+  companyId?: string | null;
+}
+
+interface CreateCashInput {
+  assetType: "CASH";
+  label: string;
+  currency: Currency;
+  currentValue: number;
+  companyId?: string | null;
+}
+
+export type CreatePositionInput =
+  | CreateEquityInput
+  | CreateFixedIncomeInput
+  | CreateMutualFundInput
+  | CreateCashInput;
+
 export type UpdatePositionInput =
   | {
       mode?: "replace";
+      // Equity
       quantity?: number;
       avgBuyPrice?: number;
+      // Common
+      label?: string;
+      currency?: Currency;
       /** Optional held-by company id; null/"" clears it. */
       companyId?: string | null;
+      // Fixed income
+      institution?: string;
+      principal?: number;
+      startDate?: string;
+      maturityDate?: string;
+      interestRate?: number;
+      payoutFrequency?: PayoutFrequency;
+      // Manual valuation
+      costBasis?: number;
+      currentValue?: number;
+      valueAsOf?: string;
     }
-  | { mode: "add"; addQuantity: number; addPrice: number };
+  | { mode: "add"; addQuantity: number; addPrice: number }
+  | { mode: "updateValue"; currentValue: number };
 
 /**
  * Invalidate everything a position change can affect: the positions list and

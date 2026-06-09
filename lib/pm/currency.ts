@@ -6,23 +6,44 @@
 //
 // Negative amounts render as `($X.XX)` in red per Buildium parity.
 
-const FORMATTER = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+// Lazily-built, cached Intl formatters keyed by ISO-4217 code. Building an
+// Intl.NumberFormat is comparatively expensive, so we memoize one per currency.
+const FORMATTERS: Record<string, Intl.NumberFormat> = {};
 
-/** Convert an integer cents amount to a display string. */
-export function formatUsd(cents: number): string {
-  if (!Number.isFinite(cents)) return '$0.00';
+function formatterFor(currency: string): Intl.NumberFormat {
+  const key = currency.toUpperCase();
+  if (!FORMATTERS[key]) {
+    FORMATTERS[key] = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: key,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+  return FORMATTERS[key];
+}
+
+/**
+ * Convert an integer cents amount to a display string in the given currency.
+ * Currency-agnostic: cents are unit-less 2-decimal integers, so the only thing
+ * that varies is the rendered symbol (USD → `$`, CAD → `CA$`). Negatives render
+ * parenthesised per Buildium parity. Change §0A.
+ */
+export function formatMoney(cents: number, currency: string = 'USD'): string {
+  const fmt = formatterFor(currency);
+  if (!Number.isFinite(cents)) return fmt.format(0);
   const dollars = cents / 100;
   if (cents < 0) {
-    // Render parenthesised, drop the leading minus sign + dollar sign once.
-    const positive = FORMATTER.format(Math.abs(dollars));
-    return `(${positive})`;
+    // Render parenthesised, drop the leading minus sign once.
+    return `(${fmt.format(Math.abs(dollars))})`;
   }
-  return FORMATTER.format(dollars);
+  return fmt.format(dollars);
+}
+
+/** Convert an integer cents amount to a USD display string. Thin wrapper over
+ * `formatMoney` kept so existing USD call sites don't change behavior. */
+export function formatUsd(cents: number): string {
+  return formatMoney(cents, 'USD');
 }
 
 /** Tailwind class for negative amounts (red), empty string otherwise.

@@ -165,17 +165,21 @@ export function useStockDetail(
 
   const position: HeldPosition | null = useMemo(() => {
     if (!held) return null;
-    const invested = held.quantity * held.avgBuyPrice;
+    // Only equities match a ticker/exchange lookup, so these are always
+    // present here; coalesce to satisfy the now-nullable ApiPosition fields.
+    const quantity = held.quantity ?? 0;
+    const avgBuyPrice = held.avgBuyPrice ?? 0;
+    const invested = quantity * avgBuyPrice;
     const price = quote?.price ?? null;
-    const currentValue = price == null ? null : held.quantity * price;
+    const currentValue = price == null ? null : quantity * price;
     const pnl =
       currentValue == null ? null : currentValue - invested;
     const pnlPct =
       pnl == null || invested === 0 ? null : (pnl / invested) * 100;
     return {
       id: held.id,
-      quantity: held.quantity,
-      avgBuyPrice: held.avgBuyPrice,
+      quantity,
+      avgBuyPrice,
       currency: held.currency,
       buyDate: held.buyDate,
       invested,

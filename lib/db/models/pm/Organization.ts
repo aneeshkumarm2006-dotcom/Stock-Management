@@ -36,8 +36,25 @@ export interface IOrganization {
   fiscalYearStart: string;
   /** Global toggle (BR-AC-2). Recomputes views; never modifies journal rows. */
   accountingMode: AccountingMode;
-  /** USD assumed in Phase 0 (BR-CX-5). Multi-currency deferred per §9.8. */
-  defaultCurrency: 'USD';
+  /**
+   * Org-level reporting currency. USD or CAD (Ramco books in CAD). Single
+   * org-level currency — not per-transaction multi-currency. Stored cents are
+   * currency-agnostic; only the rendered symbol changes. Change §0A.
+   */
+  defaultCurrency: 'USD' | 'CAD';
+  /**
+   * Estimated income-tax rate (percent, 0–100) used by the company-financials
+   * report to derive an "estimated income taxes" display line. Never posts a
+   * GL liability. Defaults to 0 → the tax line reads $0 until configured.
+   * Change §0C.
+   */
+  estimatedIncomeTaxRatePct: number;
+  /**
+   * Monotonic stamp of the chart-of-accounts seed the org has been provisioned
+   * with. Lets us re-seed orgs that pre-date a chart upgrade without silently
+   * double-seeding (Change §0B). Defaults to 0 for legacy orgs.
+   */
+  chartSeedVersion: number;
   /** Sender mailbox config (BR-CC-5). [G-B-21] */
   senderMailbox: ISenderMailbox;
   /** When the free trial ends (BR-CX-1). */
@@ -69,7 +86,14 @@ const OrganizationSchema = new Schema<IOrganization>(
       enum: ['cash', 'accrual'],
       default: 'accrual',
     },
-    defaultCurrency: { type: String, enum: ['USD'], default: 'USD' },
+    defaultCurrency: { type: String, enum: ['USD', 'CAD'], default: 'USD' },
+    estimatedIncomeTaxRatePct: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
+    chartSeedVersion: { type: Number, default: 0 },
     senderMailbox: { type: SenderMailboxSchema, default: () => ({}) },
     trialEndsAt: {
       type: Date,

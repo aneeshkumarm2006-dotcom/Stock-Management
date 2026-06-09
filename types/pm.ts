@@ -73,6 +73,16 @@ export const COMMERCIAL_SUBTYPES: readonly CommercialSubType[] = [
   "Retail",
 ] as const;
 
+/** Tenant.tenantType (changes.md §1). An Individual carries first/last name;
+ *  a Company carries a company name + a contact person. Defaults to
+ *  `Individual` so every pre-existing tenant doc stays valid. */
+export type TenantType = "Individual" | "Company";
+
+export const TENANT_TYPES: readonly TenantType[] = [
+  "Individual",
+  "Company",
+] as const;
+
 /** BankAccount.type — DECISIONS.md [G-S-15]. */
 export type BankAccountType = "Checking" | "Savings" | "Cash";
 
@@ -107,6 +117,7 @@ export type ChartOfAccountDefaultFor =
   | "Bank Service Charges"
   | "Convenience Fee"
   | "Interest Income"
+  | "Investment Income"
   | "Last Month's Rent"
   | "Late Fee Income"
   | "Management Fee Expense"
@@ -284,6 +295,19 @@ export const RENT_CYCLES: readonly RentCycle[] = [
   "Bi-weekly",
   "Quarterly",
   "Yearly",
+] as const;
+
+/** RentMethod (changes.md §3) — how the monthly rent amount is entered.
+ *  `Fixed` is a flat monthly dollar amount (as before); `RatePerSqft` is a
+ *  dollar rate multiplied by the unit's `sizeSqft`. The *resolved* amount is
+ *  always persisted into `primaryRent.amount` at save time, so downstream
+ *  readers (rent roll, GL, reports) never see the formula. Defaults to
+ *  `Fixed` so every pre-existing lease stays valid. */
+export type RentMethod = "Fixed" | "RatePerSqft";
+
+export const RENT_METHODS: readonly RentMethod[] = [
+  "Fixed",
+  "RatePerSqft",
 ] as const;
 
 /** RentersInsurancePolicy.carrier — third-party vs Buildium-bundled MSI. */

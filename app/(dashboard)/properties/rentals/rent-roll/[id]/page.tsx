@@ -35,6 +35,8 @@ import { EvictionToggleDialog } from "@/components/pm/EvictionToggleDialog";
 import { RentersInsuranceModal } from "@/components/pm/RentersInsuranceModal";
 import { PetModal } from "@/components/pm/PetModal";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
+import { tenantDisplayName } from "@/lib/pm/tenantName";
+import type { TenantType } from "@/types/pm";
 
 interface LeaseDetail {
   id: string;
@@ -43,15 +45,19 @@ interface LeaseDetail {
   unitId: string;
   tenants: Array<{
     tenantId: string;
+    tenantType?: TenantType;
     firstName: string;
     lastName: string;
+    companyName?: string;
     email: string;
     isCosigner: boolean;
   }>;
   cosigners: Array<{
     tenantId: string;
+    tenantType?: TenantType;
     firstName: string;
     lastName: string;
+    companyName?: string;
   }>;
   leaseType: string;
   startDate: string;
@@ -97,8 +103,10 @@ interface LeaseDetail {
   }>;
   uninsuredResidents: Array<{
     tenantId: string;
+    tenantType?: TenantType;
     firstName: string;
     lastName: string;
+    companyName?: string;
   }>;
   pets: Array<{
     id: string;
@@ -345,7 +353,7 @@ export default function LeaseDetailPage() {
                     <div className="text-xs text-loss">
                       Uninsured residents:{" "}
                       {data.uninsuredResidents
-                        .map((r) => `${r.firstName} ${r.lastName}`)
+                        .map((r) => tenantDisplayName(r))
                         .join(", ")}{" "}
                       (BR-LL-6)
                     </div>
@@ -589,7 +597,7 @@ export default function LeaseDetailPage() {
                         href={`/properties/rentals/tenants/${t.tenantId}`}
                         className="hover:underline"
                       >
-                        {t.firstName} {t.lastName}
+                        {tenantDisplayName(t)}
                       </Link>
                       {t.email && (
                         <span className="text-fg-muted"> · {t.email}</span>
@@ -602,9 +610,7 @@ export default function LeaseDetailPage() {
                 <div>
                   <div className="text-xs text-fg-muted mb-1">Cosigners</div>
                   {data.cosigners.map((t) => (
-                    <div key={t.tenantId}>
-                      {t.firstName} {t.lastName}
-                    </div>
+                    <div key={t.tenantId}>{tenantDisplayName(t)}</div>
                   ))}
                 </div>
               )}

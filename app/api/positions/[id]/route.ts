@@ -4,7 +4,6 @@
 // an "add to position" recompute mode (PDR §5.1).
 // Refs: PDR.md §5.1, §5.3, §6 (Position), §11.
 import { NextResponse } from 'next/server';
-import { z } from 'zod';
 import { isValidObjectId, Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Position } from '@/lib/db/models/Position';
@@ -13,72 +12,23 @@ import {
   getCurrentUserId,
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
+import {
+  patchHoldingSchema,
+  serializeHolding,
+} from '@/lib/validation/holding';
 
 export const runtime = 'nodejs';
 
-// Optional "held-by" company. '' / null clears it; a value must be a 24-char
-// hex ObjectId (ownership verified before storing). Omitted = no change.
-const companyIdSchema = z
-  .preprocess(
-    (v) => (v === '' || v === null || v === undefined ? null : v),
-    z.union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid company'), z.null()]),
-  )
-  .optional();
-
-// Direct edit: change quantity, avg buy price, and/or held-by company.
-const replaceSchema = z
-  .object({
-    mode: z.literal('replace').optional(),
-    quantity: z.number().positive('Quantity must be greater than 0').optional(),
-    avgBuyPrice: z
-      .number()
-      .min(0, 'Average buy price cannot be negative')
-      .optional(),
-    companyId: companyIdSchema,
-  })
-  .refine(
-    (d) =>
-      d.quantity !== undefined ||
-      d.avgBuyPrice !== undefined ||
-      d.companyId !== undefined,
-    { message: 'Provide quantity, avgBuyPrice, and/or companyId' },
-  );
-
-// "Add to position" — supply the follow-on lot; the new average is the
-// quantity-weighted mean of the existing lot and the added lot.
-const addSchema = z.object({
-  mode: z.literal('add'),
-  addQuantity: z.number().positive('Added quantity must be greater than 0'),
-  addPrice: z.number().min(0, 'Added price cannot be negative'),
-});
-
-const patchSchema = z.union([addSchema, replaceSchema]);
-
-function serialize(p: {
-  _id: unknown;
-  ticker: string;
-  exchange: string;
-  quantity: number;
-  avgBuyPrice: number;
-  currency: string;
-  buyDate?: Date | null;
-  companyId?: unknown;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
-  return {
-    id: String(p._id),
-    ticker: p.ticker,
-    exchange: p.exchange,
-    quantity: p.quantity,
-    avgBuyPrice: p.avgBuyPrice,
-    currency: p.currency,
-    buyDate: p.buyDate ?? null,
-    companyId: p.companyId ? String(p.companyId) : null,
-    createdAt: p.createdAt,
-    updatedAt: p.updatedAt,
-  };
-}
+// Which `replace` fields are applicable to each asset type. Fields outside the
+// list are ignored even if sent, so a client can never, say, set a GIC's
+// quantity. `companyId` (held-by) applies to every type.
+const REPLACE_FIELDS: Record<string, readonly string[]> = {
+  EQUITY: ['quantity', 'avgBuyPrice'],
+  GIC: ['label', 'institution', 'principal', 'currency', 'startDate', 'maturityDate', 'interestRate', 'payoutFrequency'],
+  BOND: ['label', 'institution', 'principal', 'currency', 'startDate', 'maturityDate', 'interestRate', 'payoutFrequency'],
+  MUTUAL_FUND: ['label', 'currency', 'costBasis', 'currentValue', 'valueAsOf'],
+  CASH: ['label', 'currency', 'currentValue'],
+};
 
 /** PATCH /api/positions/[id] — edit qty/avg, or add-to-position recompute. */
 export async function PATCH(
@@ -100,7 +50,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const parsed = patchSchema.safeParse(body);
+  const parsed = patchHoldingSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'Invalid input', issues: parsed.error.flatten() },
@@ -114,18 +64,46 @@ export async function PATCH(
     return NextResponse.json({ error: 'Position not found' }, { status: 404 });
   }
 
+  const assetType = position.assetType ?? 'EQUITY';
   const data = parsed.data;
-  if ('mode' in data && data.mode === 'add') {
-    const totalQty = position.quantity + data.addQuantity;
-    const weighted =
-      position.quantity * position.avgBuyPrice +
-      data.addQuantity * data.addPrice;
+
+  if (data.mode === 'add') {
+    // Equity-only: quantity-weighted average recompute.
+    if (assetType !== 'EQUITY') {
+      return NextResponse.json(
+        { error: 'Add-to-position only applies to stocks/ETFs' },
+        { status: 400 },
+      );
+    }
+    const prevQty = position.quantity ?? 0;
+    const prevAvg = position.avgBuyPrice ?? 0;
+    const totalQty = prevQty + data.addQuantity;
+    const weighted = prevQty * prevAvg + data.addQuantity * data.addPrice;
     position.quantity = totalQty;
     position.avgBuyPrice = totalQty > 0 ? weighted / totalQty : 0;
+  } else if (data.mode === 'updateValue') {
+    // One-tap monthly refresh for manually-valued holdings (fund/cash).
+    if (assetType !== 'MUTUAL_FUND' && assetType !== 'CASH') {
+      return NextResponse.json(
+        { error: 'Value updates only apply to mutual funds and cash' },
+        { status: 400 },
+      );
+    }
+    position.currentValue = data.currentValue;
+    position.valueAsOf = new Date();
   } else {
-    if (data.quantity !== undefined) position.quantity = data.quantity;
-    if (data.avgBuyPrice !== undefined) position.avgBuyPrice = data.avgBuyPrice;
-    // Held-by: a value reassigns (after an ownership check), null clears it.
+    // Replace: apply only the fields valid for this asset type.
+    const allowed = REPLACE_FIELDS[assetType] ?? [];
+    const fields = data as unknown as Record<string, unknown>;
+    const target = position as unknown as Record<string, unknown>;
+    for (const key of allowed) {
+      const value = fields[key];
+      if (value !== undefined) {
+        target[key] = value;
+      }
+    }
+    // Held-by applies to every type: a value reassigns (after an ownership
+    // check), null clears it.
     if (data.companyId !== undefined) {
       if (data.companyId) {
         const owned = await Company.countDocuments({
@@ -146,7 +124,7 @@ export async function PATCH(
   }
 
   await position.save();
-  return NextResponse.json(serialize(position));
+  return NextResponse.json(serializeHolding(position));
 }
 
 /** DELETE /api/positions/[id] — remove one of the current user's holdings. */

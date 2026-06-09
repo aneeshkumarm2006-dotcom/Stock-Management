@@ -18,8 +18,11 @@ import { useToast } from "@/components/ui/toast";
 
 interface TenantRow {
   id: string;
+  tenantType: "Individual" | "Company";
   firstName: string;
   lastName: string;
+  companyName: string;
+  contactPersonName: string;
   email: string;
   cosignerFlag: boolean;
   displayName: string;
@@ -102,6 +105,7 @@ export default function TenantsPage() {
             <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
               <tr>
                 <th className="py-2">Name</th>
+                <th>Type</th>
                 <th>Email</th>
                 <th>Role</th>
                 <th>Property / Unit</th>
@@ -110,14 +114,14 @@ export default function TenantsPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={4} className="py-4 text-fg-muted">
+                  <td colSpan={5} className="py-4 text-fg-muted">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && visible.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-4 text-fg-muted">
+                  <td colSpan={5} className="py-4 text-fg-muted">
                     No tenants match.
                   </td>
                 </tr>
@@ -136,6 +140,23 @@ export default function TenantsPage() {
                     >
                       {t.displayName}
                     </Link>
+                    {t.tenantType === "Company" && t.contactPersonName && (
+                      <span className="block text-xs text-fg-muted">
+                        Contact: {t.contactPersonName}
+                      </span>
+                    )}
+                  </td>
+                  <td className="text-fg-muted">
+                    <span
+                      className={
+                        "inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide " +
+                        (t.tenantType === "Company"
+                          ? "border-primary/40 text-primary"
+                          : "border-border text-fg-muted")
+                      }
+                    >
+                      {t.tenantType === "Company" ? "Company" : "Individual"}
+                    </span>
                   </td>
                   <td className="text-fg-muted">{t.email || "—"}</td>
                   <td className="text-fg-muted">
@@ -220,16 +241,26 @@ function AddTenantModal({
   onSaved: () => Promise<void>;
 }) {
   const { toast } = useToast();
-  const [form, setForm] = React.useState({
+  const emptyForm = {
+    tenantType: "Individual" as "Individual" | "Company",
     firstName: "",
     lastName: "",
+    companyName: "",
+    contactPersonName: "",
     email: "",
     cosignerFlag: false,
-  });
+  };
+  const [form, setForm] = React.useState(emptyForm);
   const [saving, setSaving] = React.useState(false);
+  const isCompany = form.tenantType === "Company";
 
   async function save() {
-    if (!form.firstName.trim() || !form.lastName.trim()) {
+    if (isCompany) {
+      if (!form.companyName.trim()) {
+        toast({ title: "Company name required", variant: "error" });
+        return;
+      }
+    } else if (!form.firstName.trim() || !form.lastName.trim()) {
       toast({ title: "First and last name required", variant: "error" });
       return;
     }
@@ -238,8 +269,14 @@ function AddTenantModal({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
+        tenantType: form.tenantType,
+        firstName: isCompany ? undefined : form.firstName.trim(),
+        lastName: isCompany ? undefined : form.lastName.trim(),
+        companyName: isCompany ? form.companyName.trim() : undefined,
+        contactPersonName:
+          isCompany && form.contactPersonName.trim()
+            ? form.contactPersonName.trim()
+            : undefined,
         email: form.email.trim() || undefined,
         cosignerFlag: form.cosignerFlag,
       }),
@@ -251,7 +288,7 @@ function AddTenantModal({
       return;
     }
     toast({ title: "Tenant added", variant: "success" });
-    setForm({ firstName: "", lastName: "", email: "", cosignerFlag: false });
+    setForm(emptyForm);
     onClose();
     await onSaved();
   }
@@ -261,30 +298,77 @@ function AddTenantModal({
       <DialogContent className="max-w-md">
         <DialogHeader title="Add tenant" onClose={onClose} />
         <div className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor="t-first">First name *</Label>
-              <Input
-                id="t-first"
-                value={form.firstName}
-                onChange={(e) =>
-                  setForm({ ...form, firstName: e.target.value })
-                }
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="t-last">Last name *</Label>
-              <Input
-                id="t-last"
-                value={form.lastName}
-                onChange={(e) =>
-                  setForm({ ...form, lastName: e.target.value })
-                }
-              />
-            </div>
-          </div>
           <div className="space-y-1">
-            <Label htmlFor="t-email">Email</Label>
+            <Label htmlFor="t-type">Tenant type</Label>
+            <select
+              id="t-type"
+              className="w-full rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg"
+              value={form.tenantType}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  tenantType: e.target.value as "Individual" | "Company",
+                })
+              }
+            >
+              <option value="Individual">Individual</option>
+              <option value="Company">Company</option>
+            </select>
+          </div>
+
+          {isCompany ? (
+            <>
+              <div className="space-y-1">
+                <Label htmlFor="t-company">Company name *</Label>
+                <Input
+                  id="t-company"
+                  value={form.companyName}
+                  onChange={(e) =>
+                    setForm({ ...form, companyName: e.target.value })
+                  }
+                  placeholder="Acme Holdings Inc."
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="t-contact">Contact person</Label>
+                <Input
+                  id="t-contact"
+                  value={form.contactPersonName}
+                  onChange={(e) =>
+                    setForm({ ...form, contactPersonName: e.target.value })
+                  }
+                  placeholder="Jane Doe"
+                />
+              </div>
+            </>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="t-first">First name *</Label>
+                <Input
+                  id="t-first"
+                  value={form.firstName}
+                  onChange={(e) =>
+                    setForm({ ...form, firstName: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="t-last">Last name *</Label>
+                <Input
+                  id="t-last"
+                  value={form.lastName}
+                  onChange={(e) =>
+                    setForm({ ...form, lastName: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+          )}
+          <div className="space-y-1">
+            <Label htmlFor="t-email">
+              {isCompany ? "Contact email" : "Email"}
+            </Label>
             <Input
               id="t-email"
               type="email"

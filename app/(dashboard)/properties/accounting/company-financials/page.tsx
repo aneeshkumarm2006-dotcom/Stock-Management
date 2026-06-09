@@ -15,12 +15,20 @@ import { CollectManagementFeesModal } from "@/components/pm/CollectManagementFee
 
 interface CompanyFinancialsData {
   accountingMode: "cash" | "accrual";
+  defaultCurrency: "USD" | "CAD";
   from: string;
   to: string;
   companyCashCents: number;
   unpaidBillsCents: number;
   overdueBillsCount: number;
   netIncomeCents: number;
+  // §6 — additive reporting fields (rate defaults 0 ⇒ $0 tax line).
+  totalRevenueCents: number;
+  rentalRevenueCents: number;
+  investmentRevenueCents: number;
+  estimatedIncomeTaxRatePct: number;
+  estimatedIncomeTaxCents: number;
+  afterTaxNetCents: number;
   companyOnly: { incomeCents: number; expenseCents: number };
   propertyRollup: Array<{
     propertyId: string;
@@ -44,6 +52,7 @@ export default function CompanyFinancialsPage() {
   const [loading, setLoading] = React.useState(true);
   const [collectOpen, setCollectOpen] = React.useState(false);
   const [toggling, setToggling] = React.useState(false);
+  const currency = data?.defaultCurrency ?? "USD";
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -123,14 +132,14 @@ export default function CompanyFinancialsPage() {
         <HeroCard
           label="Company cash"
           value={
-            <CurrencyAmount cents={data?.companyCashCents ?? 0} />
+            <CurrencyAmount cents={data?.companyCashCents ?? 0} currency={currency} />
           }
           subtitle="Sum of every isCompanyCash bank account"
         />
         <HeroCard
           label="Unpaid bills"
           value={
-            <CurrencyAmount cents={data?.unpaidBillsCents ?? 0} />
+            <CurrencyAmount cents={data?.unpaidBillsCents ?? 0} currency={currency} />
           }
           subtitle={
             data?.overdueBillsCount
@@ -141,11 +150,67 @@ export default function CompanyFinancialsPage() {
         <HeroCard
           label="Net income"
           value={
-            <CurrencyAmount cents={data?.netIncomeCents ?? 0} />
+            <CurrencyAmount cents={data?.netIncomeCents ?? 0} currency={currency} />
           }
           subtitle={`${data?.accountingMode ?? "—"} basis · ${from} → ${to}`}
         />
       </div>
+
+      {/* §6 — Revenue (rent + investment) and the derived estimated-income-tax
+          line. Purely additive; the per-property roll-up below is untouched. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Revenue &amp; income tax</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading || !data ? (
+            <p className="text-sm text-fg-muted">Loading…</p>
+          ) : (
+            <table className="w-full max-w-md text-sm">
+              <tbody>
+                <SummaryRow
+                  label="Rental & other revenue"
+                  cents={data.rentalRevenueCents}
+                  currency={currency}
+                />
+                <SummaryRow
+                  label="Investment revenue"
+                  cents={data.investmentRevenueCents}
+                  currency={currency}
+                />
+                <SummaryRow
+                  label="Total revenue"
+                  cents={data.totalRevenueCents}
+                  currency={currency}
+                  bold
+                />
+                <SummaryRow
+                  label="Net income (pre-tax)"
+                  cents={data.netIncomeCents}
+                  currency={currency}
+                />
+                <SummaryRow
+                  label={`Estimated income taxes (${data.estimatedIncomeTaxRatePct}%)`}
+                  cents={-data.estimatedIncomeTaxCents}
+                  currency={currency}
+                />
+                <SummaryRow
+                  label="After-tax net income"
+                  cents={data.afterTaxNetCents}
+                  currency={currency}
+                  bold
+                />
+              </tbody>
+            </table>
+          )}
+          {data && data.estimatedIncomeTaxRatePct === 0 && (
+            <p className="mt-2 text-xs text-fg-muted">
+              Set an estimated income-tax rate under Accounting settings to
+              populate the tax line.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -188,13 +253,13 @@ export default function CompanyFinancialsPage() {
                   <tr key={p.propertyId} className="border-b border-border/40">
                     <td className="py-1.5">{p.propertyName}</td>
                     <td className="text-right tabular-nums">
-                      <CurrencyAmount cents={p.incomeCents} />
+                      <CurrencyAmount cents={p.incomeCents} currency={currency} />
                     </td>
                     <td className="text-right tabular-nums">
-                      <CurrencyAmount cents={p.expenseCents} />
+                      <CurrencyAmount cents={p.expenseCents} currency={currency} />
                     </td>
                     <td className="text-right tabular-nums font-bold">
-                      <CurrencyAmount cents={p.netCents} />
+                      <CurrencyAmount cents={p.netCents} currency={currency} />
                     </td>
                   </tr>
                 ))}
@@ -204,13 +269,14 @@ export default function CompanyFinancialsPage() {
                     <tr className="border-t border-border bg-bg-elevated">
                       <td className="py-1.5 font-bold">Company-scoped</td>
                       <td className="text-right tabular-nums">
-                        <CurrencyAmount cents={data.companyOnly.incomeCents} />
+                        <CurrencyAmount cents={data.companyOnly.incomeCents} currency={currency} />
                       </td>
                       <td className="text-right tabular-nums">
-                        <CurrencyAmount cents={data.companyOnly.expenseCents} />
+                        <CurrencyAmount cents={data.companyOnly.expenseCents} currency={currency} />
                       </td>
                       <td className="text-right tabular-nums font-bold">
                         <CurrencyAmount
+                          currency={currency}
                           cents={
                             data.companyOnly.incomeCents -
                             data.companyOnly.expenseCents
@@ -233,6 +299,37 @@ export default function CompanyFinancialsPage() {
         }}
       />
     </div>
+  );
+}
+
+function SummaryRow({
+  label,
+  cents,
+  currency,
+  bold = false,
+}: {
+  label: string;
+  cents: number;
+  currency: "USD" | "CAD";
+  bold?: boolean;
+}) {
+  return (
+    <tr className={bold ? "border-t border-border" : "border-b border-border/30"}>
+      <td
+        className={
+          "py-1.5 " + (bold ? "font-bold text-fg" : "text-fg-muted")
+        }
+      >
+        {label}
+      </td>
+      <td
+        className={
+          "py-1.5 text-right tabular-nums " + (bold ? "font-bold" : "")
+        }
+      >
+        <CurrencyAmount cents={cents} currency={currency} />
+      </td>
+    </tr>
   );
 }
 

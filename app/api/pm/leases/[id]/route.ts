@@ -7,11 +7,13 @@ import {
   currentDepositHeld,
 } from '@/lib/db/models/pm/Lease';
 import { Tenant } from '@/lib/db/models/pm/Tenant';
+import { Unit } from '@/lib/db/models/pm/Unit';
 import type {
   EsignatureStatus,
   LeaseStatus,
   LeaseType,
   RentCycle,
+  TenantType,
 } from '@/types/pm';
 import { RentersInsurancePolicy } from '@/lib/db/models/pm/RentersInsurancePolicy';
 import { Pet } from '@/lib/db/models/pm/Pet';
@@ -22,6 +24,7 @@ import {
 import { leaseUpdateSchema } from '@/lib/validation/pm/lease';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
+import { resolveRent, RentResolutionError } from '@/lib/pm/rent';
 import {
   computeLeaseStatus,
   daysRemaining,
@@ -74,8 +77,10 @@ export async function GET(
     .filter((t) => !insuredTenantIds.has(String(t.tenantId)))
     .map((t) => ({
       tenantId: String(t.tenantId),
+      tenantType: t.tenantType ?? 'Individual',
       firstName: t.firstName,
       lastName: t.lastName,
+      companyName: t.companyName ?? '',
     }));
 
   return NextResponse.json({
@@ -86,15 +91,19 @@ export async function GET(
     rentalOwnerId: doc.rentalOwnerId ? String(doc.rentalOwnerId) : null,
     tenants: doc.tenants.map((t) => ({
       tenantId: String(t.tenantId),
+      tenantType: t.tenantType ?? 'Individual',
       firstName: t.firstName,
       lastName: t.lastName,
+      companyName: t.companyName ?? '',
       email: t.email ?? '',
       isCosigner: t.isCosigner,
     })),
     cosigners: doc.cosigners.map((t) => ({
       tenantId: String(t.tenantId),
+      tenantType: t.tenantType ?? 'Individual',
       firstName: t.firstName,
       lastName: t.lastName,
+      companyName: t.companyName ?? '',
       email: t.email ?? '',
       isCosigner: true,
     })),
@@ -118,6 +127,8 @@ export async function GET(
     primaryRent: {
       amount: doc.primaryRent.amount,
       accountId: String(doc.primaryRent.accountId),
+      rentMethod: doc.primaryRent.rentMethod ?? 'Fixed',
+      ratePerSqftCents: doc.primaryRent.ratePerSqftCents ?? 0,
       nextDueDate: doc.primaryRent.nextDueDate ?? null,
       memo: doc.primaryRent.memo ?? '',
     },
@@ -256,8 +267,10 @@ export async function PATCH(
   if (tenants !== undefined) {
     doc.tenants = tenants.map((t) => ({
       tenantId: new Types.ObjectId(t.tenantId),
-      firstName: t.firstName,
-      lastName: t.lastName,
+      tenantType: (t.tenantType ?? 'Individual') as TenantType,
+      firstName: t.firstName ?? '',
+      lastName: t.lastName ?? '',
+      companyName: t.companyName,
       email: t.email,
       isCosigner: t.isCosigner ?? false,
     }));
@@ -265,8 +278,10 @@ export async function PATCH(
   if (cosigners !== undefined) {
     doc.cosigners = cosigners.map((t) => ({
       tenantId: new Types.ObjectId(t.tenantId),
-      firstName: t.firstName,
-      lastName: t.lastName,
+      tenantType: (t.tenantType ?? 'Individual') as TenantType,
+      firstName: t.firstName ?? '',
+      lastName: t.lastName ?? '',
+      companyName: t.companyName,
       email: t.email,
       isCosigner: true,
     }));
@@ -275,9 +290,36 @@ export async function PATCH(
   if (endDate !== undefined) doc.endDate = endDate ? new Date(endDate) : null;
   if (leaseType !== undefined) doc.leaseType = leaseType as LeaseType;
   if (primaryRent !== undefined) {
+    // §3 — resolve against the lease's (possibly just-updated) unit sizeSqft.
+    let sizeSqft: number | null = null;
+    if (primaryRent.rentMethod === 'RatePerSqft') {
+      const unit = await Unit.findOne({
+        _id: doc.unitId,
+        organizationId: doc.organizationId,
+      })
+        .select({ sizeSqft: 1 })
+        .lean<{ sizeSqft?: number } | null>();
+      sizeSqft = unit?.sizeSqft ?? null;
+    }
+    let resolvedRent;
+    try {
+      resolvedRent = resolveRent({
+        rentMethod: primaryRent.rentMethod,
+        amount: primaryRent.amount,
+        ratePerSqft: primaryRent.ratePerSqft,
+        sizeSqft,
+      });
+    } catch (err) {
+      if (err instanceof RentResolutionError) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
+      }
+      throw err;
+    }
     doc.primaryRent = {
-      amount: toCents(primaryRent.amount),
+      amount: resolvedRent.amountCents,
       accountId: new Types.ObjectId(primaryRent.accountId),
+      rentMethod: resolvedRent.rentMethod,
+      ratePerSqftCents: resolvedRent.ratePerSqftCents,
       nextDueDate: primaryRent.nextDueDate ? new Date(primaryRent.nextDueDate) : null,
       memo: primaryRent.memo,
     };

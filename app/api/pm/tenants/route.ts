@@ -13,13 +13,18 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { tenantCreateSchema } from '@/lib/validation/pm/tenant';
 import { logActivity } from '@/lib/pm/activity';
+import { tenantDisplayName } from '@/lib/pm/tenantName';
+import type { TenantType } from '@/types/pm';
 
 export const runtime = 'nodejs';
 
 interface TenantLeanLike {
   _id: unknown;
+  tenantType?: TenantType;
   firstName: string;
   lastName: string;
+  companyName?: string;
+  contactPersonName?: string;
   email?: string;
   cosignerFlag: boolean;
   active: boolean;
@@ -41,7 +46,13 @@ export async function GET(request: Request) {
   if (!includeInactive) filter.active = true;
   if (q) {
     const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    filter.$or = [{ firstName: rx }, { lastName: rx }, { email: rx }];
+    filter.$or = [
+      { firstName: rx },
+      { lastName: rx },
+      { companyName: rx },
+      { contactPersonName: rx },
+      { email: rx },
+    ];
   }
   const rows = await Tenant.find(filter)
     .sort({ lastName: 1, firstName: 1 })
@@ -106,12 +117,15 @@ export async function GET(request: Request) {
       const lease = leaseId ? leaseById.get(leaseId) : null;
       return {
         id: String(r._id),
+        tenantType: r.tenantType ?? 'Individual',
         firstName: r.firstName,
         lastName: r.lastName,
+        companyName: r.companyName ?? '',
+        contactPersonName: r.contactPersonName ?? '',
         email: r.email ?? '',
         cosignerFlag: r.cosignerFlag,
         active: r.active,
-        displayName: `${r.firstName} ${r.lastName}`.trim(),
+        displayName: tenantDisplayName(r),
         currentLeaseId: leaseId,
         currentLease: lease
           ? {
@@ -146,10 +160,14 @@ export async function POST(request: Request) {
   }
 
   await connectToDatabase();
+  const tenantType = parsed.data.tenantType ?? 'Individual';
   const doc = await Tenant.create({
     organizationId: new Types.ObjectId(ctx.orgId),
-    firstName: parsed.data.firstName,
-    lastName: parsed.data.lastName,
+    tenantType,
+    firstName: parsed.data.firstName ?? '',
+    lastName: parsed.data.lastName ?? '',
+    companyName: parsed.data.companyName,
+    contactPersonName: parsed.data.contactPersonName,
     email: parsed.data.email,
     phones: parsed.data.phones,
     address: parsed.data.address,
@@ -166,7 +184,7 @@ export async function POST(request: Request) {
     parentId: doc._id,
     eventType: 'Tenant created',
     actorUserId: ctx.userId,
-    payload: { name: `${doc.firstName} ${doc.lastName}` },
+    payload: { name: tenantDisplayName(doc) },
   });
 
   return NextResponse.json({ id: String(doc._id) }, { status: 201 });

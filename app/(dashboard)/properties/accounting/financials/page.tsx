@@ -35,6 +35,7 @@ interface Cell {
 }
 interface Matrix {
   accountingMode: "cash" | "accrual";
+  estimatedIncomeTaxRatePct: number;
   accounts: Account[];
   columns: Column[];
   cells: Cell[];
@@ -118,6 +119,23 @@ export default function FinancialsPage() {
     for (const a of accounts) s += cellAmount(a.id, columnId);
     return s;
   }
+
+  // §6 — derived estimated income-tax footer (company-column only, no GL
+  // write). Applies the org rate to positive grand net income.
+  const grandNetCents = data
+    ? data.columns.reduce(
+        (s, col) =>
+          s +
+          columnTotal(col.id, incomeAccounts) -
+          columnTotal(col.id, expenseAccounts),
+        0,
+      )
+    : 0;
+  const taxRatePct = data?.estimatedIncomeTaxRatePct ?? 0;
+  const estimatedTaxCents = Math.round(
+    (Math.max(0, grandNetCents) * taxRatePct) / 100,
+  );
+  const afterTaxNetCents = grandNetCents - estimatedTaxCents;
 
   return (
     <div className="space-y-4">
@@ -230,6 +248,47 @@ export default function FinancialsPage() {
                       columnTotal(colId, expenseAccounts)
                     }
                   />
+                  {/* §6 — derived estimated income tax (company column only)
+                      + after-tax net. Shown once a rate is configured. */}
+                  {taxRatePct > 0 && (
+                    <>
+                      <tr className="border-b border-border bg-surface">
+                        <td className="px-2 py-1 text-xs uppercase tracking-widest text-fg-muted">
+                          Estimated income taxes ({taxRatePct}%)
+                        </td>
+                        {data.columns.map((c) => (
+                          <td key={c.id} className="px-2 py-1 text-right">
+                            {c.id === "company" ? (
+                              <CurrencyAmount
+                                value={fromCents(-estimatedTaxCents)}
+                              />
+                            ) : (
+                              <span className="text-fg-muted">—</span>
+                            )}
+                          </td>
+                        ))}
+                        <td className="px-2 py-1 text-right">
+                          <CurrencyAmount value={fromCents(-estimatedTaxCents)} />
+                        </td>
+                      </tr>
+                      <tr className="border-b border-border bg-surface">
+                        <td className="px-2 py-1 text-xs font-bold uppercase tracking-widest text-fg-muted">
+                          After-tax net
+                        </td>
+                        {data.columns.map((c) => (
+                          <td
+                            key={c.id}
+                            className="px-2 py-1 text-right text-fg-muted"
+                          >
+                            —
+                          </td>
+                        ))}
+                        <td className="px-2 py-1 text-right font-bold">
+                          <CurrencyAmount value={fromCents(afterTaxNetCents)} />
+                        </td>
+                      </tr>
+                    </>
+                  )}
                 </tbody>
               </table>
             </div>

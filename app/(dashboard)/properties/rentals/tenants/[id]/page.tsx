@@ -33,8 +33,11 @@ interface Phone {
 
 interface TenantDetail {
   id: string;
+  tenantType: "Individual" | "Company";
   firstName: string;
   lastName: string;
+  companyName: string;
+  contactPersonName: string;
   displayName: string;
   email: string;
   phones: { mobile?: Phone; home?: Phone; work?: Phone; fax?: Phone };
@@ -159,11 +162,16 @@ export default function TenantDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle>{doc.displayName}</CardTitle>
-          {doc.cosignerFlag && (
-            <span className="rounded bg-secondary-container/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
-              Cosigner
+          <div className="flex items-center gap-2">
+            <span className="rounded border border-border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-fg-muted">
+              {doc.tenantType === "Company" ? "Company" : "Individual"}
             </span>
-          )}
+            {doc.cosignerFlag && (
+              <span className="rounded bg-secondary-container/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
+                Cosigner
+              </span>
+            )}
+          </div>
         </CardHeader>
       </Card>
 
@@ -184,25 +192,53 @@ export default function TenantDetailPage() {
             <CardContent>
               <InlineFieldEditor
                 endpoint={`/api/pm/tenants/${doc.id}`}
-                data={{
-                  firstName: doc.firstName,
-                  lastName: doc.lastName,
-                  email: doc.email,
-                  dateOfBirth: doc.dateOfBirth,
-                  ssnLast4: doc.ssnLast4,
-                } as Record<string, unknown>}
-                fields={[
-                  { key: "firstName", label: "First name", required: true },
-                  { key: "lastName", label: "Last name", required: true },
-                  { key: "email", label: "Email", type: "email" },
-                  { key: "dateOfBirth", label: "Date of birth", type: "date" },
-                  {
-                    key: "ssnLast4",
-                    label: "SSN last 4",
-                    placeholder: "1234",
-                    display: (v) => (v ? `***-**-${v}` : "—"),
-                  },
-                ]}
+                data={
+                  (doc.tenantType === "Company"
+                    ? {
+                        companyName: doc.companyName,
+                        contactPersonName: doc.contactPersonName,
+                        email: doc.email,
+                      }
+                    : {
+                        firstName: doc.firstName,
+                        lastName: doc.lastName,
+                        email: doc.email,
+                        dateOfBirth: doc.dateOfBirth,
+                        ssnLast4: doc.ssnLast4,
+                      }) as Record<string, unknown>
+                }
+                fields={
+                  doc.tenantType === "Company"
+                    ? [
+                        {
+                          key: "companyName",
+                          label: "Company name",
+                          required: true,
+                        },
+                        { key: "contactPersonName", label: "Contact person" },
+                        { key: "email", label: "Contact email", type: "email" },
+                      ]
+                    : [
+                        {
+                          key: "firstName",
+                          label: "First name",
+                          required: true,
+                        },
+                        { key: "lastName", label: "Last name", required: true },
+                        { key: "email", label: "Email", type: "email" },
+                        {
+                          key: "dateOfBirth",
+                          label: "Date of birth",
+                          type: "date",
+                        },
+                        {
+                          key: "ssnLast4",
+                          label: "SSN last 4",
+                          placeholder: "1234",
+                          display: (v) => (v ? `***-**-${v}` : "—"),
+                        },
+                      ]
+                }
                 title="Tenant"
                 canEdit={doc.active}
                 onSaved={load}
@@ -355,8 +391,11 @@ export default function TenantDetailPage() {
         onClose={() => setAssignOpen(false)}
         presetTenant={{
           id: doc.id,
+          tenantType: doc.tenantType,
           firstName: doc.firstName,
           lastName: doc.lastName,
+          companyName: doc.companyName,
+          displayName: doc.displayName,
           email: doc.email,
         }}
         onSaved={async () => {

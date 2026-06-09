@@ -28,12 +28,16 @@ import type {
   LeaseType,
   DraftLeaseExecutionStatus,
   RentCycle,
+  RentMethod,
+  TenantType,
 } from '@/types/pm';
 import {
   ESIGNATURE_STATUSES,
   LEASE_TYPES,
   DRAFT_LEASE_EXECUTION_STATUSES,
   RENT_CYCLES,
+  RENT_METHODS,
+  TENANT_TYPES,
 } from '@/types/pm';
 import { WarningSchema, type IWarning } from './_shared/WarningSchema';
 
@@ -47,10 +51,14 @@ export interface IDraftLeaseTenantRef {
   /** May be null while a draft is built before tenants are promoted from
    *  Applicants. */
   tenantId?: Types.ObjectId | null;
+  /** §1 — snapshot of tenant type; optional for back-compat. */
+  tenantType?: TenantType;
   /** First-class snapshot — preserves the value even if the Tenant doc is
-   *  deleted before the lease executes. */
+   *  deleted before the lease executes. Empty for Company tenants (§1). */
   firstName: string;
   lastName: string;
+  /** Set when the tenant is a Company. */
+  companyName?: string;
   email?: string;
   isCosigner: boolean;
 }
@@ -68,8 +76,12 @@ export interface IDraftLeaseSplitRentCharge {
 }
 
 export interface IDraftLeasePrimaryRent {
-  amount: number; // cents
+  amount: number; // cents — resolved monthly rent (§3); recomputed on execute
   accountId: Types.ObjectId; // ChartOfAccount FK — typically Rental Income
+  /** §3 — mirrors the active-lease field so promotion is a straight copy. */
+  rentMethod: RentMethod;
+  /** §3 — per-sqft rate in cents; 0/absent for `Fixed`. */
+  ratePerSqftCents?: number;
   nextDueDate?: Date | null;
   memo?: string;
 }
@@ -155,8 +167,12 @@ export interface IDraftLease {
 const TenantRefSchema = new Schema<IDraftLeaseTenantRef>(
   {
     tenantId: { type: Schema.Types.ObjectId, ref: 'PmTenant', default: null },
-    firstName: { type: String, required: true, trim: true },
-    lastName: { type: String, required: true, trim: true },
+    tenantType: { type: String, enum: TENANT_TYPES, default: 'Individual' },
+    // §1 — relaxed to optional to mirror the active-lease ref (Company tenants
+    // carry companyName instead of first/last).
+    firstName: { type: String, trim: true, default: '' },
+    lastName: { type: String, trim: true, default: '' },
+    companyName: { type: String, trim: true, maxlength: 200 },
     email: { type: String, trim: true, lowercase: true },
     isCosigner: { type: Boolean, default: false },
   },
@@ -197,6 +213,8 @@ const PrimaryRentSchema = new Schema<IDraftLeasePrimaryRent>(
       ref: 'PmChartOfAccount',
       default: null,
     },
+    rentMethod: { type: String, enum: RENT_METHODS, default: 'Fixed' },
+    ratePerSqftCents: { type: Number, min: 0, default: 0 },
     nextDueDate: { type: Date, default: null },
     memo: { type: String, trim: true, maxlength: LEASE_MEMO_MAX },
   },

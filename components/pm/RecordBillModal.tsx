@@ -23,6 +23,7 @@ interface VendorOption {
 interface ChartOfAccountOption {
   id: string;
   name: string;
+  isGroup?: boolean;
 }
 interface PropertyOption {
   id: string;
@@ -78,7 +79,11 @@ export function RecordBillModal({
       if (r.ok) setVendors((await r.json()) as VendorOption[]);
     });
     fetch("/api/pm/chart-of-accounts").then(async (r) => {
-      if (r.ok) setAccounts((await r.json()) as ChartOfAccountOption[]);
+      if (r.ok) {
+        const all = (await r.json()) as ChartOfAccountOption[];
+        // Group/header rows are non-postable — keep them out of the picker.
+        setAccounts(all.filter((a) => !a.isGroup));
+      }
     });
     fetch("/api/pm/properties").then(async (r) => {
       if (r.ok) setProperties((await r.json()) as PropertyOption[]);

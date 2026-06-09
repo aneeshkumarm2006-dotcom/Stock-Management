@@ -5,7 +5,8 @@
 // between leases or in the directory only.
 // Phone shape mirrors RentalOwner: `{ number, smsOptIn }` per slot.
 import { Schema, model, models, Types, type Model } from 'mongoose';
-import type { StateOrProvince } from '@/types/pm';
+import type { StateOrProvince, TenantType } from '@/types/pm';
+import { TENANT_TYPES } from '@/types/pm';
 
 export interface ITenantPhone {
   number: string;
@@ -25,8 +26,16 @@ export interface ITenantAddress {
 export interface ITenant {
   _id: Types.ObjectId;
   organizationId: Types.ObjectId;
+  /** changes.md §1 — Individual ⇒ first/last name required; Company ⇒
+   *  companyName required. Defaults to Individual for back-compat. */
+  tenantType: TenantType;
+  /** Required for Individuals; left empty for Companies. */
   firstName: string;
   lastName: string;
+  /** Company tenants only — the legal entity name shown everywhere. */
+  companyName?: string;
+  /** Company tenants only — the person to reach at the company. */
+  contactPersonName?: string;
   email?: string;
   phones: {
     mobile?: ITenantPhone;
@@ -76,8 +85,14 @@ const TenantSchema = new Schema<ITenant>(
       ref: 'PmOrganization',
       required: true,
     },
-    firstName: { type: String, required: true, trim: true },
-    lastName: { type: String, required: true, trim: true },
+    tenantType: { type: String, enum: TENANT_TYPES, default: 'Individual' },
+    // §1 — first/last are conditionally required via the pre('validate') hook
+    // below (required for Individuals, optional for Companies), so the schema
+    // itself keeps them optional to leave every existing individual doc valid.
+    firstName: { type: String, trim: true, default: '' },
+    lastName: { type: String, trim: true, default: '' },
+    companyName: { type: String, trim: true, maxlength: 200 },
+    contactPersonName: { type: String, trim: true, maxlength: 160 },
     email: {
       type: String,
       trim: true,
@@ -115,6 +130,23 @@ const TenantSchema = new Schema<ITenant>(
 
 TenantSchema.index({ organizationId: 1, active: 1, lastName: 1, firstName: 1 });
 TenantSchema.index({ organizationId: 1, currentLeaseId: 1 });
+
+// §1 — conditional-required validation. Individual tenants need first + last
+// name; Company tenants need a company name. Mirrors the Zod `.superRefine`
+// in lib/validation/pm/tenant.ts so API and direct model writes agree.
+TenantSchema.pre('validate', function (next) {
+  if (this.tenantType === 'Company') {
+    if (!this.companyName || !this.companyName.trim()) {
+      return next(new Error('Company tenants require a companyName.'));
+    }
+  } else {
+    if (!this.firstName || !this.firstName.trim() ||
+        !this.lastName || !this.lastName.trim()) {
+      return next(new Error('Individual tenants require firstName and lastName.'));
+    }
+  }
+  next();
+});
 
 export const Tenant: Model<ITenant> =
   (models.PmTenant as Model<ITenant>) ??

@@ -30,12 +30,16 @@ import type {
   LeaseType,
   LeaseStatus,
   RentCycle,
+  RentMethod,
+  TenantType,
 } from '@/types/pm';
 import {
   ESIGNATURE_STATUSES,
   LEASE_TYPES,
   LEASE_STATUSES,
   RENT_CYCLES,
+  RENT_METHODS,
+  TENANT_TYPES,
 } from '@/types/pm';
 import {
   LEASE_MEMO_MAX,
@@ -44,8 +48,14 @@ import {
 
 export interface ILeaseTenantRef {
   tenantId: Types.ObjectId;
+  /** §1 — snapshot of the tenant's type so the ref renders without a join.
+   *  Optional for back-compat: legacy refs (all Individuals) omit it. */
+  tenantType?: TenantType;
+  /** Required-shaped but stored empty for Company tenants (§1). */
   firstName: string;
   lastName: string;
+  /** Set when the tenant is a Company; the rent roll falls back to this. */
+  companyName?: string;
   email?: string;
   isCosigner: boolean;
 }
@@ -61,8 +71,14 @@ export interface ILeaseSecurityDeposit {
 }
 
 export interface ILeasePrimaryRent {
-  amount: number; // cents
+  amount: number; // cents — always the RESOLVED monthly rent (§3)
   accountId: Types.ObjectId;
+  /** §3 — how `amount` was entered. `RatePerSqft` derives it from the rate
+   *  below × the unit's sizeSqft at save time. Defaults to `Fixed`. */
+  rentMethod: RentMethod;
+  /** §3 — per-sqft rate in cents; 0 (or absent) for `Fixed`. Stored so the
+   *  rate survives an edit round-trip without re-deriving from `amount`. */
+  ratePerSqftCents?: number;
   nextDueDate?: Date | null;
   memo?: string;
 }
@@ -150,8 +166,12 @@ const TenantRefSchema = new Schema<ILeaseTenantRef>(
       ref: 'PmTenant',
       required: true,
     },
-    firstName: { type: String, required: true, trim: true },
-    lastName: { type: String, required: true, trim: true },
+    tenantType: { type: String, enum: TENANT_TYPES, default: 'Individual' },
+    // §1 — first/last relaxed to optional so Company tenant refs (which carry
+    // companyName instead) validate. Existing individual refs keep their names.
+    firstName: { type: String, trim: true, default: '' },
+    lastName: { type: String, trim: true, default: '' },
+    companyName: { type: String, trim: true, maxlength: 200 },
     email: { type: String, trim: true, lowercase: true },
     isCosigner: { type: Boolean, default: false },
   },
@@ -179,6 +199,8 @@ const PrimaryRentSchema = new Schema<ILeasePrimaryRent>(
       ref: 'PmChartOfAccount',
       required: true,
     },
+    rentMethod: { type: String, enum: RENT_METHODS, default: 'Fixed' },
+    ratePerSqftCents: { type: Number, min: 0, default: 0 },
     nextDueDate: { type: Date, default: null },
     memo: { type: String, trim: true, maxlength: LEASE_MEMO_MAX },
   },

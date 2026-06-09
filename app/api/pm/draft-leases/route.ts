@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { DraftLease } from '@/lib/db/models/pm/DraftLease';
+import { Unit } from '@/lib/db/models/pm/Unit';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -16,6 +17,7 @@ import {
 import { draftLeaseCreateSchema } from '@/lib/validation/pm/draftLease';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
+import { rentCentsFromRateCents } from '@/lib/pm/rent';
 import { computeWarnings } from '@/lib/pm/warnings';
 import { DRAFT_LEASE_EXECUTION_STATUSES } from '@/types/pm';
 
@@ -114,6 +116,28 @@ export async function POST(request: Request) {
     .lean<{ draftId: number } | null>();
   const draftId = (last?.draftId ?? 0) + 1;
 
+  // §3 — resolve the rent shape. Drafts are lenient: a RatePerSqft draft stores
+  // the method + rate now and the amount is best-effort (computed when the unit
+  // already has sizeSqft); the authoritative recompute happens on execute.
+  const rentMethod =
+    parsed.data.primaryRent?.rentMethod === 'RatePerSqft' ? 'RatePerSqft' : 'Fixed';
+  let primaryRentAmountCents = toCents(parsed.data.primaryRent?.amount ?? 0);
+  let ratePerSqftCents = 0;
+  if (rentMethod === 'RatePerSqft') {
+    ratePerSqftCents = toCents(parsed.data.primaryRent?.ratePerSqft ?? 0);
+    let sizeSqft = 0;
+    if (parsed.data.unitId && Types.ObjectId.isValid(parsed.data.unitId)) {
+      const unit = await Unit.findOne({
+        _id: new Types.ObjectId(parsed.data.unitId),
+        organizationId: orgId,
+      })
+        .select({ sizeSqft: 1 })
+        .lean<{ sizeSqft?: number } | null>();
+      sizeSqft = unit?.sizeSqft ?? 0;
+    }
+    primaryRentAmountCents = rentCentsFromRateCents(ratePerSqftCents, sizeSqft);
+  }
+
   try {
     const doc = await DraftLease.create({
       organizationId: orgId,
@@ -154,10 +178,12 @@ export async function POST(request: Request) {
       })),
       rentCycle: parsed.data.rentCycle ?? 'Monthly',
       primaryRent: {
-        amount: toCents(parsed.data.primaryRent?.amount ?? 0),
+        amount: primaryRentAmountCents,
         accountId: parsed.data.primaryRent?.accountId
           ? new Types.ObjectId(parsed.data.primaryRent.accountId)
           : null,
+        rentMethod,
+        ratePerSqftCents,
         nextDueDate: parsed.data.primaryRent?.nextDueDate
           ? new Date(parsed.data.primaryRent.nextDueDate)
           : null,

@@ -38,11 +38,16 @@ const DEFAULT_FOR: ChartOfAccountDefaultFor[] = [
   "Accounts Receivable",
   "Application Fee Income",
   "Bank Fees",
+  "Bank Service Charges",
   "Convenience Fee",
+  "Interest Income",
+  "Investment Income",
   "Last Month's Rent",
   "Late Fee Income",
+  "Management Fee Expense",
   "Management Fee Income",
   "Operating Cash",
+  "Owner Contribution",
   "Security Deposit Liability",
   "Undeposited Funds",
 ];
@@ -58,6 +63,8 @@ interface Row {
   id: string;
   name: string;
   type: ChartOfAccountType;
+  parentId: string | null;
+  isGroup: boolean;
   defaultFor: ChartOfAccountDefaultFor | null;
   cashFlowClassification: CashFlowClassification;
   accountNumber: string;
@@ -94,7 +101,32 @@ export default function ChartOfAccountsPage() {
       if (!m.has(k)) m.set(k, []);
       m.get(k)!.push(r);
     }
-    return Array.from(m.entries());
+    // Within each type, order rows as: each group header followed by its leaf
+    // children, then any ungrouped top-level leaves (Change §0B nesting).
+    const childrenByParent = new Map<string, Row[]>();
+    for (const r of rows) {
+      if (r.parentId) {
+        const list = childrenByParent.get(r.parentId) ?? [];
+        list.push(r);
+        childrenByParent.set(r.parentId, list);
+      }
+    }
+    return Array.from(m.entries()).map(([k, rs]) => {
+      const ordered: Row[] = [];
+      const placed = new Set<string>();
+      for (const g of rs.filter((r) => r.isGroup)) {
+        ordered.push(g);
+        placed.add(g.id);
+        for (const child of childrenByParent.get(g.id) ?? []) {
+          ordered.push(child);
+          placed.add(child.id);
+        }
+      }
+      // Anything not already placed (orphan leaves, or children whose group
+      // lives in another type bucket) is appended so no row is ever dropped.
+      ordered.push(...rs.filter((r) => !placed.has(r.id)));
+      return [k, ordered] as [ChartOfAccountType, Row[]];
+    });
   }, [rows]);
 
   async function archive(r: Row) {
@@ -165,7 +197,16 @@ export default function ChartOfAccountsPage() {
                       }
                     >
                       <td className="py-2 text-fg">
-                        <span className="flex items-center gap-2">
+                        <span
+                          className={
+                            "flex items-center gap-2 " +
+                            (r.isGroup
+                              ? "font-semibold"
+                              : r.parentId
+                                ? "pl-5 text-fg-muted"
+                                : "")
+                          }
+                        >
                           {r.name}
                           {r.systemSeeded && (
                             <Lock

@@ -6,11 +6,14 @@
 
 import * as React from "react";
 import { Label } from "@/components/ui/label";
+import type { TenantType } from "@/types/pm";
 
 export interface TenantOption {
   id: string;
+  tenantType: TenantType;
   firstName: string;
   lastName: string;
+  companyName: string;
   displayName: string;
   email: string;
   currentLeaseId: string | null;

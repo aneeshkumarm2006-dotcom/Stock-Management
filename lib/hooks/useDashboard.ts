@@ -24,23 +24,47 @@ import {
   type Country,
 } from "@/lib/utils/portfolioMath";
 import type { Currency } from "@/lib/utils/convertCurrency";
+import { toPositionInput } from "@/lib/utils/buildPositionInput";
 import { useCashValue } from "./useCompanies";
 
 /* ------------------------------------------------------------------ */
 /* Wire types                                                          */
 /* ------------------------------------------------------------------ */
 
+export type AssetType = 'EQUITY' | 'GIC' | 'BOND' | 'MUTUAL_FUND' | 'CASH';
+export type PayoutFrequency =
+  | 'MONTHLY'
+  | 'QUARTERLY'
+  | 'SEMI_ANNUAL'
+  | 'ANNUAL'
+  | 'AT_MATURITY';
+
 export interface ApiPosition {
   id: string;
-  ticker: string;
-  exchange: Exchange;
-  quantity: number;
-  avgBuyPrice: number;
-  currency: Currency;
+  /** Discriminator. Legacy docs without it are served as 'EQUITY'. */
+  assetType: AssetType;
+  // Equity fields — null on non-equity holdings.
+  ticker: string | null;
+  exchange: Exchange | null;
+  quantity: number | null;
+  avgBuyPrice: number | null;
   buyDate: string | null;
+  // Common.
+  currency: Currency;
   /** Optional "held-by" company ref + its resolved name (null = unassigned). */
   companyId: string | null;
   companyName: string | null;
+  // Non-equity fields (null on equities).
+  label: string | null;
+  institution: string | null;
+  principal: number | null;
+  startDate: string | null;
+  maturityDate: string | null;
+  interestRate: number | null;
+  payoutFrequency: PayoutFrequency | null;
+  costBasis: number | null;
+  currentValue: number | null;
+  valueAsOf: string | null;
   metadata: {
     name: string | null;
     logo: string | null;
@@ -178,26 +202,33 @@ export function useDashboardData(): DashboardData {
     [positionsQuery.data],
   );
 
+  // Only equities have a live market quote; GIC/Bond/fund/cash are valued
+  // without one, so they must NOT trigger /api/quote/undefined/undefined.
+  const equityPositions = useMemo(
+    () => positions.filter((p) => (p.assetType ?? "EQUITY") === "EQUITY"),
+    [positions],
+  );
+
   // One live quote per held symbol, in parallel (no batch route on the
   // free tier; each is cached + quota-gated server-side — Stage 4).
   const quoteResults = useQueries({
-    queries: positions.map((p) => ({
+    queries: equityPositions.map((p) => ({
       queryKey: ["quote", p.exchange, p.ticker] as const,
       queryFn: () =>
         fetchJson<CacheResult<QuotePayload>>(
-          `/api/quote/${p.exchange}/${encodeURIComponent(p.ticker)}`,
+          `/api/quote/${p.exchange}/${encodeURIComponent(p.ticker ?? "")}`,
         ),
     })),
   });
 
   const quoteByKey = useMemo(() => {
     const map = new Map<string, QuotePayload>();
-    positions.forEach((p, i) => {
+    equityPositions.forEach((p, i) => {
       const data = quoteResults[i]?.data?.data;
       if (data) map.set(`${p.ticker}:${p.exchange}`, data);
     });
     return map;
-  }, [positions, quoteResults]);
+  }, [equityPositions, quoteResults]);
 
   const isFetchingQuotes = quoteResults.some((q) => q.isLoading);
   const hasStaleQuotes = quoteResults.some((q) => q.data?.stale === true);
@@ -207,39 +238,28 @@ export function useDashboardData(): DashboardData {
       return { summary: null as PortfolioSummary | null, holdings: [] as Holding[] };
     }
 
-    const inputs: PositionInput[] = positions.map((p) => {
-      const q = quoteByKey.get(`${p.ticker}:${p.exchange}`);
-      return {
-        id: p.id,
-        ticker: p.ticker,
-        exchange: p.exchange,
-        quantity: p.quantity,
-        avgBuyPrice: p.avgBuyPrice,
-        currency: p.currency,
-        sector: p.metadata?.sector ?? null,
-        country: p.metadata?.country ?? null,
-        price: q?.price ?? null,
-        dayChange: q?.dayChange ?? null,
-      };
-    });
+    const inputs: PositionInput[] = positions.map((p) =>
+      toPositionInput(p, quoteByKey.get(`${p.ticker}:${p.exchange}`)),
+    );
 
     const computed = computePortfolio(inputs, {
       displayCurrency,
       rates,
     });
 
+    // Top Holdings strip is equities-only (it shows tickers + live price).
     const metricsById = new Map(computed.positions.map((m) => [m.id, m]));
-    const rows: Holding[] = positions.flatMap((p) => {
+    const rows: Holding[] = equityPositions.flatMap((p) => {
       const metrics = metricsById.get(p.id);
       if (!metrics) return [];
       const q = quoteByKey.get(`${p.ticker}:${p.exchange}`);
       return [
         {
           id: p.id,
-          ticker: p.ticker,
+          ticker: p.ticker ?? "",
           name: p.metadata?.name ?? null,
           logo: p.metadata?.logo ?? null,
-          exchange: p.exchange,
+          exchange: p.exchange ?? "",
           nativeCurrency: p.currency,
           price: q?.price ?? null,
           metrics,
@@ -249,7 +269,7 @@ export function useDashboardData(): DashboardData {
     rows.sort((a, b) => b.metrics.currentValue - a.metrics.currentValue);
 
     return { summary: computed, holdings: rows };
-  }, [positions, quoteByKey, displayCurrency, rates]);
+  }, [positions, equityPositions, quoteByKey, displayCurrency, rates]);
 
   return {
     summary,

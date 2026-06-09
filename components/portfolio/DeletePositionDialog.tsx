@@ -39,8 +39,8 @@ export function DeletePositionDialog({
     try {
       await del.mutateAsync(row.id);
       toast({
-        title: "Position removed",
-        description: `${row.ticker} was deleted from your portfolio.`,
+        title: "Holding removed",
+        description: `${row.ticker || row.label || "Holding"} was deleted from your portfolio.`,
         variant: "success",
       });
       onClose();
@@ -57,10 +57,10 @@ export function DeletePositionDialog({
     <Dialog open={Boolean(row)} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader
-          title="Delete position?"
+          title="Delete holding?"
           description={
             row
-              ? `${row.ticker} (${row.exchange}) and its cost basis will be permanently removed. This cannot be undone.`
+              ? `${row.ticker ? `${row.ticker} (${row.exchange})` : row.label} will be permanently removed. This cannot be undone.`
               : undefined
           }
           onClose={onClose}

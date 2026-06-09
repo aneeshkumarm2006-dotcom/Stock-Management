@@ -38,6 +38,7 @@ export const CHART_OF_ACCOUNT_DEFAULT_FOR: ChartOfAccountDefaultFor[] = [
   'Bank Service Charges',
   'Convenience Fee',
   'Interest Income',
+  'Investment Income',
   "Last Month's Rent",
   'Late Fee Income',
   'Management Fee Expense',
@@ -53,6 +54,15 @@ export interface IChartOfAccount {
   organizationId: Types.ObjectId;
   name: string;
   type: ChartOfAccountType;
+  /**
+   * Parent group for a nested chart of accounts (Change §0B). `null` for
+   * top-level rows. Group rows (`isGroup: true`) are non-postable headers;
+   * leaves post exactly as before. Reports still aggregate by leaf accountId,
+   * so grouping is presentation-only.
+   */
+  parentId?: Types.ObjectId | null;
+  /** True for non-postable group/header rows. Hidden in account pickers. */
+  isGroup: boolean;
   defaultFor?: ChartOfAccountDefaultFor | null;
   cashFlowClassification?: CashFlowClassification;
   accountNumber?: string;
@@ -72,6 +82,12 @@ const ChartOfAccountSchema = new Schema<IChartOfAccount>(
     },
     name: { type: String, required: true, trim: true },
     type: { type: String, enum: CHART_OF_ACCOUNT_TYPES, required: true },
+    parentId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmChartOfAccount',
+      default: null,
+    },
+    isGroup: { type: Boolean, default: false },
     defaultFor: {
       type: String,
       enum: CHART_OF_ACCOUNT_DEFAULT_FOR,
@@ -90,8 +106,13 @@ const ChartOfAccountSchema = new Schema<IChartOfAccount>(
   { timestamps: true, collection: 'pm_chart_of_accounts' },
 );
 
-// One row per (org, name).
+// One row per (org, name). The Ramco seed names sibling leaves distinctly
+// (e.g. "Bank Fees CAD$" / "Bank Fees USD$") so a flat name remains unique
+// even under different groups (Change §0B).
 ChartOfAccountSchema.index({ organizationId: 1, name: 1 }, { unique: true });
+
+// Nested-chart lookups: fetch a group's children, or all top-level rows.
+ChartOfAccountSchema.index({ organizationId: 1, parentId: 1 });
 
 // BR-AC-5: one account per `defaultFor` role per org. Partial filter avoids
 // the "many nulls collide" pitfall of a plain unique index.
