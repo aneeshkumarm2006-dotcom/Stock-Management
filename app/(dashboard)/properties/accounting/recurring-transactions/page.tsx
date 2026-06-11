@@ -49,7 +49,9 @@ export default function RecurringTransactionsPage() {
   }, [load]);
 
   async function runCron() {
-    const res = await fetch("/api/cron/post-recurring");
+    const res = await fetch("/api/pm/recurring-transactions/run", {
+      method: "POST",
+    });
     if (!res.ok) {
       toast({ title: "Cron failed", variant: "error" });
       return;

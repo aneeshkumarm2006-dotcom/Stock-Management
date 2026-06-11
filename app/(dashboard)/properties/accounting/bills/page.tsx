@@ -35,6 +35,7 @@ export default function BillsPage() {
   const [rows, setRows] = React.useState<BillRow[]>([]);
   const [vendors, setVendors] = React.useState<VendorOption[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState<StatusFilter>("open");
   const [recordOpen, setRecordOpen] = React.useState(false);
   const [payOpen, setPayOpen] = React.useState(false);
@@ -42,9 +43,16 @@ export default function BillsPage() {
 
   const load = React.useCallback(async () => {
     setLoading(true);
-    const r = await fetch("/api/pm/bills");
-    if (r.ok) setRows((await r.json()) as BillRow[]);
-    setLoading(false);
+    setError(null);
+    try {
+      const r = await fetch("/api/pm/bills");
+      if (r.ok) setRows((await r.json()) as BillRow[]);
+      else setError(`Error ${r.status}`);
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   React.useEffect(() => {
@@ -108,6 +116,18 @@ export default function BillsPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && (
+            <div className="rounded border border-error/40 bg-error/10 px-3 py-2 text-sm text-error">
+              {error} — could not load bills.{" "}
+              <button
+                type="button"
+                onClick={() => load()}
+                className="font-bold underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-3">
             <FilterChip
               label="Open"

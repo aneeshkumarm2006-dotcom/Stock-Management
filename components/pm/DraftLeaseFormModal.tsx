@@ -25,6 +25,7 @@ import {
 } from "@/types/pm";
 import { computeWarnings } from "@/lib/pm/warnings";
 import { WarningInline } from "@/components/pm/WarningBadge";
+import { LeaseTypeHelp } from "@/components/pm/LeaseTypeHelp";
 import { formatMoney } from "@/lib/pm/currency";
 
 interface PropertyOption {
@@ -361,7 +362,10 @@ export function DraftLeaseFormModal({
             </select>
           </div>
           <div>
-            <Label>Lease type</Label>
+            <Label>
+              Lease type
+              <LeaseTypeHelp />
+            </Label>
             <select
               className="w-full rounded border bg-background px-2 py-1.5 text-sm"
               value={leaseType}

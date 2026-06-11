@@ -234,7 +234,6 @@ const RecurringChargeSchema = new Schema<IDraftLeaseRecurringCharge>(
     memo: { type: String, trim: true, maxlength: LEASE_MEMO_MAX },
     postNDaysInAdvance: { type: Number, default: 5, min: 0, max: 30 },
   },
-  { _id: false },
 );
 
 const OneTimeChargeSchema = new Schema<IDraftLeaseOneTimeCharge>(

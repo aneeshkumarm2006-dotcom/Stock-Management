@@ -10,6 +10,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { toCents } from '@/lib/pm/currency';
 import { logActivity } from '@/lib/pm/activity';
+import { canManageOrg } from '@/lib/pm/roles';
 import {
   APPROVAL_RULE_SEMANTICS,
   type ApprovalRuleSemantics,
@@ -49,6 +50,9 @@ export async function PATCH(
 ) {
   const ctx = await getPmContext();
   if (!ctx) return unauthorizedResponse();
+  if (!canManageOrg(ctx)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   let body: unknown;
   try {
@@ -101,6 +105,9 @@ export async function DELETE(
 ) {
   const ctx = await getPmContext();
   if (!ctx) return unauthorizedResponse();
+  if (!canManageOrg(ctx)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   const doc = await loadRule(ctx.orgId, params.id);
   if (!doc) {
     return NextResponse.json(

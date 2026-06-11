@@ -13,6 +13,8 @@ interface DropdownProps {
   children: React.ReactNode;
   align?: "start" | "end";
   className?: string;
+  /** Fired whenever the open state changes (e.g. to mark notifications read). */
+  onOpenChange?: (open: boolean) => void;
 }
 
 const MENU_MIN_WIDTH = 160; // matches min-w-[10rem]
@@ -23,8 +25,22 @@ export function Dropdown({
   children,
   align = "end",
   className,
+  onOpenChange,
 }: DropdownProps) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpenState] = React.useState(false);
+  // Keep onOpenChange in a ref so setOpen stays referentially stable.
+  const onOpenChangeRef = React.useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  const setOpen = React.useCallback(
+    (next: boolean | ((o: boolean) => boolean)) => {
+      setOpenState((prev) => {
+        const value = typeof next === "function" ? next(prev) : next;
+        if (value !== prev) onOpenChangeRef.current?.(value);
+        return value;
+      });
+    },
+    [],
+  );
   const [mounted, setMounted] = React.useState(false);
   const [coords, setCoords] = React.useState<{
     top: number;

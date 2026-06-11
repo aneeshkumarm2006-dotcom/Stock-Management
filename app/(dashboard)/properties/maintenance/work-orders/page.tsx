@@ -47,12 +47,15 @@ export default function WorkOrdersPage() {
   const load = React.useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (filter !== "open") params.set("includeTerminal", "1");
+    // Always fetch the full set (including terminal) so the chips can derive
+    // their counts and the table its rows from one in-memory dataset. Filtering
+    // happens client-side in `visible` below.
+    params.set("includeTerminal", "1");
     if (search.trim()) params.set("q", search.trim());
     const r = await fetch(`/api/pm/work-orders?${params.toString()}`);
     if (r.ok) setRows((await r.json()) as WoRow[]);
     setLoading(false);
-  }, [filter, search]);
+  }, [search]);
 
   React.useEffect(() => {
     load();
@@ -63,6 +66,15 @@ export default function WorkOrdersPage() {
       if (r.ok) setVendors((await r.json()) as VendorOption[]);
     });
   }, []);
+
+  const isTerminal = (status: string) =>
+    status === "Completed" || status === "Cancelled";
+
+  const visible = React.useMemo(() => {
+    if (filter === "terminal") return rows.filter((r) => isTerminal(r.status));
+    if (filter === "open") return rows.filter((r) => !isTerminal(r.status));
+    return rows;
+  }, [rows, filter]);
 
   const vendorById = React.useMemo(
     () => Object.fromEntries(vendors.map((v) => [v.id, v.displayName] as const)),
@@ -82,13 +94,13 @@ export default function WorkOrdersPage() {
           <div className="flex flex-wrap items-center gap-3">
             <FilterChip
               label="Open"
-              count={rows.filter((r) => r.status !== "Completed" && r.status !== "Cancelled").length}
+              count={rows.filter((r) => !isTerminal(r.status)).length}
               selected={filter === "open"}
               onClick={() => setFilter("open")}
             />
             <FilterChip
               label="Completed / cancelled"
-              count={rows.filter((r) => r.status === "Completed" || r.status === "Cancelled").length}
+              count={rows.filter((r) => isTerminal(r.status)).length}
               selected={filter === "terminal"}
               onClick={() => setFilter("terminal")}
             />
@@ -127,14 +139,14 @@ export default function WorkOrdersPage() {
                   </td>
                 </tr>
               )}
-              {!loading && rows.length === 0 && (
+              {!loading && visible.length === 0 && (
                 <tr>
                   <td colSpan={7} className="py-4 text-fg-muted">
                     No work orders match.
                   </td>
                 </tr>
               )}
-              {rows.map((w) => (
+              {visible.map((w) => (
                 <tr key={w.id} className="border-b border-border/40">
                   <td className="py-2 text-fg">
                     <Link

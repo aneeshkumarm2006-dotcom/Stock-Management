@@ -46,7 +46,7 @@ export function OutstandingBalancesWidget() {
   return (
     <WidgetCard
       title="Outstanding Balances"
-      viewAllHref="/properties/rentals/outstanding-balances"
+      viewAllHref="/properties/rentals/rent-roll"
       footer={count > 0 ? `Showing ${rows.length} of ${count}` : null}
     >
       <div className="flex items-baseline justify-between">

@@ -4,6 +4,7 @@
 // click reveals the latest 20 in a dropdown panel.
 import * as React from "react";
 import { Bell } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Dropdown, DropdownItem } from "@/components/ui/dropdown";
 
@@ -24,6 +25,7 @@ interface FeedPayload {
 
 export function BellBadge() {
   const { status } = useSession();
+  const router = useRouter();
   const [feed, setFeed] = React.useState<FeedPayload>({
     unreadCount: 0,
     items: [],
@@ -45,6 +47,33 @@ export function BellBadge() {
       }
     },
     [],
+  );
+
+  // On dropdown open: mark the currently-visible unread notifications read via
+  // the PATCH endpoint ({ ids: [...] }), then re-fetch so the badge clears.
+  const markVisibleRead = React.useCallback(async () => {
+    const unreadIds = feed.items
+      .filter((n) => n.readAt === null)
+      .map((n) => n.id);
+    if (unreadIds.length === 0) return;
+    try {
+      const r = await fetch("/api/pm/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: unreadIds }),
+      });
+      if (!r.ok) return;
+      await refresh();
+    } catch {
+      /* swallow — badge will reconcile on the next 60s poll */
+    }
+  }, [feed.items, refresh]);
+
+  const handleOpenChange = React.useCallback(
+    (open: boolean) => {
+      if (open) void markVisibleRead();
+    },
+    [markVisibleRead],
   );
 
   React.useEffect(() => {
@@ -71,6 +100,7 @@ export function BellBadge() {
   return (
     <Dropdown
       align="end"
+      onOpenChange={handleOpenChange}
       trigger={
         <span
           className="relative flex h-8 w-8 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-surface-high hover:text-fg"
@@ -97,7 +127,11 @@ export function BellBadge() {
       ) : (
         <>
           {feed.items.map((n) => (
-            <DropdownItem key={n.id}>
+            <DropdownItem
+              key={n.id}
+              onClick={n.link ? () => router.push(n.link as string) : undefined}
+              className={n.link ? "cursor-pointer" : undefined}
+            >
               <span className="flex flex-col items-start">
                 <span className="text-sm font-semibold text-fg">{n.title}</span>
                 {n.body && (

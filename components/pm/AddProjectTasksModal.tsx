@@ -43,6 +43,14 @@ export function AddProjectTasksModal({
   const [search, setSearch] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
+  // Reset picker state when the modal closes so the next open starts clean.
+  React.useEffect(() => {
+    if (!open) {
+      setSelected(new Set());
+      setSearch("");
+    }
+  }, [open]);
+
   // `excludeIds` is a fresh array on every parent render, so depending on it
   // directly re-fires the fetch on each render. Collapse it to a stable string
   // key (sorted join) and depend on that instead (ADD-015).

@@ -13,6 +13,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { toCents } from '@/lib/pm/currency';
 import { logActivity } from '@/lib/pm/activity';
+import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
 
 export const runtime = 'nodejs';
 
@@ -122,13 +123,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const endDate = new Date(parsed.data.endDate);
+
   try {
+    // A reconciliation issued over a locked window must not be opened by a
+    // non-override caller (BR-AC-3).
+    await assertWriteAllowed({ orgId: ctx.orgId, txnDate: endDate, ctx });
+
     const doc = await Reconciliation.create({
       organizationId: orgObjectId,
       bankAccountId: new Types.ObjectId(parsed.data.bankAccountId),
       status: 'In progress',
       startDate: new Date(parsed.data.startDate),
-      endDate: new Date(parsed.data.endDate),
+      endDate,
       statementEndingBalance: toCents(parsed.data.statementEndingBalance),
       bookEndingBalance: 0,
       difference: 0,
@@ -154,6 +161,12 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (err) {
+    if (err instanceof LockedPeriodError) {
+      return NextResponse.json(
+        { error: err.policyMessage, policyId: err.policyId },
+        { status: 423 },
+      );
+    }
     const msg =
       err instanceof Error ? err.message : 'Failed to start reconciliation';
     return NextResponse.json({ error: msg }, { status: 400 });

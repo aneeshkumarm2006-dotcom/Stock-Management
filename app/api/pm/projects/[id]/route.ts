@@ -77,6 +77,25 @@ export async function PATCH(
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  // Fix 15 — a Closed project is read-only except for the reopen transition.
+  // The only mutation allowed while Closed is `status` moving away from
+  // 'Closed' (e.g. back to 'In progress'). Any field edit is rejected so the
+  // server enforces what the detail page's `canEdit` flag implies client-side.
+  if (doc.status === 'Closed') {
+    const isReopen =
+      parsed.data.status !== undefined && parsed.data.status !== 'Closed';
+    const { status: _status, ...otherFields } = parsed.data;
+    const touchesOtherFields = Object.values(otherFields).some(
+      (v) => v !== undefined,
+    );
+    if (!isReopen || touchesOtherFields) {
+      return NextResponse.json(
+        { error: 'Project is closed. Reopen it before editing.' },
+        { status: 409 },
+      );
+    }
+  }
+
   if (parsed.data.propertyId) {
     const cnt = await Property.countDocuments({
       _id: new Types.ObjectId(parsed.data.propertyId),

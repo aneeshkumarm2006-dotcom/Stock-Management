@@ -50,7 +50,7 @@ interface BudgetGridEditorProps {
   category: BudgetLineCategory;
   initialLines: LineDraft[];
   accounts: ChartOfAccountOption[];
-  onChanged: () => void;
+  onChanged: () => void | Promise<void>;
 }
 
 /** Map the fiscal-month column index 0..11 to its calendar-month abbrev. */
@@ -261,7 +261,14 @@ export function BudgetGridEditor({
       // to resume. Keep `dirty` if newer edits queued up while we were saving
       // (pendingRef), so the upcoming refetch can't clobber them.
       if (!pendingRef.current) dirtyRef.current = false;
-      onChanged();
+      try {
+        await onChanged();
+      } catch (e) {
+        toast({
+          title: "Failed to refresh — " + (e as Error).message,
+          variant: "error",
+        });
+      }
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
       toast({ title: "Failed to save budget", variant: "error" });

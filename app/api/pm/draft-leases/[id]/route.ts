@@ -104,6 +104,7 @@ export async function GET(
     })),
     securityDeposit: doc.securityDeposit,
     recurringCharges: (doc.recurringCharges ?? []).map((c) => ({
+      id: String((c as { _id?: unknown })._id ?? ''),
       amount: c.amount,
       accountId: String(c.accountId),
       frequency: c.frequency,

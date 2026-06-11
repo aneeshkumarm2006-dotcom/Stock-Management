@@ -124,7 +124,11 @@ export async function PATCH(
     throw err;
   }
 
-  return NextResponse.json(serialize(company));
+  const positionCount = await Position.countDocuments({
+    userId,
+    companyId: id,
+  });
+  return NextResponse.json({ ...serialize(company), positionCount });
 }
 
 /** DELETE /api/companies/[id] — remove a company (blocked while in use). */

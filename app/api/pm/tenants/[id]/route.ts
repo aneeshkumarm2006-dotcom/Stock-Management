@@ -56,7 +56,9 @@ export async function GET(
     leaseType: string;
     startDate: Date | null;
     endDate: Date | null;
-    primaryRentAmount: number; // cents
+    primaryRentAmount: number; // cents — Base Rent only
+    totalRentAmount: number; // cents — Base Rent + OPEX/Tax recovery splits (§4)
+    splitRentCharges: { amount: number; memo: string }[]; // cents, label in memo
   } | null = null;
   if (doc.currentLeaseId) {
     const lease = await Lease.findOne({
@@ -90,6 +92,17 @@ export async function GET(
         startDate: lease.startDate ?? null,
         endDate: lease.endDate ?? null,
         primaryRentAmount: lease.primaryRent?.amount ?? 0,
+        // §4 — full monthly rent = Base Rent + OPEX/Tax recovery splits.
+        totalRentAmount:
+          (lease.primaryRent?.amount ?? 0) +
+          (lease.splitRentCharges ?? []).reduce(
+            (s, c) => s + (c.amount ?? 0),
+            0,
+          ),
+        splitRentCharges: (lease.splitRentCharges ?? []).map((c) => ({
+          amount: c.amount ?? 0,
+          memo: c.memo ?? '',
+        })),
       };
     }
   }

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ApplicantFormModal } from "@/components/pm/ApplicantFormModal";
 import { APPLICANT_STATUSES, type ApplicantStatus } from "@/types/pm";
 
@@ -30,12 +30,32 @@ interface ApplicantRow {
 }
 
 export default function ApplicantsPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <ApplicantsPageInner />
+    </React.Suspense>
+  );
+}
+
+function ApplicantsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Dashboard / funnel widgets deep-link here with `?status=Approved` etc.
+  // Seed the chip from a valid ApplicantStatus so the deep link lands on the
+  // matching view instead of the default "open" funnel (which excludes
+  // Approved/Rejected/etc.). See Fix 14.
+  const statusParam = searchParams.get("status");
+  const initialStatusFilter: ApplicantStatus | "open" =
+    statusParam &&
+    (APPLICANT_STATUSES as readonly string[]).includes(statusParam)
+      ? (statusParam as ApplicantStatus)
+      : "open";
+
   const [rows, setRows] = React.useState<ApplicantRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<ApplicantStatus | "open">(
-    "open",
+    initialStatusFilter,
   );
   const [modalOpen, setModalOpen] = React.useState(false);
 

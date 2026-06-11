@@ -13,6 +13,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { toCents } from '@/lib/pm/currency';
 import { logActivity } from '@/lib/pm/activity';
+import { canManageOrg } from '@/lib/pm/roles';
 import {
   APPROVAL_RULE_SCOPE_TYPES,
   APPROVAL_RULE_SEMANTICS,
@@ -81,6 +82,9 @@ export async function GET() {
 export async function POST(request: Request) {
   const ctx = await getPmContext();
   if (!ctx) return unauthorizedResponse();
+  if (!canManageOrg(ctx)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   let body: unknown;
   try {

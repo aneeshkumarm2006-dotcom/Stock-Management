@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
+import { Lease } from '@/lib/db/models/pm/Lease';
 import { Pet } from '@/lib/db/models/pm/Pet';
 import {
   getPmContext,
@@ -72,6 +73,19 @@ export async function POST(
   }
 
   await connectToDatabase();
+
+  // Verify the lease exists and belongs to the caller's org before attaching
+  // a pet to it (mirrors the renters-insurance POST ownership guard).
+  const parentLease = await Lease.findOne({
+    _id: new Types.ObjectId(params.id),
+    organizationId: new Types.ObjectId(ctx.orgId),
+  })
+    .select('_id')
+    .lean();
+  if (!parentLease) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
   const doc = await Pet.create({
     organizationId: new Types.ObjectId(ctx.orgId),
     leaseId: new Types.ObjectId(params.id),

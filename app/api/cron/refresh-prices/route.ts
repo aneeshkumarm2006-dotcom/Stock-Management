@@ -30,6 +30,12 @@ export async function GET(request: Request) {
   const held = await Position.aggregate<{
     _id: { ticker: string; exchange: string };
   }>([
+    {
+      $match: {
+        ticker: { $type: 'string', $ne: '' },
+        $or: [{ assetType: 'EQUITY' }, { assetType: { $exists: false } }],
+      },
+    },
     { $group: { _id: { ticker: '$ticker', exchange: '$exchange' } } },
   ]);
 

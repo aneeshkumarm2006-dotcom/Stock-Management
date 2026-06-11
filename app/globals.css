@@ -20,6 +20,7 @@
     /* Warm neutrals — page canvas matches the sidebar (`surface-high`),
        cards stay on pure white so they still pop above. */
     --c-bg: 251 251 249;
+    --c-bg-elevated: 251 251 249;
     --c-surface: 255 255 255;
     --c-surface-high: 251 251 249;
     --c-surface-highest: 241 241 238;
@@ -59,6 +60,11 @@
     --c-error-container: 251 234 234;
     --c-error-fg: 153 27 27;
 
+    /* Semantic status accents — blue-500 / amber-500 / emerald-500. */
+    --c-info: 59 130 246;
+    --c-warning: 245 158 11;
+    --c-success: 16 185 129;
+
     --c-chart-grid: 231 231 227;
     --c-chart-cursor: 24 24 27;
     --c-chart-cursor-alpha: 0.04;
@@ -73,6 +79,7 @@
        sits on `surface-high` (matches the sidebar), so `surface` (cards) and
        `surface-highest` (overlays) are lifted to stay above it. */
     --c-bg: 28 28 30;
+    --c-bg-elevated: 35 35 37;
     --c-surface: 35 35 37;
     --c-surface-high: 28 28 30;
     --c-surface-highest: 42 42 45;
@@ -110,6 +117,11 @@
     --c-error: 248 113 113;
     --c-error-container: 135 31 33;
     --c-error-fg: 255 153 147;
+
+    /* Semantic status accents — blue-500 / amber-500 / emerald-500. */
+    --c-info: 59 130 246;
+    --c-warning: 245 158 11;
+    --c-success: 16 185 129;
 
     --c-chart-grid: 42 42 44;
     --c-chart-cursor: 250 250 249;

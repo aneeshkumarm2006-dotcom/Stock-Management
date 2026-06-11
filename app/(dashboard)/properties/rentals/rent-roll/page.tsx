@@ -19,6 +19,7 @@ import {
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { LEASE_STATUSES, type LeaseStatus, type TenantType } from "@/types/pm";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 // Dashboard widgets deep-link with these query params (PROPERTY_TODO.md
 // Phase 10 [G-B-12]). Both filters are client-side overlays on top of the
@@ -47,6 +48,21 @@ function inExpiringWindow(
   if (win === "0-30") return daysRemaining <= 30;
   if (win === "31-60") return daysRemaining > 30 && daysRemaining <= 60;
   return daysRemaining > 60 && daysRemaining <= 90;
+}
+
+// Fix 13 — match a lease's renters-insurance expiry (days until the soonest
+// policy expires; undefined when the lease has no expiring/expired policy in
+// the rollup) against the deep-linked insurance window.
+function inInsuranceWindow(
+  daysUntil: number | undefined,
+  win: InsuranceWindow,
+): boolean {
+  if (daysUntil == null) return false;
+  if (win === "expired") return daysUntil < 0;
+  if (daysUntil < 0) return false;
+  if (win === "0-30") return daysUntil <= 30;
+  if (win === "31-60") return daysUntil > 30 && daysUntil <= 60;
+  return daysUntil > 60 && daysUntil <= 90;
 }
 
 interface LeaseRow {
@@ -105,7 +121,11 @@ function RentRollPageInner() {
   const load = React.useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
+    // "all" must enumerate every status explicitly. Omitting `status` triggers
+    // the BR-LL-2 server default (Active+Future only), which would silently
+    // narrow the "All" chip. See Fix 12.
     if (statusFilter !== "all") params.set("status", statusFilter);
+    else params.set("status", LEASE_STATUSES.join(","));
     const r = await fetch(`/api/pm/leases?${params.toString()}`);
     if (r.ok) setRows((await r.json()) as LeaseRow[]);
     setLoading(false);
@@ -115,10 +135,50 @@ function RentRollPageInner() {
     load();
   }, [load]);
 
+  // Fix 13 — the `?insurance=` deep link was banner-only and never filtered the
+  // table. We fetch the org-wide renters-insurance rollup in parallel and build
+  // a leaseId → daysUntil map from the expiring/expired policies it returns,
+  // then apply a real `insuranceWindow` filter in `filtered` below so the table
+  // matches the banner.
+  // TODO(fix-13): the rollup endpoint only returns the top ~10 expiring
+  // policies (expiringPolicies), so for large orgs the insurance filter is
+  // bounded by that slice. Expose per-lease policy-expiry on the leases list
+  // endpoint to make this exhaustive.
+  const [insuranceDays, setInsuranceDays] = React.useState<
+    Map<string, number>
+  >(new Map());
+
+  React.useEffect(() => {
+    if (!insuranceWindow) return;
+    let cancelled = false;
+    fetch("/api/pm/renters-insurance")
+      .then(async (r) => (r.ok ? r.json() : null))
+      .then((data: {
+        expiringPolicies?: Array<{ leaseId: string; daysUntil: number }>;
+      } | null) => {
+        if (cancelled || !data?.expiringPolicies) return;
+        const m = new Map<string, number>();
+        for (const p of data.expiringPolicies) {
+          // Keep the soonest-expiring policy per lease.
+          const prev = m.get(p.leaseId);
+          if (prev == null || p.daysUntil < prev) m.set(p.leaseId, p.daysUntil);
+        }
+        setInsuranceDays(m);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [insuranceWindow]);
+
   const filtered = React.useMemo(() => {
     let r = rows;
     if (expiringWindow) {
       r = r.filter((l) => inExpiringWindow(l.daysRemaining, expiringWindow));
+    }
+    if (insuranceWindow) {
+      r = r.filter((l) =>
+        inInsuranceWindow(insuranceDays.get(l.id), insuranceWindow),
+      );
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -131,7 +191,7 @@ function RentRollPageInner() {
       );
     }
     return r;
-  }, [rows, search, expiringWindow]);
+  }, [rows, search, expiringWindow, insuranceWindow, insuranceDays]);
 
   return (
     <div className="space-y-4">
@@ -268,10 +328,8 @@ function RentRollPageInner() {
                       </td>
                       <td className="text-fg-muted">{l.leaseType}</td>
                       <td className="text-fg-muted">
-                        {new Date(l.startDate).toLocaleDateString()} →{" "}
-                        {l.endDate
-                          ? new Date(l.endDate).toLocaleDateString()
-                          : "(At-will)"}
+                        {formatDateOnly(l.startDate)} →{" "}
+                        {l.endDate ? formatDateOnly(l.endDate) : "(At-will)"}
                         {l.daysRemaining != null && (
                           <Badge variant="loss" className="ml-2">
                             {l.daysRemaining}d

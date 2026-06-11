@@ -167,27 +167,49 @@ async function fetchOptions(
         if (!r.ok) return [];
         const rows = (await r.json()) as Array<{
           id: string;
-          name?: string;
+          propertyName?: string;
           address?: { line1?: string };
         }>;
         return rows.map((row) => ({
           id: row.id,
-          label: row.name ?? row.address?.line1 ?? "(unnamed)",
+          label: row.propertyName ?? row.address?.line1 ?? "(unnamed)",
           email: "(blast)",
         }));
       }
       case "Lease": {
-        const r = await fetch(`/api/pm/leases?${qs}`);
+        // The leases API does not support `?q=` filtering and never returns a
+        // `displayName`, so we fetch unfiltered and compose the label from
+        // `leaseNumber` + tenant names client-side (the search input is hidden
+        // for this picker type — see RecipientPicker).
+        const r = await fetch(`/api/pm/leases`);
         if (!r.ok) return [];
         const rows = (await r.json()) as Array<{
           id: string;
-          displayName?: string;
+          leaseNumber?: number;
+          tenants?: Array<{
+            firstName?: string;
+            lastName?: string;
+            companyName?: string;
+          }>;
         }>;
-        return rows.map((row) => ({
-          id: row.id,
-          label: row.displayName ?? `Lease ${row.id.slice(-6)}`,
-          email: "(blast)",
-        }));
+        return rows.map((row) => {
+          const names = (row.tenants ?? [])
+            .map((t) =>
+              (t.companyName?.trim() ||
+                `${t.firstName ?? ""} ${t.lastName ?? ""}`.trim()) ?? "",
+            )
+            .filter(Boolean)
+            .join(", ");
+          const numberLabel =
+            row.leaseNumber != null
+              ? `Lease #${row.leaseNumber}`
+              : `Lease ${row.id.slice(-6)}`;
+          return {
+            id: row.id,
+            label: names ? `${numberLabel} — ${names}` : numberLabel,
+            email: "(blast)",
+          };
+        });
       }
       default:
         return [];
@@ -300,12 +322,20 @@ function RecipientPicker({
           />
         </div>
       ) : (
-        <div className="grid grid-cols-[1fr_1.5fr] gap-2">
-          <Input
-            placeholder="Search…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
+        <div
+          className={
+            value.type === "Lease"
+              ? "grid grid-cols-1 gap-2"
+              : "grid grid-cols-[1fr_1.5fr] gap-2"
+          }
+        >
+          {value.type !== "Lease" && (
+            <Input
+              placeholder="Search…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          )}
           <select
             className="w-full rounded border border-border bg-surface-high px-2 py-1.5 text-sm text-fg"
             value={value.id ?? ""}

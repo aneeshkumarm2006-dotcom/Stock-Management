@@ -128,7 +128,7 @@ const PM_NAV: NavNode[] = [
       { href: "/properties/rentals/rent-roll", label: "Rent roll", icon: ListChecks },
       { href: "/properties/rentals/tenants", label: "Tenants", icon: Users },
       { href: "/properties/rentals/rental-owners", label: "Rental owners", icon: UserCog },
-      { href: "/properties/rentals/outstanding-balances", label: "Outstanding balances", icon: AlertCircle },
+      { href: "/properties/rentals/outstanding-balances", label: "Outstanding balances", icon: AlertCircle, disabled: true },
     ],
   },
   {

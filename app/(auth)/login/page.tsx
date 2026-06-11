@@ -27,7 +27,9 @@ type LoginValues = z.infer<typeof loginSchema>;
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || "/stock/dashboard";
+  const raw = searchParams.get("callbackUrl") || "/stock/dashboard";
+  const callbackUrl =
+    raw.startsWith("/") && !raw.startsWith("//") ? raw : "/stock/dashboard";
 
   const [showPassword, setShowPassword] = useState(false);
   // Pre-populate from an Auth.js redirect (e.g. failed Google link) or from a

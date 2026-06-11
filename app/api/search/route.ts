@@ -23,7 +23,12 @@ export async function GET(request: Request) {
   if (!parsed.success) {
     // Empty/too-short query → no results rather than an error, so the
     // typeahead can clear cleanly while the user is still typing.
-    return NextResponse.json({ data: [], stale: false, cached: true });
+    return NextResponse.json({
+      data: [],
+      stale: false,
+      cached: true,
+      fetchedAt: new Date().toISOString(),
+    });
   }
 
   try {

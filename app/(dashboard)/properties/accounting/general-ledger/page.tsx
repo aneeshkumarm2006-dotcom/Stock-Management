@@ -63,6 +63,7 @@ function GeneralLedgerContent() {
   const [properties, setProperties] = React.useState<PropertyOption[]>([]);
   const [rows, setRows] = React.useState<JERow[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
@@ -93,6 +94,7 @@ function GeneralLedgerContent() {
 
   const load = React.useCallback(async () => {
     setLoading(true);
+    setError(null);
     const params = new URLSearchParams();
     if (filter.accountId) params.set("accountId", filter.accountId);
     if (filter.propertyId) params.set("propertyId", filter.propertyId);
@@ -100,9 +102,15 @@ function GeneralLedgerContent() {
     if (filter.to) params.set("to", filter.to);
     if (filter.status) params.set("status", filter.status);
     if (filter.includeVoided) params.set("includeVoided", "1");
-    const r = await fetch(`/api/pm/journal-entries?${params.toString()}`);
-    if (r.ok) setRows((await r.json()) as JERow[]);
-    setLoading(false);
+    try {
+      const r = await fetch(`/api/pm/journal-entries?${params.toString()}`);
+      if (r.ok) setRows((await r.json()) as JERow[]);
+      else setError(`Error ${r.status}`);
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
   }, [filter]);
 
   React.useEffect(() => {
@@ -222,8 +230,20 @@ function GeneralLedgerContent() {
             </span>
           </div>
 
+          {error && (
+            <div className="rounded border border-error/40 bg-error/10 px-3 py-2 text-sm text-error">
+              {error} — could not load journal entries.{" "}
+              <button
+                type="button"
+                onClick={() => load()}
+                className="font-bold underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           {loading && <p className="text-sm text-fg-muted">Loading…</p>}
-          {!loading && rows.length === 0 && (
+          {!loading && !error && rows.length === 0 && (
             <p className="text-sm text-fg-muted">
               No journal entries match the current filters.
             </p>

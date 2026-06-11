@@ -38,7 +38,9 @@ type SignupValues = z.infer<typeof signupSchema>;
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || "/stock/dashboard";
+  const raw = searchParams.get("callbackUrl") || "/stock/dashboard";
+  const callbackUrl =
+    raw.startsWith("/") && !raw.startsWith("//") ? raw : "/stock/dashboard";
 
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);

@@ -144,7 +144,7 @@ export function ProspectFormModal({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xl">
-        <DialogHeader title={existing ? "Edit prospect" : "New prospect"} />
+        <DialogHeader title={existing ? "Edit prospect" : "New prospect"} onClose={onClose} />
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>First name</Label>

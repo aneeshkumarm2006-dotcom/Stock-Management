@@ -29,6 +29,7 @@ import {
   type TenantType,
 } from "@/types/pm";
 import { TenantPicker, type TenantOption } from "@/components/pm/TenantPicker";
+import { LeaseTypeHelp } from "@/components/pm/LeaseTypeHelp";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
 import { formatMoney } from "@/lib/pm/currency";
 
@@ -421,7 +422,10 @@ export function AssignLeaseModal({
 
           {/* Lease type */}
           <div>
-            <Label>Lease type</Label>
+            <Label>
+              Lease type
+              <LeaseTypeHelp />
+            </Label>
             <select
               className="w-full rounded border bg-background px-2 py-1.5 text-sm"
               value={leaseType}

@@ -111,7 +111,7 @@ export function ExpiringRentersInsuranceWidget() {
           {rows.slice(0, 4).map((p) => (
             <li key={p.id} className="flex items-start justify-between gap-3 py-2">
               <Link
-                href={`/properties/leasing/lease-management/${p.leaseId}`}
+                href={`/properties/rentals/rent-roll/${p.leaseId}`}
                 className="truncate font-semibold text-fg hover:text-primary"
                 title={p.label}
               >

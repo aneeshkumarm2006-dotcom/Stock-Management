@@ -35,7 +35,10 @@ const config: Config = {
     extend: {
       colors: {
         // ---- Semantic (preferred) ----
-        bg: rgb("bg"),
+        bg: {
+          DEFAULT: rgb("bg"),
+          elevated: rgb("bg-elevated"),
+        },
         surface: {
           DEFAULT: rgb("surface"),
           high: rgb("surface-high"),
@@ -81,6 +84,9 @@ const config: Config = {
           container: rgb("error-container"),
           fg: rgb("error-fg"),
         },
+        info: rgb("info"),
+        warning: rgb("warning"),
+        success: rgb("success"),
 
         // ---- Stitch tonal aliases (design-reference parity) ----
         background: rgb("bg"),

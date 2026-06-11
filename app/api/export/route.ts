@@ -26,7 +26,10 @@ export async function GET() {
   if (!userId) return unauthorizedResponse();
 
   await connectToDatabase();
-  const positions = await Position.find({ userId })
+  const positions = await Position.find({
+    userId,
+    $or: [{ assetType: 'EQUITY' }, { assetType: { $exists: false } }],
+  })
     .sort({ ticker: 1 })
     .lean();
 

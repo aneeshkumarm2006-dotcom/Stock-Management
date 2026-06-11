@@ -58,6 +58,12 @@ export const authConfig: NextAuthConfig = {
         return true;
       }
 
+      // Unauthenticated API calls get a 401 JSON instead of a 307 redirect to
+      // the HTML login page, so fetch() callers see a clean error.
+      if (!isLoggedIn && pathname.startsWith('/api/')) {
+        return Response.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+
       // Returning false makes Auth.js redirect to `pages.signIn` (/login).
       return isLoggedIn;
     },

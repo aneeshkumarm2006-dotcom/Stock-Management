@@ -88,8 +88,6 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
       if (r.ok) {
         const rows = (await r.json()) as BankOption[];
         setBanks(rows);
-        const first = rows[0];
-        if (first && !bankAccountId) setBankAccountId(first.id);
       }
     });
     fetch("/api/pm/vendors").then(async (r) => {
@@ -97,8 +95,18 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
     });
     setSelected({});
     setRowErrors({});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Auto-select the first bank once the list arrives, but only if the user
+  // hasn't already picked one. Keyed on the fetched banks list so it runs when
+  // the data lands rather than requiring the full fetch deps (which forced the
+  // exhaustive-deps suppression above).
+  React.useEffect(() => {
+    const first = banks[0];
+    if (first && !bankAccountId) {
+      setBankAccountId(first.id);
+    }
+  }, [banks, bankAccountId]);
 
   const vendorById = React.useMemo(
     () => Object.fromEntries(vendors.map((v) => [v.id, v.displayName] as const)),

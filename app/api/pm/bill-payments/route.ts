@@ -16,6 +16,7 @@ import {
   postBillPaymentToLedger,
   LockedPeriodError,
 } from '@/lib/pm/postBillPaymentToLedger';
+import { assertWriteAllowed } from '@/lib/pm/lockedPeriod';
 import { computeWarnings, hasBlockingWarnings } from '@/lib/pm/warnings';
 
 export const runtime = 'nodejs';
@@ -99,6 +100,12 @@ export async function POST(request: Request) {
   const amountCents = toCents(parsed.data.amount ?? 0);
 
   try {
+    // Enforce the locked-period guard BEFORE creating the payment row.
+    // Previously this only ran inside postBillPaymentToLedger, which is
+    // skipped on MISSING_BANK_ACCOUNT — letting a payment land in a locked
+    // period as long as no bank account was attached. Run it unconditionally.
+    await assertWriteAllowed({ orgId: ctx.orgId, txnDate: paidDate, ctx });
+
     const payment = await BillPayment.create({
       organizationId: orgObjectId,
       billId: new Types.ObjectId(parsed.data.billId),

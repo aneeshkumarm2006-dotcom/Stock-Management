@@ -46,16 +46,25 @@ export default function Tax1099Page() {
   const [year, setYear] = React.useState<number>(thisYear - 1);
   const [rows, setRows] = React.useState<Row[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   const [hideBelowThreshold, setHideBelowThreshold] = React.useState(true);
 
   const load = React.useCallback(async () => {
     setLoading(true);
-    const r = await fetch(`/api/pm/1099?year=${year}`);
-    if (r.ok) {
-      const data = (await r.json()) as { rows: Row[] };
-      setRows(data.rows);
+    setError(null);
+    try {
+      const r = await fetch(`/api/pm/1099?year=${year}`);
+      if (r.ok) {
+        const data = (await r.json()) as { rows: Row[] };
+        setRows(data.rows);
+      } else {
+        setError(`Error ${r.status}`);
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [year]);
 
   React.useEffect(() => {
@@ -138,6 +147,18 @@ export default function Tax1099Page() {
           </div>
         </CardHeader>
         <CardContent>
+          {error && (
+            <div className="mb-3 rounded border border-error/40 bg-error/10 px-3 py-2 text-sm text-error">
+              {error} — could not load 1099 data.{" "}
+              <button
+                type="button"
+                onClick={() => load()}
+                className="font-bold underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           <Tabs defaultValue="NEC">
             <TabsList>
               <TabsTrigger value="NEC">1099-NEC</TabsTrigger>

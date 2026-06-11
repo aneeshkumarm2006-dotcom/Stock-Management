@@ -61,13 +61,18 @@ export default function BudgetDetailPage() {
   const load = React.useCallback(async () => {
     if (!budgetId) return;
     setLoading(true);
-    const r = await fetch(`/api/pm/budgets/${budgetId}`);
-    if (r.ok) {
-      setBudget((await r.json()) as BudgetDetail);
-    } else if (r.status === 404) {
-      toast({ title: "Budget not found", variant: "error" });
+    try {
+      const r = await fetch(`/api/pm/budgets/${budgetId}`);
+      if (r.ok) {
+        setBudget((await r.json()) as BudgetDetail);
+      } else if (r.status === 404) {
+        toast({ title: "Budget not found", variant: "error" });
+      }
+    } finally {
+      // Always clear the loading flag so a fetch/parse error can't hang the
+      // page on "Loading…" forever (Fix 18).
+      setLoading(false);
     }
-    setLoading(false);
   }, [budgetId, toast]);
 
   React.useEffect(() => {

@@ -11,6 +11,8 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { eftRequestRejectSchema } from '@/lib/validation/pm/eftRequest';
 import { logActivity } from '@/lib/pm/activity';
+import { ApprovalRule } from '@/lib/db/models/pm/ApprovalRule';
+import { userCanApprove } from '@/lib/pm/approvalRules';
 
 export const runtime = 'nodejs';
 
@@ -40,9 +42,10 @@ export async function POST(
   }
 
   await connectToDatabase();
+  const orgObjectId = new Types.ObjectId(ctx.orgId);
   const eft = await EftRequest.findOne({
     _id: new Types.ObjectId(params.id),
-    organizationId: new Types.ObjectId(ctx.orgId),
+    organizationId: orgObjectId,
   });
   if (!eft) {
     return NextResponse.json({ error: 'EFT not found' }, { status: 404 });
@@ -51,6 +54,30 @@ export async function POST(
     return NextResponse.json(
       { error: `Cannot reject from status=${eft.status}` },
       { status: 409 },
+    );
+  }
+
+  // Phase 9 multi-approver chain (BR-AC-19). Mirror the approve route:
+  // only a user in the required approver list may act on this EFT. Resolve
+  // the snapshotted ApprovalRule (org-scoped); when no rule snapshot exists
+  // we fall back to single-approver (Phase 4 behaviour) and allow the reject.
+  const rule = eft.appliedRuleId
+    ? await ApprovalRule.findOne({
+        _id: eft.appliedRuleId,
+        organizationId: orgObjectId,
+      }).lean<{
+        semantics: 'any-of' | 'all-of';
+        approverUserIds: Types.ObjectId[];
+      } | null>()
+    : null;
+  const requiredApprovers = rule?.approverUserIds ?? [];
+  if (
+    requiredApprovers.length > 0 &&
+    !userCanApprove(ctx.userId, requiredApprovers)
+  ) {
+    return NextResponse.json(
+      { error: 'Not an approver for this request' },
+      { status: 403 },
     );
   }
 

@@ -34,8 +34,10 @@ import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { EvictionToggleDialog } from "@/components/pm/EvictionToggleDialog";
 import { RentersInsuranceModal } from "@/components/pm/RentersInsuranceModal";
 import { PetModal } from "@/components/pm/PetModal";
+import { EditLeaseModal } from "@/components/pm/EditLeaseModal";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 import type { TenantType } from "@/types/pm";
 
 interface LeaseDetail {
@@ -73,6 +75,7 @@ interface LeaseDetail {
     nextDueDate: string | null;
     memo: string;
   };
+  splitRentCharges: Array<{ amount: number; memo: string }>;
   securityDeposit: {
     received: number;
     withheld: number;
@@ -135,6 +138,7 @@ export default function LeaseDetailPage() {
   >();
   const [petOpen, setPetOpen] = React.useState(false);
   const [petEditingId, setPetEditingId] = React.useState<string | undefined>();
+  const [editLeaseOpen, setEditLeaseOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -230,6 +234,13 @@ export default function LeaseDetailPage() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setEditLeaseOpen(true)}
+          >
+            Edit lease
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setEvictionOpen(true)}
           >
             {data.evictionPending
@@ -280,26 +291,44 @@ export default function LeaseDetailPage() {
                   </div>
                   <div>
                     <div className="text-xs text-fg-muted">Start date</div>
-                    <div>{new Date(data.startDate).toLocaleDateString()}</div>
+                    <div>{formatDateOnly(data.startDate)}</div>
                   </div>
                   <div>
                     <div className="text-xs text-fg-muted">End date</div>
                     <div>
                       {data.endDate
-                        ? new Date(data.endDate).toLocaleDateString()
+                        ? formatDateOnly(data.endDate)
                         : "(At-will)"}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-fg-muted">Primary rent</div>
-                    <div>
-                      <CurrencyAmount cents={data.primaryRent.amount} />
+                    <div className="text-xs text-fg-muted">
+                      Total monthly rent
                     </div>
-                    {data.primaryRent.memo && (
-                      <div className="text-xs text-fg-muted">
-                        {data.primaryRent.memo}
+                    <div>
+                      <CurrencyAmount
+                        cents={
+                          data.primaryRent.amount +
+                          data.splitRentCharges.reduce(
+                            (s, c) => s + c.amount,
+                            0,
+                          )
+                        }
+                      />
+                    </div>
+                    {/* §4 — Base + OPEX/Tax breakdown so the composition is clear. */}
+                    <div className="mt-0.5 space-y-0.5 text-xs text-fg-muted">
+                      <div>
+                        Base <CurrencyAmount cents={data.primaryRent.amount} />
+                        {data.primaryRent.memo ? ` · ${data.primaryRent.memo}` : ""}
                       </div>
-                    )}
+                      {data.splitRentCharges.map((c, i) => (
+                        <div key={i}>
+                          {c.memo || "Recovery"}{" "}
+                          <CurrencyAmount cents={c.amount} />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <div>
                     <div className="text-xs text-fg-muted">Next due</div>
@@ -674,6 +703,12 @@ export default function LeaseDetailPage() {
           firstName: t.firstName,
           lastName: t.lastName,
         }))}
+      />
+      <EditLeaseModal
+        open={editLeaseOpen}
+        onClose={() => setEditLeaseOpen(false)}
+        leaseId={data.id}
+        onSaved={load}
       />
     </div>
   );

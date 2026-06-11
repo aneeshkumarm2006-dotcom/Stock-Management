@@ -18,8 +18,8 @@ import { wantsRefresh } from '@/lib/utils/refreshParam';
 export const runtime = 'nodejs';
 
 const paramsSchema = z.object({
-  exchange: z.enum(['NYSE', 'NASDAQ', 'TSX']),
-  ticker: z.string().trim().toUpperCase().min(1).max(12),
+  exchange: z.string().trim().toUpperCase().min(1).max(32),
+  ticker: z.string().trim().toUpperCase().min(1).max(20),
 });
 
 export async function GET(

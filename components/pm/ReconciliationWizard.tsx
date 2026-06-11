@@ -92,8 +92,13 @@ export function ReconciliationWizard({
     if (!open) return;
     endingBalanceDirty.current = false;
     if (resumeReconciliationId) {
-      // Jump to step 2 with existing rec.
+      // Jump to step 2 with existing rec. Clear any prior reconciliation's
+      // detail/cleared set first so re-opening doesn't flash stale data while
+      // loadRec() refetches (Fix 16); the step-2 footer is disabled until `rec`
+      // lands so flushClearedSet() can't PATCH an empty set over server state.
       setRecId(resumeReconciliationId);
+      setRec(null);
+      setClearedKeys(new Set());
       setStep(2);
     } else {
       setStep(1);
@@ -484,7 +489,7 @@ export function ReconciliationWizard({
                 }
                 setStep((s) => (s - 1) as Step);
               }}
-              disabled={saving}
+              disabled={saving || (step === 2 && !rec)}
             >
               Back
             </Button>
@@ -506,7 +511,7 @@ export function ReconciliationWizard({
                 onClick={async () => {
                   if (await flushClearedSet()) setStep(3);
                 }}
-                disabled={saving}
+                disabled={saving || !rec}
               >
                 Continue →
               </Button>

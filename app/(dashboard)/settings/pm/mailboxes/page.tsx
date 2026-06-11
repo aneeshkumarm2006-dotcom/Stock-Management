@@ -42,8 +42,8 @@ export default function MailboxesSettingsPage() {
         setDefaultFrom(mb.defaultFrom ?? "");
         setOverrides(mb.perPropertyOverrides ?? []);
         setProperties(
-          (props as Array<{ id: string; name?: string; address?: { line1?: string } }>).map(
-            (p) => ({ id: p.id, name: p.name ?? p.address?.line1 ?? p.id }),
+          (props as Array<{ id: string; propertyName?: string; address?: { line1?: string } }>).map(
+            (p) => ({ id: p.id, name: p.propertyName ?? p.address?.line1 ?? p.id }),
           ),
         );
         setLoading(false);

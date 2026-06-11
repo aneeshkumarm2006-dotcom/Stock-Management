@@ -23,8 +23,10 @@ import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { AssignLeaseModal } from "@/components/pm/AssignLeaseModal";
+import { EditLeaseModal } from "@/components/pm/EditLeaseModal";
 import { BreadcrumbOverride } from "@/components/layout/BreadcrumbOverride";
 import { useToast } from "@/components/ui/toast";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface Phone {
   number: string;
@@ -60,7 +62,9 @@ interface TenantDetail {
     leaseType: string;
     startDate: string | null;
     endDate: string | null;
-    primaryRentAmount: number; // cents
+    primaryRentAmount: number; // cents — Base Rent only
+    totalRentAmount: number; // cents — Base + OPEX/Tax (§4)
+    splitRentCharges: { amount: number; memo: string }[];
   } | null;
 }
 
@@ -73,6 +77,7 @@ export default function TenantDetailPage() {
   const [doc, setDoc] = React.useState<TenantDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [assignOpen, setAssignOpen] = React.useState(false);
+  const [editLeaseOpen, setEditLeaseOpen] = React.useState(false);
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -292,9 +297,18 @@ export default function TenantDetailPage() {
               <CardTitle>Lease</CardTitle>
               {doc.active &&
                 (doc.currentLease ? (
-                  <Button variant="destructive" size="sm" onClick={endLease}>
-                    End lease / Move out
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditLeaseOpen(true)}
+                    >
+                      Edit lease
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={endLease}>
+                      End lease / Move out
+                    </Button>
+                  </div>
                 ) : (
                   <Button size="sm" onClick={() => setAssignOpen(true)}>
                     Assign to property
@@ -333,24 +347,39 @@ export default function TenantDetailPage() {
                   <Field
                     label="Rent"
                     value={
-                      <CurrencyAmount cents={doc.currentLease.primaryRentAmount} />
+                      <div>
+                        <CurrencyAmount
+                          cents={doc.currentLease.totalRentAmount}
+                        />
+                        {doc.currentLease.totalRentAmount >
+                          doc.currentLease.primaryRentAmount && (
+                          <div className="mt-0.5 space-y-0.5 text-xs text-fg-muted">
+                            <div>
+                              Base{" "}
+                              <CurrencyAmount
+                                cents={doc.currentLease.primaryRentAmount}
+                              />
+                            </div>
+                            {doc.currentLease.splitRentCharges.map((c, i) => (
+                              <div key={i}>
+                                {c.memo || "Recovery"}{" "}
+                                <CurrencyAmount cents={c.amount} />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     }
                   />
                   <Field
                     label="Start date"
-                    value={
-                      doc.currentLease.startDate
-                        ? new Date(
-                            doc.currentLease.startDate,
-                          ).toLocaleDateString()
-                        : "—"
-                    }
+                    value={formatDateOnly(doc.currentLease.startDate)}
                   />
                   <Field
                     label="End date"
                     value={
                       doc.currentLease.endDate
-                        ? new Date(doc.currentLease.endDate).toLocaleDateString()
+                        ? formatDateOnly(doc.currentLease.endDate)
                         : doc.currentLease.leaseType === "At-will"
                           ? "At-will (no end date)"
                           : "—"
@@ -403,6 +432,18 @@ export default function TenantDetailPage() {
           await load();
         }}
       />
+
+      {doc.currentLease && (
+        <EditLeaseModal
+          open={editLeaseOpen}
+          onClose={() => setEditLeaseOpen(false)}
+          leaseId={doc.currentLease.id}
+          onSaved={async () => {
+            setEditLeaseOpen(false);
+            await load();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -240,7 +240,7 @@ export default function ProjectDetailPage() {
                   },
                 ]}
                 title="Project"
-                canEdit={doc.status !== "Completed" && doc.status !== "Cancelled"}
+                canEdit={doc.status !== "Closed"}
                 onSaved={load}
               />
               <dl className="mt-4 grid gap-3 md:grid-cols-2">

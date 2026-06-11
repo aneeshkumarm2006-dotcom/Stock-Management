@@ -66,10 +66,16 @@ const PROJECTION_BY_COLLECTION: Record<string, Record<string, 1>> = {
 };
 
 /** Best-effort hrefs back to the originating entity's detail page (when built). */
-const HREF_BY_LOCATION_TYPE: Record<string, (id: string) => string | null> = {
+const HREF_BY_LOCATION_TYPE: Record<
+  string,
+  (id: string, row: IdRow) => string | null
+> = {
   Property: (id) => `/properties/rentals/properties/${id}`,
-  Unit: (id) => `/properties/rentals/properties/units/${id}`,
-  Lease: (id) => `/properties/leasing/lease-management/${id}`,
+  Unit: (id, row) =>
+    row.propertyId
+      ? `/properties/rentals/properties/${String(row.propertyId)}/units/${id}`
+      : null,
+  Lease: (id) => `/properties/rentals/rent-roll/${id}`,
   DraftLease: (id) => `/properties/leasing/draft-leases/${id}`,
   Listing: (id) => `/properties/leasing/listings/${id}`,
   Prospect: (id) => `/properties/leasing/prospects/${id}`,
@@ -80,7 +86,7 @@ const HREF_BY_LOCATION_TYPE: Record<string, (id: string) => string | null> = {
   WorkOrder: (id) => `/properties/maintenance/work-orders/${id}`,
   Task: (id) => `/properties/tasks/${id}`,
   Project: (id) => `/properties/projects/${id}`,
-  EmailMessage: (id) => `/properties/communication/emails/${id}`,
+  EmailMessage: () => null,
   CalendarEvent: (id) => `/properties/calendars?event=${id}`,
   Bill: (id) => `/properties/accounting/bills?focus=${id}`,
   BillPayment: () => null,
@@ -246,7 +252,7 @@ export async function resolveLocationDisplays(
         out[id] = {
           label: formatRowForCollection(collection, row),
           subLabel: locationType,
-          href: hrefFor ? hrefFor(id) : null,
+          href: hrefFor ? hrefFor(id, row) : null,
         };
       }
 
@@ -256,7 +262,9 @@ export async function resolveLocationDisplays(
           out[id] = {
             label: `${locationType} ${id.slice(-6)}`,
             subLabel: locationType,
-            href: hrefFor ? hrefFor(id) : null,
+            // No row data for dangling FKs, so href builders that need extra
+            // fields (e.g. Unit → propertyId) fall back to null.
+            href: hrefFor ? hrefFor(id, {} as IdRow) : null,
           };
         }
       });

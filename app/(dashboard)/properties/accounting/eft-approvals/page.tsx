@@ -41,13 +41,21 @@ export default function EftApprovalsPage() {
   const [rows, setRows] = React.useState<EftRow[]>([]);
   const [rules, setRules] = React.useState<ApprovalRuleSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState<Filter>("pending");
 
   const load = React.useCallback(async () => {
     setLoading(true);
-    const r = await fetch("/api/pm/eft-requests");
-    if (r.ok) setRows((await r.json()) as EftRow[]);
-    setLoading(false);
+    setError(null);
+    try {
+      const r = await fetch("/api/pm/eft-requests");
+      if (r.ok) setRows((await r.json()) as EftRow[]);
+      else setError(`Error ${r.status}`);
+    } catch {
+      setError("Network error");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   React.useEffect(() => {
@@ -105,6 +113,18 @@ export default function EftApprovalsPage() {
           <CardTitle>EFT approvals</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && (
+            <div className="rounded border border-error/40 bg-error/10 px-3 py-2 text-sm text-error">
+              {error} — could not load EFT requests.{" "}
+              <button
+                type="button"
+                onClick={() => load()}
+                className="font-bold underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-3">
             {(["pending", "approved", "rejected", "all"] as Filter[]).map((f) => (
               <button
