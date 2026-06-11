@@ -84,9 +84,8 @@ export async function PATCH(
   if (doc.status === 'Closed') {
     const isReopen =
       parsed.data.status !== undefined && parsed.data.status !== 'Closed';
-    const { status: _status, ...otherFields } = parsed.data;
-    const touchesOtherFields = Object.values(otherFields).some(
-      (v) => v !== undefined,
+    const touchesOtherFields = Object.entries(parsed.data).some(
+      ([key, value]) => key !== 'status' && value !== undefined,
     );
     if (!isReopen || touchesOtherFields) {
       return NextResponse.json(
