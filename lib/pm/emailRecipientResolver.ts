@@ -66,7 +66,7 @@ export async function resolveRecipient(
         _id: new Types.ObjectId(input.id),
         organizationId: org,
       })
-        .select('email firstName lastName')
+        .select('email firstName lastName tenantType companyName')
         .lean();
       if (!doc?.email) return [];
       return [
@@ -74,7 +74,11 @@ export async function resolveRecipient(
           type: 'Tenant',
           id: doc._id,
           email: doc.email,
-          name: toName(doc.firstName, doc.lastName),
+          name: toName(
+            doc.firstName,
+            doc.lastName,
+            doc.tenantType === 'Company' ? doc.companyName : undefined,
+          ),
         },
       ];
     }
@@ -168,7 +172,7 @@ export async function resolveRecipient(
         active: true,
         email: { $exists: true, $ne: '' },
       })
-        .select('_id email firstName lastName')
+        .select('_id email firstName lastName tenantType companyName')
         .lean();
       return tenants
         .filter((t) => !!t.email)
@@ -176,7 +180,11 @@ export async function resolveRecipient(
           type: 'Tenant' as const,
           id: t._id,
           email: t.email as string,
-          name: toName(t.firstName, t.lastName),
+          name: toName(
+            t.firstName,
+            t.lastName,
+            t.tenantType === 'Company' ? t.companyName : undefined,
+          ),
         }));
     }
     case 'Lease': {
@@ -200,7 +208,7 @@ export async function resolveRecipient(
         _id: { $in: tenantIds },
         email: { $exists: true, $ne: '' },
       })
-        .select('_id email firstName lastName')
+        .select('_id email firstName lastName tenantType companyName')
         .lean();
       return tenants
         .filter((t) => !!t.email)
@@ -208,7 +216,11 @@ export async function resolveRecipient(
           type: 'Tenant' as const,
           id: t._id,
           email: t.email as string,
-          name: toName(t.firstName, t.lastName),
+          name: toName(
+            t.firstName,
+            t.lastName,
+            t.tenantType === 'Company' ? t.companyName : undefined,
+          ),
         }));
     }
     default:

@@ -24,6 +24,7 @@ import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { AssignLeaseModal } from "@/components/pm/AssignLeaseModal";
 import { EditLeaseModal } from "@/components/pm/EditLeaseModal";
+import { EditTenantTypeModal } from "@/components/pm/EditTenantTypeModal";
 import { BreadcrumbOverride } from "@/components/layout/BreadcrumbOverride";
 import { useToast } from "@/components/ui/toast";
 import { formatDateOnly } from "@/lib/utils/dateInput";
@@ -78,6 +79,7 @@ export default function TenantDetailPage() {
   const [loading, setLoading] = React.useState(true);
   const [assignOpen, setAssignOpen] = React.useState(false);
   const [editLeaseOpen, setEditLeaseOpen] = React.useState(false);
+  const [editTypeOpen, setEditTypeOpen] = React.useState(false);
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -175,6 +177,15 @@ export default function TenantDetailPage() {
               <span className="rounded bg-secondary-container/40 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary">
                 Cosigner
               </span>
+            )}
+            {doc.active && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditTypeOpen(true)}
+              >
+                Edit type
+              </Button>
             )}
           </div>
         </CardHeader>
@@ -414,6 +425,23 @@ export default function TenantDetailPage() {
           <FilesPanel locationType="Tenant" locationId={doc.id} />
         </TabsContent>
       </Tabs>
+
+      <EditTenantTypeModal
+        open={editTypeOpen}
+        tenantId={doc.id}
+        current={{
+          tenantType: doc.tenantType,
+          firstName: doc.firstName,
+          lastName: doc.lastName,
+          companyName: doc.companyName,
+          contactPersonName: doc.contactPersonName,
+        }}
+        onClose={() => setEditTypeOpen(false)}
+        onSaved={async () => {
+          setEditTypeOpen(false);
+          await load();
+        }}
+      />
 
       <AssignLeaseModal
         open={assignOpen}

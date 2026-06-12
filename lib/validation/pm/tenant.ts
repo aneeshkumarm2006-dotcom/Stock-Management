@@ -45,9 +45,10 @@ const base = {
 
 /** §1 — conditional-required rule shared by create + update. On create an
  *  absent `tenantType` defaults to Individual (so names are required); on
- *  update an absent type means "unchanged", and the model's pre('validate')
- *  hook validates the merged document, so we only enforce what the caller
- *  explicitly provides here. */
+ *  update an absent type means "unchanged" (no name rule fires). When the
+ *  caller *explicitly* sets `tenantType` — i.e. a post-creation conversion —
+ *  we enforce that type's required fields here so the request fails with a
+ *  clean 400 instead of bubbling up as the model's pre('validate') error. */
 function applyTenantTypeRule(isCreate: boolean) {
   return (
     data: {
@@ -67,7 +68,7 @@ function applyTenantTypeRule(isCreate: boolean) {
           message: 'Company tenants require a company name.',
         });
       }
-    } else if (type === 'Individual' && isCreate) {
+    } else if (type === 'Individual') {
       if (!data.firstName || !data.firstName.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

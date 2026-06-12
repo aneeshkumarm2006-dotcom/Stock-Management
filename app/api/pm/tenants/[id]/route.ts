@@ -13,6 +13,7 @@ import {
 import { tenantUpdateSchema } from '@/lib/validation/pm/tenant';
 import { logActivity } from '@/lib/pm/activity';
 import { tenantDisplayName } from '@/lib/pm/tenantName';
+import { syncTenantSnapshots } from '@/lib/pm/tenantSync';
 
 export const runtime = 'nodejs';
 
@@ -154,6 +155,7 @@ export async function PATCH(
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  const prevType = doc.tenantType ?? 'Individual';
   const { dateOfBirth, customFields, ...rest } = parsed.data;
   Object.assign(doc, rest);
   if (dateOfBirth !== undefined) {
@@ -162,14 +164,54 @@ export async function PATCH(
   if (customFields !== undefined) {
     doc.customFields = new Map(Object.entries(customFields));
   }
-  await doc.save();
+
+  // §1 — when the caller explicitly converts the tenant's type, drop the
+  // fields that belong to the *other* type so no stale value lingers (e.g. a
+  // company name left over after Company ⇒ Individual, or a personal name left
+  // over after Individual ⇒ Company). The edit-type modal sends only the new
+  // type's fields; this guarantees a clean canonical doc that matches what the
+  // Add flow would have produced for that type.
+  const typeChanged =
+    rest.tenantType !== undefined && rest.tenantType !== prevType;
+  if (rest.tenantType !== undefined) {
+    if (doc.tenantType === 'Company') {
+      doc.firstName = '';
+      doc.lastName = '';
+    } else {
+      doc.companyName = undefined;
+      doc.contactPersonName = undefined;
+    }
+  }
+
+  try {
+    await doc.save();
+  } catch (err) {
+    // Surface the model's conditional-required hook (and any other schema
+    // validation) as a clean 400 instead of a 500.
+    const message = err instanceof Error ? err.message : 'Invalid tenant';
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  // Keep the denormalized tenant snapshots embedded in leases / draft leases in
+  // step with the canonical doc whenever an identity field changed — otherwise
+  // the rent roll, lease detail, unit/property pages and compose-email picker
+  // would keep showing the pre-edit name/type.
+  const identityChanged = (
+    ['tenantType', 'firstName', 'lastName', 'companyName', 'email'] as const
+  ).some((k) => k in parsed.data);
+  if (identityChanged) {
+    await syncTenantSnapshots(doc);
+  }
 
   await logActivity({
     orgId: ctx.orgId,
     parentType: 'Tenant',
     parentId: doc._id,
-    eventType: 'Tenant updated',
+    eventType: typeChanged ? 'Tenant type changed' : 'Tenant updated',
     actorUserId: ctx.userId,
+    payload: typeChanged
+      ? { from: prevType, to: doc.tenantType, name: tenantDisplayName(doc) }
+      : undefined,
   });
 
   return NextResponse.json({ ok: true });
