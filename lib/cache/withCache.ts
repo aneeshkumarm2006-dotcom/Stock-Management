@@ -111,8 +111,14 @@ export async function getAllQuotaStatus(): Promise<QuotaStatus[]> {
   );
 }
 
-/** Atomically bump today's ApiUsage row for a provider (upsert). */
-async function incrementUsage(
+/**
+ * Atomically bump today's ApiUsage row for a provider (upsert). One outbound
+ * provider request = `calls += 1`; `credits += cost` (Twelve Data bills one
+ * credit per symbol, so a batch quote passes `cost = symbols.length`).
+ * Exported so the batched quote path can record one HTTP call covering many
+ * symbols without inflating the call count.
+ */
+export async function incrementUsage(
   provider: ApiProvider,
   cost: number,
 ): Promise<void> {

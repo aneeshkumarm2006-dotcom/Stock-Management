@@ -12,7 +12,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useQuery,
-  useQueries,
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -35,6 +34,7 @@ import {
   type ApiPosition,
   type AssetType,
   type PayoutFrequency,
+  type BatchQuotesResponse,
 } from "./useDashboard";
 import { useCashValue } from "./useCompanies";
 
@@ -173,29 +173,38 @@ export function usePortfolio(): PortfolioData {
     [positions],
   );
 
-  // One live quote per held symbol (no free-tier batch route; each is cached
-  // + quota-gated server-side — Stage 4), exactly as the dashboard does.
-  const quoteResults = useQueries({
-    queries: equityPositions.map((p) => ({
-      queryKey: ["quote", p.exchange, p.ticker] as const,
-      queryFn: () =>
-        fetchJson<CacheResult<QuotePayload>>(
-          `/api/quote/${p.exchange}/${encodeURIComponent(p.ticker ?? "")}`,
-        ),
-    })),
+  // Every held symbol's quote in ONE batched request (cached + quota-gated
+  // server-side — Stage 4), exactly as the dashboard does. The old per-holding
+  // fan-out opened a Mongo pool per serverless instance and blew the Atlas
+  // connection cap (DB_CONNECTION_ISSUE.md). Sorted for a stable query key.
+  const symbolsParam = useMemo(
+    () =>
+      equityPositions
+        .map((p) => `${p.exchange}:${p.ticker}`)
+        .sort()
+        .join(","),
+    [equityPositions],
+  );
+
+  const quotesQuery = useQuery({
+    queryKey: ["quote", "batch", symbolsParam],
+    enabled: symbolsParam.length > 0,
+    queryFn: () =>
+      fetchJson<BatchQuotesResponse>(
+        `/api/quotes?symbols=${encodeURIComponent(symbolsParam)}`,
+      ),
   });
 
   const quoteByKey = useMemo(() => {
     const map = new Map<string, QuotePayload>();
-    equityPositions.forEach((p, i) => {
-      const data = quoteResults[i]?.data?.data;
-      if (data) map.set(`${p.ticker}:${p.exchange}`, data);
-    });
+    for (const q of quotesQuery.data?.quotes ?? []) {
+      if (q.data) map.set(`${q.ticker}:${q.exchange}`, q.data);
+    }
     return map;
-  }, [equityPositions, quoteResults]);
+  }, [quotesQuery.data]);
 
-  const isFetchingQuotes = quoteResults.some((q) => q.isLoading);
-  const hasStaleQuotes = quoteResults.some((q) => q.data?.stale === true);
+  const isFetchingQuotes = quotesQuery.isLoading;
+  const hasStaleQuotes = quotesQuery.data?.stale === true;
 
   const { rows, stats, sectors, summary } = useMemo(() => {
     if (positions.length === 0) {

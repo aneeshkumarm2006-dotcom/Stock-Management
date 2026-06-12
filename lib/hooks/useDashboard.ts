@@ -5,14 +5,14 @@
 // aggregations convert to the display currency BEFORE summing (PDR §9).
 //
 //   /api/positions  → the user's holdings (+ cached metadata)
-//   /api/quote/...   → one live quote per held symbol (parallel useQueries)
+//   /api/quotes      → every held symbol's live quote in ONE batched request
 //   /api/fx          → USD↔CAD rate (→ settings store)
 //   /api/indices     → S&P / NASDAQ / Dow / TSX / USD-CAD strip
 //
 // computePortfolio (pure, currency-aware) turns the joined data into the
 // top-strip / allocation / top-holdings view models.
 import { useEffect, useMemo } from "react";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { fetchJson } from "@/lib/utils/apiFetch";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import {
@@ -90,6 +90,23 @@ interface CacheResult<T> {
   stale: boolean;
   fetchedAt: string;
   cached: boolean;
+}
+
+/** One symbol's slot in the batched `/api/quotes` response. */
+export interface BatchQuoteEntry {
+  ticker: string;
+  exchange: string;
+  /** null when the symbol has no cache and the provider call failed. */
+  data: QuotePayload | null;
+  stale: boolean;
+  fetchedAt: string | null;
+}
+
+/** The batched `/api/quotes` response — one entry per requested symbol. */
+export interface BatchQuotesResponse {
+  quotes: BatchQuoteEntry[];
+  /** true when at least one symbol came back stale (TTL/quota/provider). */
+  stale: boolean;
 }
 
 export interface IndexQuote {
@@ -209,29 +226,40 @@ export function useDashboardData(): DashboardData {
     [positions],
   );
 
-  // One live quote per held symbol, in parallel (no batch route on the
-  // free tier; each is cached + quota-gated server-side — Stage 4).
-  const quoteResults = useQueries({
-    queries: equityPositions.map((p) => ({
-      queryKey: ["quote", p.exchange, p.ticker] as const,
-      queryFn: () =>
-        fetchJson<CacheResult<QuotePayload>>(
-          `/api/quote/${p.exchange}/${encodeURIComponent(p.ticker ?? "")}`,
-        ),
-    })),
+  // Every held symbol's quote in ONE batched request, not a per-holding
+  // fan-out. The old fan-out spun up a serverless instance — and a Mongo
+  // connection pool — per symbol, which blew the Atlas connection cap
+  // (DB_CONNECTION_ISSUE.md). The batch route reads/writes the same
+  // server-side cache + quota gate (Stage 4). Sorted so the key is stable
+  // regardless of holding order.
+  const symbolsParam = useMemo(
+    () =>
+      equityPositions
+        .map((p) => `${p.exchange}:${p.ticker}`)
+        .sort()
+        .join(","),
+    [equityPositions],
+  );
+
+  const quotesQuery = useQuery({
+    queryKey: ["quote", "batch", symbolsParam],
+    enabled: symbolsParam.length > 0,
+    queryFn: () =>
+      fetchJson<BatchQuotesResponse>(
+        `/api/quotes?symbols=${encodeURIComponent(symbolsParam)}`,
+      ),
   });
 
   const quoteByKey = useMemo(() => {
     const map = new Map<string, QuotePayload>();
-    equityPositions.forEach((p, i) => {
-      const data = quoteResults[i]?.data?.data;
-      if (data) map.set(`${p.ticker}:${p.exchange}`, data);
-    });
+    for (const q of quotesQuery.data?.quotes ?? []) {
+      if (q.data) map.set(`${q.ticker}:${q.exchange}`, q.data);
+    }
     return map;
-  }, [equityPositions, quoteResults]);
+  }, [quotesQuery.data]);
 
-  const isFetchingQuotes = quoteResults.some((q) => q.isLoading);
-  const hasStaleQuotes = quoteResults.some((q) => q.data?.stale === true);
+  const isFetchingQuotes = quotesQuery.isLoading;
+  const hasStaleQuotes = quotesQuery.data?.stale === true;
 
   const { summary, holdings } = useMemo(() => {
     if (positions.length === 0) {

@@ -3,14 +3,17 @@
 // without users each triggering provider calls (PDR §8, §10). Guarded by a
 // shared secret: `Authorization: Bearer ${CRON_SECRET}` (Tech_Stack §Security).
 //
-// getQuote runs through withCache, so this respects TTL freshness and the
-// 95% hard-quota stop automatically; we just enumerate held symbols and let
-// the cache layer decide whether an outbound call is actually needed.
+// getQuotes runs through the same cache + quota gate, so this respects TTL
+// freshness and the 95% hard-quota stop automatically; we just enumerate held
+// symbols and let the cache layer decide whether an outbound call is needed.
+// It fetches all misses in one batched provider call per exchange instead of a
+// sequential per-symbol loop, so a cold cache no longer burns minutes serially
+// retrying symbols that rate-limit (DB_CONNECTION_ISSUE.md amplifier #note).
 // Refs: PDR.md §8, §10; Tech_Stack.md §Cron Configuration, §Security Notes.
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Position } from '@/lib/db/models/Position';
-import { getQuote } from '@/lib/api-clients/twelvedata';
+import { getQuotes } from '@/lib/api-clients/twelvedata';
 
 export const runtime = 'nodejs';
 // Never statically optimized — must run on every cron invocation.
@@ -39,16 +42,17 @@ export async function GET(request: Request) {
     { $group: { _id: { ticker: '$ticker', exchange: '$exchange' } } },
   ]);
 
-  let refreshed = 0;
-  let failed = 0;
-  for (const h of held) {
-    try {
-      await getQuote(h._id.ticker, h._id.exchange);
-      refreshed += 1;
-    } catch (err) {
-      failed += 1;
-      console.error('cron refresh-prices: quote failed', h._id, err);
-    }
+  const pairs = held
+    .map((h) => ({ ticker: h._id.ticker, exchange: h._id.exchange }))
+    .filter((p) => p.ticker && p.exchange);
+
+  // Batched: one provider call per exchange, written back in bulk. A symbol
+  // only counts as failed when it has no cache AND the provider call failed.
+  const results = await getQuotes(pairs);
+  const failed = results.filter((r) => r.data === null).length;
+  const refreshed = results.length - failed;
+  if (failed > 0) {
+    console.error(`cron refresh-prices: ${failed}/${results.length} symbols unavailable`);
   }
 
   return NextResponse.json({

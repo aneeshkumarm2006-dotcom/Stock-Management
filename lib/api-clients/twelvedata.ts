@@ -16,9 +16,12 @@ import {
   withCache,
   priceCacheStore,
   historicalCacheStore,
+  getQuotaStatus,
+  incrementUsage,
   type CacheResult,
 } from '@/lib/cache/withCache';
-import type { IPriceCache } from '@/lib/db/models/PriceCache';
+import { connectToDatabase } from '@/lib/db/mongoose';
+import PriceCache, { type IPriceCache } from '@/lib/db/models/PriceCache';
 import type { HistoricalRange, ICandle } from '@/lib/db/models/HistoricalCache';
 
 const BASE = 'https://api.twelvedata.com';
@@ -182,6 +185,202 @@ export async function getQuote(
       return mapQuote(raw, sym, exchange);
     },
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* Batched quotes                                                      */
+/* ------------------------------------------------------------------ */
+
+export interface BatchQuoteResult {
+  /** Echoed back exactly as requested so callers can key results 1:1. */
+  ticker: string;
+  exchange: string;
+  /** null only when the symbol has no cache AND the provider call failed. */
+  data: QuotePayload | null;
+  /** true when served from cache (TTL hit, quota hard-stop, or provider error). */
+  stale: boolean;
+  fetchedAt: Date | null;
+}
+
+function cacheDocToPayload(doc: IPriceCache): QuotePayload {
+  return {
+    ticker: doc.ticker,
+    exchange: doc.exchange,
+    price: doc.price,
+    dayChange: doc.dayChange,
+    dayChangePct: doc.dayChangePct,
+    high52w: doc.high52w,
+    low52w: doc.low52w,
+    open: doc.open,
+    high: doc.high,
+    low: doc.low,
+    volume: doc.volume,
+  };
+}
+
+/**
+ * Quotes for MANY symbols in one shot — the replacement for the per-symbol
+ * `/api/quote` fan-out that opened a Mongo pool per serverless instance and
+ * blew the Atlas connection cap (DB_CONNECTION_ISSUE.md). It mirrors
+ * `withCache`'s freshness → quota → provider → stale-fallback flow, but does
+ * it once for the whole set: a single bulk cache read, a single quota gate, the
+ * misses fetched in one batched Twelve Data `/quote` call per exchange (cost =
+ * one credit per symbol), and a single bulk cache write.
+ *
+ * Never throws per symbol: a symbol with no cache and a failed provider call
+ * comes back `{ data: null, stale: true }` so one bad ticker can't 502 the
+ * whole page. Results are keyed by the exact `{ ticker, exchange }` passed in.
+ */
+export async function getQuotes(
+  pairs: Array<{ ticker: string; exchange: string }>,
+  forceRefresh = false,
+): Promise<BatchQuoteResult[]> {
+  // Normalize + dedupe (two holdings of the same symbol share one quote).
+  const wanted = new Map<string, { ticker: string; exchange: string }>();
+  for (const p of pairs) {
+    const ticker = p.ticker?.toUpperCase();
+    const exchange = p.exchange?.toUpperCase();
+    if (!ticker || !exchange) continue;
+    wanted.set(`${exchange}:${ticker}`, { ticker, exchange });
+  }
+  const list = Array.from(wanted.values());
+  if (list.length === 0) return [];
+
+  await connectToDatabase();
+
+  // (1) One bulk read of every requested symbol's cache row.
+  const docs = await PriceCache.find({
+    $or: list.map((p) => ({ ticker: p.ticker, exchange: p.exchange })),
+  }).lean<IPriceCache[]>();
+  const cacheByKey = new Map<string, IPriceCache>();
+  for (const d of docs) cacheByKey.set(`${d.exchange}:${d.ticker}`, d);
+
+  const ttlMs = quoteTtl() * 1000;
+  const now = Date.now();
+
+  const results: BatchQuoteResult[] = [];
+  const toFetch: Array<{ ticker: string; exchange: string }> = [];
+
+  // (2) Partition fresh (serve cached) vs needs-fetch.
+  for (const p of list) {
+    const doc = cacheByKey.get(`${p.exchange}:${p.ticker}`);
+    if (doc && !forceRefresh && now - doc.fetchedAt.getTime() < ttlMs) {
+      results.push({
+        ticker: p.ticker,
+        exchange: p.exchange,
+        data: cacheDocToPayload(doc),
+        stale: false,
+        fetchedAt: doc.fetchedAt,
+      });
+    } else {
+      toFetch.push(p);
+    }
+  }
+
+  if (toFetch.length === 0) return results;
+
+  const staleFromCache = (p: {
+    ticker: string;
+    exchange: string;
+  }): BatchQuoteResult => {
+    const doc = cacheByKey.get(`${p.exchange}:${p.ticker}`);
+    return {
+      ticker: p.ticker,
+      exchange: p.exchange,
+      data: doc ? cacheDocToPayload(doc) : null,
+      stale: true,
+      fetchedAt: doc ? doc.fetchedAt : null,
+    };
+  };
+
+  // (3) One quota hard-gate for the whole batch. Like withCache, the hard stop
+  //     only applies where we actually have a fallback: symbols WITH a cache
+  //     row are served stale (no provider call); symbols with NO cache still
+  //     get fetched (nothing to show otherwise).
+  let fetchList = toFetch;
+  const quota = await getQuotaStatus('twelvedata');
+  if (quota.hard) {
+    const noCache: Array<{ ticker: string; exchange: string }> = [];
+    for (const p of toFetch) {
+      if (cacheByKey.has(`${p.exchange}:${p.ticker}`)) {
+        results.push(staleFromCache(p));
+      } else {
+        noCache.push(p);
+      }
+    }
+    if (noCache.length === 0) return results;
+    fetchList = noCache;
+  }
+
+  // (4) Fetch the misses in one batched call per exchange-param (Twelve Data
+  //     `/quote` takes a comma-separated symbol list; the `exchange` param is
+  //     per-call). Group by the RESOLVED param so NYSE + NASDAQ (both the US
+  //     default → no exchange param) collapse into a single call, as the
+  //     single-symbol path already treats them. Each member keeps its own
+  //     `exchange` for the cache writeback.
+  const groups = new Map<
+    string,
+    Array<{ ticker: string; exchange: string }>
+  >();
+  for (const p of fetchList) {
+    const key = exchangeParam(p.exchange) ?? '';
+    const arr = groups.get(key) ?? [];
+    arr.push(p);
+    groups.set(key, arr);
+  }
+
+  const writes: Parameters<typeof PriceCache.bulkWrite>[0] = [];
+
+  for (const members of Array.from(groups.values())) {
+    const first = members[0];
+    if (!first) continue;
+    const ex = exchangeParam(first.exchange);
+    try {
+      const raw = await tdFetch<RawQuote | Record<string, RawQuote>>('/quote', {
+        symbol: members.map((m) => m.ticker).join(','),
+        exchange: ex,
+      });
+      // Twelve Data returns a bare object for one symbol, a keyed map for many.
+      const lookup: Record<string, RawQuote> =
+        members.length === 1
+          ? { [first.ticker]: raw as RawQuote }
+          : (raw as Record<string, RawQuote>);
+
+      const fetchedAt = new Date();
+      for (const m of members) {
+        try {
+          const payload = mapQuote(lookup[m.ticker] ?? {}, m.ticker, m.exchange);
+          results.push({
+            ticker: m.ticker,
+            exchange: m.exchange,
+            data: payload,
+            stale: false,
+            fetchedAt,
+          });
+          writes.push({
+            updateOne: {
+              filter: { ticker: m.ticker, exchange: m.exchange },
+              update: { $set: { ...payload, fetchedAt } },
+              upsert: true,
+            },
+          });
+        } catch {
+          // This symbol was missing/invalid in an otherwise-OK response.
+          results.push(staleFromCache(m));
+        }
+      }
+      // One outbound HTTP call; one credit per symbol requested (provider bills
+      // the whole batch). Mirrors withCache's per-call increment policy.
+      await incrementUsage('twelvedata', members.length);
+    } catch {
+      // The whole group's provider call failed → serve cached-stale per symbol.
+      for (const m of members) results.push(staleFromCache(m));
+    }
+  }
+
+  if (writes.length > 0) await PriceCache.bulkWrite(writes);
+
+  return results;
 }
 
 const RANGE_PLAN: Record<
