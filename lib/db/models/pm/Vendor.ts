@@ -32,8 +32,10 @@ export interface IVendorInsurance {
 export interface IVendor {
   _id: Types.ObjectId;
   organizationId: Types.ObjectId;
-  firstName: string;
-  lastName: string;
+  /** Optional for company vendors; required (via pre-validate) for individuals. */
+  firstName?: string;
+  /** Optional for company vendors; required (via pre-validate) for individuals. */
+  lastName?: string;
   isCompany: boolean;
   companyName?: string;
   /** Default Uncategorized when null. */
@@ -112,8 +114,8 @@ const VendorSchema = new Schema<IVendor>(
       ref: 'PmOrganization',
       required: true,
     },
-    firstName: { type: String, required: true, trim: true },
-    lastName: { type: String, required: true, trim: true },
+    firstName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
     isCompany: { type: Boolean, default: false },
     companyName: { type: String, trim: true },
     categoryId: {
@@ -185,9 +187,20 @@ VendorSchema.index({ organizationId: 1, active: 1, lastName: 1, firstName: 1 });
 VendorSchema.index({ organizationId: 1, 'insurance.expirationDate': 1 });
 VendorSchema.index({ organizationId: 1, categoryId: 1 });
 
-VendorSchema.pre('save', function (next) {
-  if (this.isCompany && !this.companyName?.trim()) {
-    return next(new Error('companyName is required when isCompany=true'));
+// A company vendor needs only a company name; an individual vendor needs a
+// first + last name. Names are otherwise optional so a company can be saved
+// with just its company name (mirrors Tenant's Individual/Company rule).
+VendorSchema.pre('validate', function (next) {
+  if (this.isCompany) {
+    if (!this.companyName?.trim()) {
+      return next(new Error('companyName is required when isCompany=true'));
+    }
+  } else {
+    if (!this.firstName?.trim() || !this.lastName?.trim()) {
+      return next(
+        new Error('Individual vendors require firstName and lastName.'),
+      );
+    }
   }
   next();
 });

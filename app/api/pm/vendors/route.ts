@@ -31,7 +31,7 @@ interface VendorLeanLike {
 
 function displayName(d: VendorLeanLike): string {
   if (d.isCompany && d.companyName) return d.companyName;
-  return `${d.firstName} ${d.lastName}`.trim();
+  return [d.firstName, d.lastName].filter(Boolean).join(' ').trim();
 }
 
 function daysUntil(date: Date | null | undefined): number | null {
@@ -98,8 +98,8 @@ export async function GET(request: Request) {
   return NextResponse.json(
     rows.map((r) => ({
       id: String(r._id),
-      firstName: r.firstName,
-      lastName: r.lastName,
+      firstName: r.firstName ?? '',
+      lastName: r.lastName ?? '',
       isCompany: r.isCompany,
       companyName: r.companyName ?? '',
       primaryEmail: r.primaryEmail ?? '',

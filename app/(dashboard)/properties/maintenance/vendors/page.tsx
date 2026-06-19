@@ -284,12 +284,13 @@ function AddVendorModal({
   }
 
   async function save() {
-    if (!form.firstName.trim() || !form.lastName.trim()) {
+    if (form.isCompany) {
+      if (!form.companyName.trim()) {
+        toast({ title: "Company name required", variant: "error" });
+        return;
+      }
+    } else if (!form.firstName.trim() || !form.lastName.trim()) {
       toast({ title: "First and last name required", variant: "error" });
-      return;
-    }
-    if (form.isCompany && !form.companyName.trim()) {
-      toast({ title: "Company name required when isCompany", variant: "error" });
       return;
     }
     setSaving(true);
@@ -297,10 +298,14 @@ function AddVendorModal({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
+        // Names are optional for a company (an empty contact name must be sent
+        // as undefined, not "", so it passes the Zod min(1) rule).
+        firstName: form.firstName.trim() || undefined,
+        lastName: form.lastName.trim() || undefined,
         isCompany: form.isCompany,
-        companyName: form.companyName.trim() || undefined,
+        companyName: form.isCompany
+          ? form.companyName.trim() || undefined
+          : undefined,
         primaryEmail: form.primaryEmail.trim() || undefined,
       }),
     });
@@ -321,16 +326,20 @@ function AddVendorModal({
       <DialogContent className="max-w-lg">
         <DialogHeader title="Add vendor" onClose={onClose} />
         <div className="space-y-3">
-          <label className="flex items-center gap-2 text-sm text-fg">
-            <input
-              type="checkbox"
-              checked={form.isCompany}
+          <div className="space-y-1">
+            <Label htmlFor="v-type">Vendor type</Label>
+            <select
+              id="v-type"
+              className="w-full rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg"
+              value={form.isCompany ? "Company" : "Individual"}
               onChange={(e) =>
-                setForm({ ...form, isCompany: e.target.checked })
+                setForm({ ...form, isCompany: e.target.value === "Company" })
               }
-            />
-            This is a company
-          </label>
+            >
+              <option value="Individual">Individual</option>
+              <option value="Company">Company</option>
+            </select>
+          </div>
           {form.isCompany && (
             <div className="space-y-1">
               <Label htmlFor="v-company">Company name *</Label>
@@ -345,7 +354,9 @@ function AddVendorModal({
           )}
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="v-first">First name *</Label>
+              <Label htmlFor="v-first">
+                First name{form.isCompany ? "" : " *"}
+              </Label>
               <Input
                 id="v-first"
                 value={form.firstName}
@@ -355,7 +366,9 @@ function AddVendorModal({
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="v-last">Last name *</Label>
+              <Label htmlFor="v-last">
+                Last name{form.isCompany ? "" : " *"}
+              </Label>
               <Input
                 id="v-last"
                 value={form.lastName}

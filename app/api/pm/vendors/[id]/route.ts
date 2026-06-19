@@ -51,14 +51,14 @@ export async function GET(
 
   return NextResponse.json({
     id: String(doc._id),
-    firstName: doc.firstName,
-    lastName: doc.lastName,
+    firstName: doc.firstName ?? '',
+    lastName: doc.lastName ?? '',
     isCompany: doc.isCompany,
     companyName: doc.companyName ?? '',
     displayName:
       doc.isCompany && doc.companyName
         ? doc.companyName
-        : `${doc.firstName} ${doc.lastName}`.trim(),
+        : [doc.firstName, doc.lastName].filter(Boolean).join(' ').trim(),
     categoryId: doc.categoryId ? String(doc.categoryId) : null,
     expenseAccountId: doc.expenseAccountId ? String(doc.expenseAccountId) : null,
     accountNumber: doc.accountNumber ?? '',

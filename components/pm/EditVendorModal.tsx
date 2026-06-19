@@ -185,15 +185,16 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
 
   async function save() {
     if (!vendorId) return;
-    if (!form.firstName.trim() || !form.lastName.trim()) {
+    // EDIT-016: when flagged as a company, a non-empty company name is required
+    // (first/last become optional contact info); an individual still requires
+    // both names. The stored company name is cleared below when not a company.
+    if (form.isCompany) {
+      if (!form.companyName.trim()) {
+        toast({ title: "Company name is required", variant: "error" });
+        return;
+      }
+    } else if (!form.firstName.trim() || !form.lastName.trim()) {
       toast({ title: "First and last name required", variant: "error" });
-      return;
-    }
-    // EDIT-016: when flagged as a company, a non-empty company name is required;
-    // when not, the stored company name must be cleared so a stale value can't
-    // linger on the record.
-    if (form.isCompany && !form.companyName.trim()) {
-      toast({ title: "Company name is required", variant: "error" });
       return;
     }
     setSaving(true);
@@ -214,8 +215,10 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
         : null,
     };
     const payload: Record<string, unknown> = {
-      firstName: form.firstName.trim(),
-      lastName: form.lastName.trim(),
+      // Empty names go out as undefined (not "") so they pass the Zod min(1)
+      // rule — a company may legitimately have no contact name.
+      firstName: form.firstName.trim() || undefined,
+      lastName: form.lastName.trim() || undefined,
       isCompany: form.isCompany,
       // EDIT-016: explicit null clears the persisted name when not a company.
       companyName: form.isCompany ? form.companyName.trim() : null,
@@ -262,22 +265,28 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
               <h4 className="text-xs font-bold uppercase tracking-widest text-fg-muted">
                 Identity
               </h4>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={form.isCompany}
-                  onChange={(e) =>
+              <div className="space-y-1">
+                <Label htmlFor="ev-type">Vendor type</Label>
+                <select
+                  id="ev-type"
+                  className="w-full rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg"
+                  value={form.isCompany ? "Company" : "Individual"}
+                  onChange={(e) => {
+                    const isCompany = e.target.value === "Company";
                     setForm({
                       ...form,
-                      isCompany: e.target.checked,
-                      // Clear the company name the moment the flag turns off so
-                      // the field can't keep a stale value (EDIT-016).
-                      companyName: e.target.checked ? form.companyName : "",
-                    })
-                  }
-                />
-                This is a company
-              </label>
+                      isCompany,
+                      // Clear the company name the moment we switch to Individual
+                      // so the field can't keep a stale value (EDIT-016). First/
+                      // last are kept — they're optional contact info now.
+                      companyName: isCompany ? form.companyName : "",
+                    });
+                  }}
+                >
+                  <option value="Individual">Individual</option>
+                  <option value="Company">Company</option>
+                </select>
+              </div>
               {form.isCompany && (
                 <div className="space-y-1">
                   <Label htmlFor="ev-company">Company name *</Label>
@@ -292,7 +301,9 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
               )}
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-1">
-                  <Label htmlFor="ev-first">First name *</Label>
+                  <Label htmlFor="ev-first">
+                    First name{form.isCompany ? "" : " *"}
+                  </Label>
                   <Input
                     id="ev-first"
                     value={form.firstName}
@@ -302,7 +313,9 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="ev-last">Last name *</Label>
+                  <Label htmlFor="ev-last">
+                    Last name{form.isCompany ? "" : " *"}
+                  </Label>
                   <Input
                     id="ev-last"
                     value={form.lastName}

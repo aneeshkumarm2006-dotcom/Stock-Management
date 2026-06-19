@@ -23,8 +23,11 @@ const insuranceSchema = z.object({
 });
 
 const baseFields = {
-  firstName: z.string().min(1).max(80),
-  lastName: z.string().min(1).max(80),
+  // first/last are optional at the field level; the conditional rule
+  // (Individual ⇒ first+last, Company ⇒ companyName) is enforced by the
+  // shared `.superRefine` below.
+  firstName: z.string().min(1).max(80).optional(),
+  lastName: z.string().min(1).max(80).optional(),
   isCompany: z.boolean().optional(),
   companyName: z.string().max(160).optional(),
   categoryId: z.string().optional().nullable(),
@@ -54,15 +57,52 @@ const baseFields = {
   vendorPortalAccess: z.boolean().optional(),
 };
 
+/** Conditional-required rule shared by create + update, keyed off `isCompany`.
+ *  Company ⇒ companyName required; Individual ⇒ first + last required. On
+ *  update an absent `isCompany` means "unchanged" (no rule fires). Enforcing it
+ *  here gives a clean 400 instead of bubbling up the model's pre('validate'). */
+function applyVendorTypeRule(isCreate: boolean) {
+  return (
+    data: {
+      isCompany?: boolean;
+      firstName?: string;
+      lastName?: string;
+      companyName?: string;
+    },
+    ctx: z.RefinementCtx,
+  ): void => {
+    const isCompany = data.isCompany ?? (isCreate ? false : undefined);
+    if (isCompany === undefined) return;
+    if (isCompany) {
+      if (!data.companyName || !data.companyName.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['companyName'],
+          message: 'companyName is required when isCompany=true',
+        });
+      }
+    } else {
+      if (!data.firstName || !data.firstName.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['firstName'],
+          message: 'Individual vendors require a first name.',
+        });
+      }
+      if (!data.lastName || !data.lastName.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['lastName'],
+          message: 'Individual vendors require a last name.',
+        });
+      }
+    }
+  };
+}
+
 export const vendorCreateSchema = z
   .object(baseFields)
-  .refine(
-    (d) => !d.isCompany || (d.companyName && d.companyName.trim().length > 0),
-    {
-      message: 'companyName is required when isCompany=true',
-      path: ['companyName'],
-    },
-  );
+  .superRefine(applyVendorTypeRule(true));
 
 export const vendorUpdateSchema = z
   .object({
@@ -91,6 +131,7 @@ export const vendorUpdateSchema = z
     /** PATCH-only — soft archive + reactivation per [G-B-3] (BR-MV-2). */
     active: z.boolean().optional(),
   })
+  .superRefine(applyVendorTypeRule(false))
   .refine((d) => Object.keys(d).length > 0, {
     message: 'No fields to update',
   });
