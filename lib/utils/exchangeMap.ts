@@ -80,6 +80,44 @@ export const LABEL_TO_VENUE: Record<string, string> = {
   CSE: "CSE",
 };
 
+/**
+ * Reverse of {@link MIC_TO_VENUE}: our canonical venue key → the ISO 10383 MIC
+ * Twelve Data accepts on `/quote` & `/time_series`. First MIC wins when several
+ * map to one venue (e.g. XNYS over IEXG for NYSE), so each venue gets its
+ * primary listing code. Built once at module load.
+ *
+ * Why this exists: we store the venue *key* on a Position (e.g. "ARCA", "TSX"),
+ * not Twelve Data's own exchange label — so forwarding that key straight back
+ * as the `exchange` param fails for venues whose key isn't a TD-recognized
+ * string (NYSE Arca, Toronto, …). Sending the unambiguous MIC instead fixes it.
+ */
+export const VENUE_TO_MIC: Record<string, string> = (() => {
+  const out: Record<string, string> = {};
+  for (const [mic, venue] of Object.entries(MIC_TO_VENUE)) {
+    if (!(venue in out)) out[venue] = mic;
+  }
+  return out;
+})();
+
+/**
+ * Twelve Data query params that pin a quote/series to the right venue.
+ * - NYSE/NASDAQ → `{}`: they're TD's global default, so US tickers without an
+ *   exchange suffix still match (sending a param can wrongly exclude them).
+ * - A venue we know the MIC for → `{ mic_code }`: the unambiguous identifier.
+ * - Anything else → `{ exchange }`: best-effort passthrough for venues the user
+ *   typed manually or that predate the MIC table.
+ */
+export function exchangeQueryParams(
+  exchange: string,
+): { exchange?: string; mic_code?: string } {
+  const e = (exchange ?? "").trim().toUpperCase();
+  if (!e) return {};
+  if (e === "NYSE" || e === "NASDAQ") return {};
+  const mic = VENUE_TO_MIC[e];
+  if (mic) return { mic_code: mic };
+  return { exchange };
+}
+
 export function mapExchange(raw: string, mic?: string): string {
   if (mic) {
     const m = MIC_TO_VENUE[mic.toUpperCase()];

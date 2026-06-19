@@ -21,6 +21,7 @@ import {
   type CacheResult,
 } from '@/lib/cache/withCache';
 import { connectToDatabase } from '@/lib/db/mongoose';
+import { exchangeQueryParams } from '@/lib/utils/exchangeMap';
 import PriceCache, { type IPriceCache } from '@/lib/db/models/PriceCache';
 import type { HistoricalRange, ICandle } from '@/lib/db/models/HistoricalCache';
 
@@ -69,18 +70,6 @@ function apiKey(): string {
   const k = process.env.TWELVE_DATA_API_KEY;
   if (!k) throw new Error('TWELVE_DATA_API_KEY is not set');
   return k;
-}
-
-/** Twelve Data disambiguates cross-listings with an explicit `exchange` code.
- *  NYSE/NASDAQ are the global default — omit them so US tickers without an
- *  exchange suffix still match. For every other listing (TSX, LSE, HKEX, NSE,
- *  ASX, Euronext, XETRA, …) we forward whatever the symbol-search returned so
- *  the right venue is queried. */
-function exchangeParam(exchange: string): string | undefined {
-  if (!exchange) return undefined;
-  const e = exchange.toUpperCase();
-  if (e === 'NYSE' || e === 'NASDAQ') return undefined;
-  return exchange;
 }
 
 /**
@@ -180,7 +169,7 @@ export async function getQuote(
     fetcher: async () => {
       const raw = await tdFetch<RawQuote>('/quote', {
         symbol: sym,
-        exchange: exchangeParam(exchange),
+        ...exchangeQueryParams(exchange),
       });
       return mapQuote(raw, sym, exchange);
     },
@@ -312,18 +301,19 @@ export async function getQuotes(
     fetchList = noCache;
   }
 
-  // (4) Fetch the misses in one batched call per exchange-param (Twelve Data
-  //     `/quote` takes a comma-separated symbol list; the `exchange` param is
-  //     per-call). Group by the RESOLVED param so NYSE + NASDAQ (both the US
-  //     default → no exchange param) collapse into a single call, as the
-  //     single-symbol path already treats them. Each member keeps its own
-  //     `exchange` for the cache writeback.
+  // (4) Fetch the misses in one batched call per resolved venue param (Twelve
+  //     Data `/quote` takes a comma-separated symbol list; the venue param is
+  //     per-call). Group by the RESOLVED identifier (MIC, exchange, or none) so
+  //     NYSE + NASDAQ (both US default → no param) collapse into a single call,
+  //     as the single-symbol path already treats them. Each member keeps its
+  //     own `exchange` for the cache writeback.
   const groups = new Map<
     string,
     Array<{ ticker: string; exchange: string }>
   >();
   for (const p of fetchList) {
-    const key = exchangeParam(p.exchange) ?? '';
+    const params = exchangeQueryParams(p.exchange);
+    const key = params.mic_code ?? params.exchange ?? '';
     const arr = groups.get(key) ?? [];
     arr.push(p);
     groups.set(key, arr);
@@ -334,11 +324,10 @@ export async function getQuotes(
   for (const members of Array.from(groups.values())) {
     const first = members[0];
     if (!first) continue;
-    const ex = exchangeParam(first.exchange);
     try {
       const raw = await tdFetch<RawQuote | Record<string, RawQuote>>('/quote', {
         symbol: members.map((m) => m.ticker).join(','),
-        exchange: ex,
+        ...exchangeQueryParams(first.exchange),
       });
       // Twelve Data returns a bare object for one symbol, a keyed map for many.
       const lookup: Record<string, RawQuote> =
@@ -424,7 +413,7 @@ export async function getTimeSeries(
     fetcher: async () => {
       const raw = await tdFetch<RawSeries>('/time_series', {
         symbol: sym,
-        exchange: exchangeParam(exchange),
+        ...exchangeQueryParams(exchange),
         interval: plan.interval,
         outputsize: String(plan.outputsize),
         order: 'ASC',
