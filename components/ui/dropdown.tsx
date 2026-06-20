@@ -13,6 +13,8 @@ interface DropdownProps {
   children: React.ReactNode;
   align?: "start" | "end";
   className?: string;
+  /** Extra classes for the trigger button (e.g. "w-full" for a full-row trigger). */
+  triggerClassName?: string;
   /** Fired whenever the open state changes (e.g. to mark notifications read). */
   onOpenChange?: (open: boolean) => void;
 }
@@ -25,6 +27,7 @@ export function Dropdown({
   children,
   align = "end",
   className,
+  triggerClassName,
   onOpenChange,
 }: DropdownProps) {
   const [open, setOpenState] = React.useState(false);
@@ -114,7 +117,7 @@ export function Dropdown({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center"
+        className={cn("flex items-center", triggerClassName)}
       >
         {trigger}
       </button>

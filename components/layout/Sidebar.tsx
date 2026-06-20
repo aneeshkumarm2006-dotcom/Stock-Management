@@ -199,22 +199,37 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* User footer. */}
-      <div className="flex items-center gap-[9px] border-t border-border px-3 py-[10px]">
+      {/* User footer. The whole row is the account-menu trigger, so the avatar,
+          the name/email, and the three-dots affordance all open the menu. */}
+      <div className="border-t border-border px-3 py-[10px]">
         <Dropdown
           align="start"
+          triggerClassName="w-full rounded-[5px] px-1 py-1 transition-colors hover:bg-surface-lowest"
           trigger={
-            <span className="grid h-[26px] w-[26px] place-items-center overflow-hidden rounded-full bg-gradient-to-br from-tertiary to-tertiary-container text-[11px] font-semibold text-tertiary-fg">
-              {user?.image ? (
-                // eslint-disable-next-line @next/next/no-img-element -- external Google avatar; next/image not worth the loader config here
-                <img
-                  src={user.image}
-                  alt={user?.name ?? "Account"}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                userInitial
-              )}
+            <span className="flex w-full items-center gap-[9px]">
+              <span className="grid h-[26px] w-[26px] shrink-0 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-tertiary to-tertiary-container text-[11px] font-semibold text-tertiary-fg">
+                {user?.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- external Google avatar; next/image not worth the loader config here
+                  <img
+                    src={user.image}
+                    alt={user?.name ?? "Account"}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  userInitial
+                )}
+              </span>
+              <span className="min-w-0 flex-1 text-left leading-[1.25]">
+                <span className="block truncate text-[12px] font-semibold text-fg">
+                  {user?.name ?? "Account"}
+                </span>
+                {user?.email && (
+                  <span className="block truncate text-[10.5px] text-fg-muted">
+                    {user.email}
+                  </span>
+                )}
+              </span>
+              <MoreHorizontal className="h-3.5 w-3.5 shrink-0 text-fg-muted" />
             </span>
           }
         >
@@ -236,17 +251,6 @@ export function Sidebar() {
             Logout
           </DropdownItem>
         </Dropdown>
-        <div className="min-w-0 flex-1 leading-[1.25]">
-          <div className="truncate text-[12px] font-semibold text-fg">
-            {user?.name ?? "Account"}
-          </div>
-          {user?.email && (
-            <div className="truncate text-[10.5px] text-fg-muted">
-              {user.email}
-            </div>
-          )}
-        </div>
-        <MoreHorizontal className="h-3.5 w-3.5 text-fg-muted" />
       </div>
     </aside>
   );
