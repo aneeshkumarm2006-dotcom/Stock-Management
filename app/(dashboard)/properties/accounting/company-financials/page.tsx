@@ -38,6 +38,49 @@ interface CompanyFinancialsData {
     netCents: number;
   }>;
   monthlyBalances: Array<{ month: string; netCents: number }>;
+  // Year-over-year reporting fields.
+  years: number[];
+  annualBalances: Array<{
+    year: number;
+    incomeCents: number;
+    expenseCents: number;
+    netCents: number;
+  }>;
+  propertyAnnual: Array<{
+    propertyId: string;
+    propertyName: string;
+    byYear: Record<
+      string,
+      { incomeCents: number; expenseCents: number; netCents: number }
+    >;
+  }>;
+}
+
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+// Percentage change of `cur` vs `prev`. `positive: null` ⇒ no comparable prior
+// year (first year, or a prior net of exactly 0).
+function pctChange(
+  cur: number,
+  prev: number | null,
+): { text: string; positive: boolean | null } {
+  if (prev === null || prev === 0) return { text: "—", positive: null };
+  const pct = ((cur - prev) / Math.abs(prev)) * 100;
+  const sign = pct > 0 ? "+" : "";
+  return { text: `${sign}${pct.toFixed(1)}%`, positive: pct >= 0 };
 }
 
 export default function CompanyFinancialsPage() {
@@ -54,6 +97,15 @@ export default function CompanyFinancialsPage() {
   const [toggling, setToggling] = React.useState(false);
   const currency = data?.defaultCurrency ?? "USD";
 
+  // Year-over-year fetches its own multi-year window so the cards above stay
+  // scoped to the user's chosen from/to range.
+  const currentYear = today.getFullYear();
+  const [yoySpan, setYoySpan] = React.useState(3);
+  const [yoyData, setYoyData] = React.useState<CompanyFinancialsData | null>(
+    null,
+  );
+  const [yoyLoading, setYoyLoading] = React.useState(true);
+
   const load = React.useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams({ from, to });
@@ -62,9 +114,38 @@ export default function CompanyFinancialsPage() {
     setLoading(false);
   }, [from, to]);
 
+  const loadYoY = React.useCallback(async () => {
+    setYoyLoading(true);
+    const yoyFrom = `${currentYear - yoySpan + 1}-01-01`;
+    const yoyTo = `${currentYear}-12-31`;
+    const params = new URLSearchParams({ from: yoyFrom, to: yoyTo });
+    const r = await fetch(`/api/pm/company-financials?${params.toString()}`);
+    if (r.ok) setYoyData((await r.json()) as CompanyFinancialsData);
+    setYoyLoading(false);
+  }, [currentYear, yoySpan]);
+
   React.useEffect(() => {
     load();
   }, [load]);
+
+  React.useEffect(() => {
+    loadYoY();
+  }, [loadYoY]);
+
+  const yoyAnnualByYear = React.useMemo(
+    () =>
+      new Map((yoyData?.annualBalances ?? []).map((a) => [a.year, a] as const)),
+    [yoyData],
+  );
+  const yoyMonthlyGrid = React.useMemo(
+    () =>
+      new Map(
+        (yoyData?.monthlyBalances ?? []).map(
+          (m) => [m.month, m.netCents] as const,
+        ),
+      ),
+    [yoyData],
+  );
 
   async function toggleMode() {
     if (!data) return;
@@ -80,7 +161,7 @@ export default function CompanyFinancialsPage() {
       toast({ title: "Failed to toggle accounting mode", variant: "error" });
       return;
     }
-    await load();
+    await Promise.all([load(), loadYoY()]);
   }
 
   return (
@@ -231,6 +312,263 @@ export default function CompanyFinancialsPage() {
 
       <Card>
         <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>Year over year</CardTitle>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="yoy-span" className="text-xs">
+                Years to compare
+              </Label>
+              <Input
+                id="yoy-span"
+                type="number"
+                min={2}
+                max={10}
+                className="w-20"
+                value={yoySpan}
+                onChange={(e) =>
+                  setYoySpan(
+                    Math.min(10, Math.max(2, Number(e.target.value) || 2)),
+                  )
+                }
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-8">
+          {yoyLoading ? (
+            <p className="text-sm text-fg-muted">Loading…</p>
+          ) : !yoyData || yoyData.years.length === 0 ? (
+            <p className="text-sm text-fg-muted">
+              No posted journal entries in this period.
+            </p>
+          ) : (
+            <>
+              {/* Annual summary: income / expense / net + % change vs prior year */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-xs uppercase tracking-widest text-fg-muted">
+                      <th className="py-2 text-left">Metric</th>
+                      {yoyData.years.map((y) => (
+                        <th key={y} className="py-2 text-right">
+                          {y}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 text-fg-muted">Income</td>
+                      {yoyData.years.map((y) => (
+                        <td
+                          key={y}
+                          className="py-1.5 text-right tabular-nums"
+                        >
+                          <CurrencyAmount
+                            cents={yoyAnnualByYear.get(y)?.incomeCents ?? 0}
+                            currency={currency}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                    <tr className="border-b border-border/30">
+                      <td className="py-1.5 text-fg-muted">Expenses</td>
+                      {yoyData.years.map((y) => (
+                        <td
+                          key={y}
+                          className="py-1.5 text-right tabular-nums"
+                        >
+                          <CurrencyAmount
+                            cents={yoyAnnualByYear.get(y)?.expenseCents ?? 0}
+                            currency={currency}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                    <tr className="border-t border-border">
+                      <td className="py-1.5 font-bold">Net income</td>
+                      {yoyData.years.map((y) => (
+                        <td
+                          key={y}
+                          className="py-1.5 text-right tabular-nums font-bold"
+                        >
+                          <CurrencyAmount
+                            cents={yoyAnnualByYear.get(y)?.netCents ?? 0}
+                            currency={currency}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="py-1.5 text-fg-muted">
+                        Change vs prior year
+                      </td>
+                      {yoyData.years.map((y, i) => {
+                        const cur = yoyAnnualByYear.get(y)?.netCents ?? 0;
+                        const prevYear = i > 0 ? yoyData.years[i - 1] : undefined;
+                        const prev =
+                          prevYear === undefined
+                            ? null
+                            : yoyAnnualByYear.get(prevYear)?.netCents ?? 0;
+                        const c = pctChange(cur, prev);
+                        return (
+                          <td
+                            key={y}
+                            className={
+                              "py-1.5 text-right tabular-nums" +
+                              (c.positive === null ? " text-fg-muted" : "")
+                            }
+                            style={
+                              c.positive === null
+                                ? undefined
+                                : { color: c.positive ? "#16a34a" : "#dc2626" }
+                            }
+                          >
+                            {c.text}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Side-by-side annual net bars */}
+              <AnnualBarChart
+                series={yoyData.annualBalances.map((a) => ({
+                  year: a.year,
+                  netCents: a.netCents,
+                }))}
+              />
+
+              {/* Monthly net pivot: months × years */}
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-widest text-fg-muted">
+                  Monthly net by year
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-xs uppercase tracking-widest text-fg-muted">
+                        <th className="py-2 text-left">Month</th>
+                        {yoyData.years.map((y) => (
+                          <th key={y} className="py-2 text-right">
+                            {y}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {MONTH_NAMES.map((mName, mIdx) => {
+                        const mm = String(mIdx + 1).padStart(2, "0");
+                        return (
+                          <tr
+                            key={mName}
+                            className="border-b border-border/30"
+                          >
+                            <td className="py-1.5 text-fg-muted">{mName}</td>
+                            {yoyData.years.map((y) => {
+                              const cell = yoyMonthlyGrid.get(`${y}-${mm}`);
+                              return (
+                                <td
+                                  key={y}
+                                  className="py-1.5 text-right tabular-nums"
+                                >
+                                  {cell === undefined ? (
+                                    <span className="text-fg-muted">—</span>
+                                  ) : (
+                                    <CurrencyAmount
+                                      cents={cell}
+                                      currency={currency}
+                                    />
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                      <tr className="border-t border-border">
+                        <td className="py-1.5 font-bold">Total</td>
+                        {yoyData.years.map((y) => (
+                          <td
+                            key={y}
+                            className="py-1.5 text-right tabular-nums font-bold"
+                          >
+                            <CurrencyAmount
+                              cents={yoyAnnualByYear.get(y)?.netCents ?? 0}
+                              currency={currency}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Per-property net pivot: property × years */}
+              <div>
+                <p className="mb-2 text-xs font-bold uppercase tracking-widest text-fg-muted">
+                  Net by property &amp; year
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-xs uppercase tracking-widest text-fg-muted">
+                        <th className="py-2 text-left">Property</th>
+                        {yoyData.years.map((y) => (
+                          <th key={y} className="py-2 text-right">
+                            {y}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {yoyData.propertyAnnual.map((p) => (
+                        <tr
+                          key={p.propertyId}
+                          className="border-b border-border/40"
+                        >
+                          <td className="py-1.5">{p.propertyName}</td>
+                          {yoyData.years.map((y) => (
+                            <td
+                              key={y}
+                              className="py-1.5 text-right tabular-nums"
+                            >
+                              <CurrencyAmount
+                                cents={p.byYear[String(y)]?.netCents ?? 0}
+                                currency={currency}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                      <tr className="border-t border-border bg-bg-elevated">
+                        <td className="py-1.5 font-bold">Total</td>
+                        {yoyData.years.map((y) => (
+                          <td
+                            key={y}
+                            className="py-1.5 text-right tabular-nums font-bold"
+                          >
+                            <CurrencyAmount
+                              cents={yoyAnnualByYear.get(y)?.netCents ?? 0}
+                              currency={currency}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Per-property roll-up</CardTitle>
         </CardHeader>
         <CardContent>
@@ -295,7 +633,7 @@ export default function CompanyFinancialsPage() {
         open={collectOpen}
         onClose={() => setCollectOpen(false)}
         onPosted={async () => {
-          await load();
+          await Promise.all([load(), loadYoY()]);
         }}
       />
     </div>
@@ -352,6 +690,67 @@ function HeroCard({
         <p className="text-xs text-fg-muted">{subtitle}</p>
       </CardContent>
     </Card>
+  );
+}
+
+function AnnualBarChart({
+  series,
+}: {
+  series: Array<{ year: number; netCents: number }>;
+}) {
+  const max = Math.max(1, ...series.map((s) => Math.abs(s.netCents)));
+  const barWidth = 48;
+  const gap = 20;
+  const chartHeight = 140;
+  const baseline = chartHeight / 2;
+  const width = series.length * (barWidth + gap) + gap;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg
+        width={width}
+        height={chartHeight + 24}
+        role="img"
+        aria-label="Annual net income chart"
+      >
+        <line
+          x1={0}
+          y1={baseline}
+          x2={width}
+          y2={baseline}
+          stroke="currentColor"
+          strokeOpacity={0.2}
+        />
+        {series.map((s, i) => {
+          const x = gap + i * (barWidth + gap);
+          const ratio = s.netCents / max;
+          const h = Math.abs((ratio * chartHeight) / 2);
+          const y = ratio >= 0 ? baseline - h : baseline;
+          const fill = ratio >= 0 ? "#16a34a" : "#dc2626";
+          return (
+            <g key={s.year}>
+              <rect
+                x={x}
+                y={y}
+                width={barWidth}
+                height={Math.max(1, h)}
+                fill={fill}
+              />
+              <text
+                x={x + barWidth / 2}
+                y={chartHeight + 14}
+                textAnchor="middle"
+                fontSize={11}
+                fill="currentColor"
+                opacity={0.7}
+              >
+                {s.year}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 }
 

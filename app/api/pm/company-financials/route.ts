@@ -176,12 +176,24 @@ export async function GET(request: Request) {
   // Monthly chart series.
   const monthly = new Map<string, { incomeCents: number; expenseCents: number }>();
 
+  // Year-over-year series: company-wide annual totals + per-scope annual totals
+  // (keyed by year, then by property/company scope) for the YoY pivot.
+  const annual = new Map<number, { incomeCents: number; expenseCents: number }>();
+  const annualByScope = new Map<
+    string,
+    Map<number, { incomeCents: number; expenseCents: number }>
+  >();
+
   for (const je of jes) {
     if (mode === 'cash' && !cashJeIds.has(String(je._id))) continue;
 
     const monthKey = startOfMonth(je.date).toISOString().slice(0, 7);
     const mbucket =
       monthly.get(monthKey) ?? { incomeCents: 0, expenseCents: 0 };
+
+    // Company-wide annual bucket for this JE's calendar year.
+    const year = je.date.getUTCFullYear();
+    const abucket = annual.get(year) ?? { incomeCents: 0, expenseCents: 0 };
 
     for (const line of je.lines) {
       const acctType = accountTypeById.get(String(line.accountId));
@@ -194,10 +206,22 @@ export async function GET(request: Request) {
         incomeCents: 0,
         expenseCents: 0,
       };
+      // Per-scope annual bucket (property/company × year).
+      let scopeYears = annualByScope.get(scopeKey);
+      if (!scopeYears) {
+        scopeYears = new Map();
+        annualByScope.set(scopeKey, scopeYears);
+      }
+      const sybucket = scopeYears.get(year) ?? {
+        incomeCents: 0,
+        expenseCents: 0,
+      };
       if (acctType === 'Income') {
         const amount = (line.credit ?? 0) - (line.debit ?? 0);
         bucket.incomeCents += amount;
         mbucket.incomeCents += amount;
+        abucket.incomeCents += amount;
+        sybucket.incomeCents += amount;
         if (investmentAccountIds.has(String(line.accountId))) {
           investmentRevenueCents += amount;
         }
@@ -205,10 +229,14 @@ export async function GET(request: Request) {
         const amount = (line.debit ?? 0) - (line.credit ?? 0);
         bucket.expenseCents += amount;
         mbucket.expenseCents += amount;
+        abucket.expenseCents += amount;
+        sybucket.expenseCents += amount;
       }
       rollup.set(scopeKey, bucket);
+      scopeYears.set(year, sybucket);
     }
     monthly.set(monthKey, mbucket);
+    annual.set(year, abucket);
   }
 
   const propertyRollup = Array.from(rollup.entries())
@@ -252,6 +280,73 @@ export async function GET(request: Request) {
       netCents: v.incomeCents - v.expenseCents,
     }));
 
+  // Year-over-year — company-wide annual totals, ascending by year.
+  const annualBalances = Array.from(annual.entries())
+    .sort(([a], [b]) => a - b)
+    .map(([year, v]) => ({
+      year,
+      incomeCents: v.incomeCents,
+      expenseCents: v.expenseCents,
+      netCents: v.incomeCents - v.expenseCents,
+    }));
+  const years = annualBalances.map((a) => a.year);
+
+  // Per-property net by year for the YoY pivot. Mirrors `propertyRollup` —
+  // every active property is included (missing years render as $0 client-side).
+  const propertyAnnual: Array<{
+    propertyId: string;
+    propertyName: string;
+    byYear: Record<
+      string,
+      { incomeCents: number; expenseCents: number; netCents: number }
+    >;
+  }> = properties.map((p) => {
+    const scopeYears = annualByScope.get(String(p._id));
+    const byYear: Record<
+      string,
+      { incomeCents: number; expenseCents: number; netCents: number }
+    > = {};
+    if (scopeYears) {
+      for (const [yr, v] of Array.from(scopeYears.entries())) {
+        byYear[String(yr)] = {
+          incomeCents: v.incomeCents,
+          expenseCents: v.expenseCents,
+          netCents: v.incomeCents - v.expenseCents,
+        };
+      }
+    }
+    return {
+      propertyId: String(p._id),
+      propertyName: propertyNameById.get(String(p._id)) ?? 'Unknown',
+      byYear,
+    };
+  });
+
+  // Company-scoped activity appears as its own row only when it carries values.
+  const companyScopeYears = annualByScope.get('__company__');
+  if (companyScopeYears) {
+    const byYear: Record<
+      string,
+      { incomeCents: number; expenseCents: number; netCents: number }
+    > = {};
+    let hasActivity = false;
+    for (const [yr, v] of Array.from(companyScopeYears.entries())) {
+      if (v.incomeCents !== 0 || v.expenseCents !== 0) hasActivity = true;
+      byYear[String(yr)] = {
+        incomeCents: v.incomeCents,
+        expenseCents: v.expenseCents,
+        netCents: v.incomeCents - v.expenseCents,
+      };
+    }
+    if (hasActivity) {
+      propertyAnnual.push({
+        propertyId: '__company__',
+        propertyName: 'Company-scoped',
+        byYear,
+      });
+    }
+  }
+
   return NextResponse.json({
     accountingMode: mode,
     defaultCurrency,
@@ -274,5 +369,9 @@ export async function GET(request: Request) {
     },
     propertyRollup,
     monthlyBalances,
+    // Year-over-year reporting fields (additive).
+    years,
+    annualBalances,
+    propertyAnnual,
   });
 }
