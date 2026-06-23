@@ -16,6 +16,10 @@ import {
   postBillToLedger,
   LockedPeriodError,
 } from '@/lib/pm/postBillToLedger';
+import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
+import { BillPayment } from '@/lib/db/models/pm/BillPayment';
+import { reverseJournalEntry } from '@/lib/pm/reverseJournalEntry';
+import { assertWriteAllowed } from '@/lib/pm/lockedPeriod';
 
 export const runtime = 'nodejs';
 
@@ -40,7 +44,7 @@ export async function GET(
   return NextResponse.json({
     id: String(doc._id),
     vendorId: doc.vendorId ? String(doc.vendorId) : null,
-    dueDate: doc.dueDate,
+    invoiceDate: doc.invoiceDate,
     status: doc.status,
     memo: doc.memo ?? '',
     refNo: doc.refNo ?? '',
@@ -99,8 +103,28 @@ export async function PATCH(
 
   const wasDraft = doc.status === 'Draft';
 
+  // Snapshot the JE-affecting fields BEFORE mutating the doc, so we can tell
+  // whether a *posted* bill's edit is financially material (lines/scope/date/
+  // memo all land on the accrual JE) and therefore needs a reverse + re-post.
+  const before = {
+    // Compared at calendar-day granularity: clients submit a bare YYYY-MM-DD as
+    // midnight UTC, but a stored date may be noon-anchored (InlineFieldEditor),
+    // so an exact-instant compare would flag a no-op edit as a date change.
+    invoiceDay: doc.invoiceDate
+      ? doc.invoiceDate.toISOString().slice(0, 10)
+      : '',
+    memo: doc.memo ?? '',
+    scopeType: doc.scope?.type ?? 'Company',
+    scopeId: doc.scope?.id ? String(doc.scope.id) : null,
+    lines: (doc.lines ?? []).map((l) => ({
+      accountId: String(l.accountId),
+      amount: l.amount,
+      description: l.description ?? '',
+    })),
+  };
+
   const {
-    dueDate,
+    invoiceDate,
     vendorId,
     scope,
     unitId,
@@ -112,7 +136,7 @@ export async function PATCH(
     ...rest
   } = parsed.data;
   Object.assign(doc, rest);
-  if (dueDate !== undefined) doc.dueDate = new Date(dueDate);
+  if (invoiceDate !== undefined) doc.invoiceDate = new Date(invoiceDate);
   if (vendorId !== undefined) {
     doc.vendorId = vendorId ? new Types.ObjectId(vendorId) : null;
   }
@@ -153,7 +177,7 @@ export async function PATCH(
         ctx,
         bill: {
           _id: doc._id,
-          dueDate: doc.dueDate,
+          invoiceDate: doc.invoiceDate,
           memo: doc.memo,
           vendorId: doc.vendorId,
           scopePropertyId:
@@ -175,14 +199,153 @@ export async function PATCH(
     }
   }
 
+  // A posted bill (Due/Overdue/Partially paid/Paid) already has an accrual JE.
+  // When a financially-material field changes we reverse that JE and re-post a
+  // fresh one so the ledger keeps matching the bill (full edit + auto re-post).
+  // A PATCH that flips status to Voided is a void, not an edit — skip re-posting.
+  const isPosted = !wasDraft && status !== 'Voided';
+
+  const afterLines = (doc.lines ?? []).map((l) => ({
+    accountId: String(l.accountId),
+    amount: l.amount,
+    description: l.description ?? '',
+  }));
+  const linesChanged =
+    lines !== undefined &&
+    (afterLines.length !== before.lines.length ||
+      afterLines.some(
+        (l, i) =>
+          l.accountId !== before.lines[i]!.accountId ||
+          l.amount !== before.lines[i]!.amount ||
+          l.description !== before.lines[i]!.description,
+      ));
+  const invoiceDateChanged =
+    invoiceDate !== undefined &&
+    doc.invoiceDate.toISOString().slice(0, 10) !== before.invoiceDay;
+  const memoChanged =
+    parsed.data.memo !== undefined && (doc.memo ?? '') !== before.memo;
+  const scopeChanged =
+    scope !== undefined &&
+    ((doc.scope?.type ?? 'Company') !== before.scopeType ||
+      (doc.scope?.id ? String(doc.scope.id) : null) !== before.scopeId);
+  const materialChanged =
+    linesChanged || invoiceDateChanged || memoChanged || scopeChanged;
+
+  let reposted = false;
+  let repostPayload: Record<string, unknown> | undefined;
+
+  if (isPosted && materialChanged) {
+    // A bill with applied payments has separate, immutable payment JEs we can't
+    // keep consistent by re-posting the accrual. Force void-the-payments-first.
+    const paymentCount = await BillPayment.countDocuments({
+      organizationId: new Types.ObjectId(ctx.orgId),
+      billId: doc._id,
+    });
+    if (paymentCount > 0) {
+      return NextResponse.json(
+        {
+          error:
+            'This bill has payments applied. Void the payments before editing amounts, dates, scope, or memo.',
+        },
+        { status: 409 },
+      );
+    }
+
+    const oldJe = doc.journalEntryId
+      ? await JournalEntry.findOne({
+          _id: doc.journalEntryId,
+          organizationId: new Types.ObjectId(ctx.orgId),
+        })
+      : null;
+    const newScopePropertyId =
+      doc.scope?.type === 'Property' && doc.scope.id
+        ? String(doc.scope.id)
+        : null;
+
+    // Lock-gate BOTH the old JE's date (the reversal) and the new invoiceDate
+    // (the re-post) up front, before any write, so a lock failure leaves
+    // nothing half-written.
+    try {
+      if (oldJe && oldJe.status === 'Posted') {
+        await assertWriteAllowed({
+          orgId: ctx.orgId,
+          txnDate: oldJe.date,
+          scopePropertyId:
+            oldJe.scopeType === 'Property' && oldJe.scopeId
+              ? String(oldJe.scopeId)
+              : null,
+          ctx,
+        });
+      }
+      await assertWriteAllowed({
+        orgId: ctx.orgId,
+        txnDate: doc.invoiceDate,
+        scopePropertyId: newScopePropertyId,
+        ctx,
+      });
+    } catch (err) {
+      if (err instanceof LockedPeriodError) {
+        return NextResponse.json(
+          { error: err.policyMessage, policyId: err.policyId },
+          { status: 423 },
+        );
+      }
+      throw err;
+    }
+
+    if (oldJe && oldJe.status === 'Posted') {
+      await reverseJournalEntry({
+        je: oldJe,
+        ctx,
+        memo: `Reversal (bill edit) of JE ${String(oldJe._id)}`,
+      });
+    }
+
+    try {
+      const result = await postBillToLedger({
+        orgId: ctx.orgId,
+        ctx,
+        bill: {
+          _id: doc._id,
+          invoiceDate: doc.invoiceDate,
+          memo: doc.memo,
+          vendorId: doc.vendorId,
+          scopePropertyId: newScopePropertyId,
+          lines: doc.lines, // already cents
+          attachmentFileId: doc.attachmentFileId,
+        },
+      });
+      repostPayload = {
+        oldJournalEntryId: oldJe ? String(oldJe._id) : null,
+        newJournalEntryId: String(result.journalEntryId),
+      };
+      doc.journalEntryId = result.journalEntryId;
+      reposted = true;
+    } catch (err) {
+      if (err instanceof LockedPeriodError) {
+        return NextResponse.json(
+          { error: err.policyMessage, policyId: err.policyId },
+          { status: 423 },
+        );
+      }
+      const msg = err instanceof Error ? err.message : 'Failed to re-post bill';
+      return NextResponse.json({ error: msg }, { status: 400 });
+    }
+  }
+
   await doc.save();
 
   await logActivity({
     orgId: ctx.orgId,
     parentType: 'Bill',
     parentId: doc._id,
-    eventType: wasDraft && doc.status !== 'Draft' ? 'Bill posted' : 'Bill updated',
+    eventType: reposted
+      ? 'Bill re-posted'
+      : wasDraft && doc.status !== 'Draft'
+        ? 'Bill posted'
+        : 'Bill updated',
     actorUserId: ctx.userId,
+    payload: repostPayload,
   });
 
   return NextResponse.json({

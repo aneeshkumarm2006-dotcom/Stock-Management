@@ -18,7 +18,7 @@ const billScopeSchema = z.discriminatedUnion('type', [
 
 const baseFields = {
   vendorId: objectIdSchema.nullable().optional(),
-  dueDate: z.string().datetime().or(z.string().date()),
+  invoiceDate: z.string().datetime().or(z.string().date()),
   status: z.enum(BILL_STATUSES as readonly [string, ...string[]]).optional(),
   memo: z.string().max(2000).optional(),
   refNo: z.string().max(60).optional(),
@@ -35,7 +35,7 @@ export const billCreateSchema = z.object(baseFields);
 export const billUpdateSchema = z
   .object({
     vendorId: baseFields.vendorId,
-    dueDate: baseFields.dueDate.optional(),
+    invoiceDate: baseFields.invoiceDate.optional(),
     status: baseFields.status,
     memo: baseFields.memo,
     refNo: baseFields.refNo,

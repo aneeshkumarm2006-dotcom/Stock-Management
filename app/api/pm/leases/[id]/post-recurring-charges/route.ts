@@ -5,9 +5,10 @@
 // `nextDate` by the row's `frequency`. Each post hits `assertWriteAllowed`
 // independently — locked periods block any due charge inside the window.
 //
-// TODO Phase 6 — wire a nightly cron at 02:00 org-tz that fans out across
-// orgs and active leases. Until then this is the manual button on the lease
-// detail page.
+// This is the MANUAL sweep (the "Post recurring due now" button on the lease
+// detail page). The automated nightly counterpart lives in
+// `/api/cron/post-recurring-rent` → `runLeaseRecurringPoster`, which applies
+// the same accounting and locked-period rules unattended.
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { z } from 'zod';

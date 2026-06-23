@@ -15,7 +15,7 @@ import { RequestOwnerContributionModal } from "@/components/pm/RequestOwnerContr
 interface BillRow {
   id: string;
   vendorId: string | null;
-  dueDate: string;
+  invoiceDate: string;
   status: string;
   refNo: string;
   amount: number;
@@ -162,7 +162,7 @@ export default function BillsPage() {
               <tr>
                 <th className="py-2">Vendor</th>
                 <th>Ref #</th>
-                <th>Due date</th>
+                <th>Invoice date</th>
                 <th>Status</th>
                 <th>Amount</th>
                 <th>Source</th>
@@ -197,7 +197,7 @@ export default function BillsPage() {
                   </td>
                   <td className="text-fg-muted">{b.refNo || "—"}</td>
                   <td className="text-fg-muted">
-                    {new Date(b.dueDate).toLocaleDateString()}
+                    {new Date(b.invoiceDate).toLocaleDateString()}
                   </td>
                   <td>
                     <BillStatusChip status={b.status} />

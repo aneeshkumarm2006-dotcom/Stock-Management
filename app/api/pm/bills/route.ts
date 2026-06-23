@@ -24,7 +24,7 @@ export const runtime = 'nodejs';
 interface BillLeanLike {
   _id: unknown;
   vendorId?: unknown;
-  dueDate: Date;
+  invoiceDate: Date;
   status: string;
   refNo?: string;
   amount: number;
@@ -58,14 +58,14 @@ export async function GET(request: Request) {
   }
 
   const rows = await Bill.find(filter)
-    .sort({ dueDate: -1 })
+    .sort({ invoiceDate: -1 })
     .lean<BillLeanLike[]>();
 
   return NextResponse.json(
     rows.map((r) => ({
       id: String(r._id),
       vendorId: r.vendorId ? String(r.vendorId) : null,
-      dueDate: r.dueDate,
+      invoiceDate: r.invoiceDate,
       status: r.status,
       refNo: r.refNo ?? '',
       amount: r.amount,
@@ -132,9 +132,9 @@ export async function POST(request: Request) {
     amount: toCents(l.amount),
   }));
 
-  const dueDate = new Date(parsed.data.dueDate);
-  if (Number.isNaN(dueDate.getTime())) {
-    return NextResponse.json({ error: 'Invalid dueDate' }, { status: 400 });
+  const invoiceDate = new Date(parsed.data.invoiceDate);
+  if (Number.isNaN(invoiceDate.getTime())) {
+    return NextResponse.json({ error: 'Invalid invoiceDate' }, { status: 400 });
   }
 
   const status = parsed.data.status ?? 'Draft';
@@ -146,7 +146,7 @@ export async function POST(request: Request) {
     vendorId: parsed.data.vendorId
       ? new Types.ObjectId(parsed.data.vendorId)
       : null,
-    dueDate,
+    invoiceDate,
     status,
     memo: parsed.data.memo,
     refNo: parsed.data.refNo,
@@ -176,7 +176,7 @@ export async function POST(request: Request) {
         ctx,
         bill: {
           _id: bill._id,
-          dueDate,
+          invoiceDate,
           memo: parsed.data.memo,
           vendorId: bill.vendorId,
           scopePropertyId:

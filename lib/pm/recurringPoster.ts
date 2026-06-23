@@ -59,7 +59,7 @@ async function postArtifact(
       organizationId: rule.organizationId,
       vendorId:
         rule.payee?.type === 'Vendor' ? rule.payee.id : null,
-      dueDate: rule.nextDate,
+      invoiceDate: rule.nextDate,
       status: 'Draft',
       memo: rule.memo,
       lines: rule.amounts.map((a) => ({

@@ -56,8 +56,8 @@ export function RecordBillModal({
   const [properties, setProperties] = React.useState<PropertyOption[]>([]);
 
   const [vendorId, setVendorId] = React.useState("");
-  const [dueDate, setDueDate] = React.useState(() =>
-    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+  const [invoiceDate, setInvoiceDate] = React.useState(() =>
+    new Date().toISOString().slice(0, 10),
   );
   const [refNo, setRefNo] = React.useState("");
   const [memo, setMemo] = React.useState("");
@@ -92,9 +92,7 @@ export function RecordBillModal({
 
   function reset() {
     setVendorId("");
-    setDueDate(
-      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-    );
+    setInvoiceDate(new Date().toISOString().slice(0, 10));
     setRefNo("");
     setMemo("");
     setScopeType("Company");
@@ -135,7 +133,7 @@ export function RecordBillModal({
     setSaving(true);
     const body: Record<string, unknown> = {
       vendorId,
-      dueDate: new Date(dueDate).toISOString(),
+      invoiceDate: new Date(invoiceDate).toISOString(),
       refNo: refNo.trim() || undefined,
       memo: memo.trim() || undefined,
       status: statusOnSave,
@@ -195,12 +193,12 @@ export function RecordBillModal({
               </select>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="bill-due">Due date *</Label>
+              <Label htmlFor="bill-invoice">Invoice date *</Label>
               <Input
-                id="bill-due"
+                id="bill-invoice"
                 type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+                value={invoiceDate}
+                onChange={(e) => setInvoiceDate(e.target.value)}
               />
             </div>
           </div>

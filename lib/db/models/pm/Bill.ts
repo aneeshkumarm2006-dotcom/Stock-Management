@@ -5,7 +5,7 @@
 // Lifecycle ([G-S-17]):
 //   Draft → editable; no GL impact
 //   Due → posted to JE; awaiting payment
-//   Overdue → derived nightly when dueDate < today
+//   Overdue → derived nightly when invoiceDate < today
 //   Partially paid → after one or more BillPayments total < Bill.amount
 //   Paid → after BillPayments sum >= Bill.amount
 //   Voided → paired with a reversing JE
@@ -43,7 +43,7 @@ export interface IBill {
   organizationId: Types.ObjectId;
   /** May be null when created via email ingest until a PM links the vendor. */
   vendorId?: Types.ObjectId | null;
-  dueDate: Date;
+  invoiceDate: Date;
   status: BillStatus;
   memo?: string;
   refNo?: string;
@@ -96,7 +96,7 @@ const BillSchema = new Schema<IBill>(
       required: true,
     },
     vendorId: { type: Schema.Types.ObjectId, ref: 'PmVendor', default: null },
-    dueDate: { type: Date, required: true },
+    invoiceDate: { type: Date, required: true },
     status: {
       type: String,
       enum: BILL_STATUSES_DB,
@@ -151,7 +151,7 @@ const BillSchema = new Schema<IBill>(
   { timestamps: true, collection: 'pm_bills' },
 );
 
-BillSchema.index({ organizationId: 1, status: 1, dueDate: 1 });
+BillSchema.index({ organizationId: 1, status: 1, invoiceDate: 1 });
 BillSchema.index({ organizationId: 1, vendorId: 1, status: 1 });
 BillSchema.index({ organizationId: 1, workOrderId: 1 });
 

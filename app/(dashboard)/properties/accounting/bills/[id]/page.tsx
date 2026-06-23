@@ -18,6 +18,8 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
+import { EditEntityButton } from "@/components/pm/EditEntityButton";
+import { EditBillModal } from "@/components/pm/EditBillModal";
 import { useToast } from "@/components/ui/toast";
 
 interface BillLine {
@@ -28,7 +30,7 @@ interface BillLine {
 interface BillDetail {
   id: string;
   vendorId: string | null;
-  dueDate: string;
+  invoiceDate: string;
   status: string;
   memo: string;
   refNo: string;
@@ -51,6 +53,7 @@ export default function BillDetailPage() {
   const [doc, setDoc] = React.useState<BillDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -101,11 +104,20 @@ export default function BillDetailPage() {
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Bills
         </Button>
-        {doc.status === "Draft" && (
-          <Button size="sm" disabled={busy} onClick={post}>
-            Post bill
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {doc.status !== "Voided" && (
+            <EditEntityButton
+              variant="header"
+              label="Edit bill"
+              onClick={() => setEditOpen(true)}
+            />
+          )}
+          {doc.status === "Draft" && (
+            <Button size="sm" disabled={busy} onClick={post}>
+              Post bill
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -115,7 +127,7 @@ export default function BillDetailPage() {
             <span className="text-fg-muted">{doc.status}</span>
           </CardTitle>
           <div className="text-xs text-fg-muted">
-            Due {new Date(doc.dueDate).toLocaleDateString()} · Source: {doc.createdBy}
+            Invoice {new Date(doc.invoiceDate).toLocaleDateString()} · Source: {doc.createdBy}
             {doc.refNo && ` · Ref: ${doc.refNo}`}
           </div>
         </CardHeader>
@@ -140,22 +152,28 @@ export default function BillDetailPage() {
                 endpoint={`/api/pm/bills/${doc.id}`}
                 data={{
                   refNo: doc.refNo,
-                  dueDate: doc.dueDate,
+                  invoiceDate: doc.invoiceDate,
                   memo: doc.memo,
                 } as Record<string, unknown>}
                 fields={[
                   { key: "refNo", label: "Reference / invoice #" },
-                  { key: "dueDate", label: "Due date", type: "date" },
+                  { key: "invoiceDate", label: "Invoice date", type: "date" },
                   { key: "memo", label: "Memo", type: "textarea" },
                 ]}
                 title="Bill"
                 canEdit={doc.status === "Draft"}
                 onSaved={load}
               />
-              {doc.status !== "Draft" && (
+              {doc.status !== "Draft" && doc.status !== "Voided" && (
                 <p className="mt-2 text-xs text-fg-muted">
-                  Bill is {doc.status.toLowerCase()}; fields are locked. Void
-                  and re-record to change.
+                  {doc.status === "Partially paid" || doc.status === "Paid"
+                    ? "This bill has payments applied. Use Edit bill to update the vendor or reference; to change amounts, dates, scope, or memo, void the payments first."
+                    : "Use Edit bill to change a posted bill — this reverses the journal entry and re-posts a corrected one."}
+                </p>
+              )}
+              {doc.status === "Voided" && (
+                <p className="mt-2 text-xs text-fg-muted">
+                  Bill is voided; it can no longer be edited.
                 </p>
               )}
             </CardContent>
@@ -255,6 +273,16 @@ export default function BillDetailPage() {
           <ActivityLog parentType="Bill" parentId={doc.id} />
         </CardContent>
       </Card>
+
+      <EditBillModal
+        open={editOpen}
+        billId={doc.id}
+        onClose={() => setEditOpen(false)}
+        onSaved={async () => {
+          setEditOpen(false);
+          await load();
+        }}
+      />
     </div>
   );
 }

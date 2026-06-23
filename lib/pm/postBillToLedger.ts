@@ -28,7 +28,7 @@ export interface PostBillToLedgerInput {
   ctx: PmContext;
   bill: {
     _id: Types.ObjectId;
-    dueDate: Date;
+    invoiceDate: Date;
     memo?: string;
     vendorId?: Types.ObjectId | null;
     scopePropertyId?: Types.ObjectId | string | null;
@@ -52,7 +52,7 @@ export async function postBillToLedger(
 
   await assertWriteAllowed({
     orgId: input.orgId,
-    txnDate: input.bill.dueDate,
+    txnDate: input.bill.invoiceDate,
     scopePropertyId,
     ctx: input.ctx,
   });
@@ -106,7 +106,7 @@ export async function postBillToLedger(
 
   const je = await JournalEntry.create({
     organizationId: orgObjectId,
-    date: input.bill.dueDate,
+    date: input.bill.invoiceDate,
     scopeType: scopePropertyId ? 'Property' : 'Company',
     scopeId: scopePropertyId ? new Types.ObjectId(scopePropertyId) : null,
     memo: input.bill.memo

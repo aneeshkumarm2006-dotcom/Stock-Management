@@ -13,6 +13,10 @@
       "schedule": "30 6 * * *"
     },
     {
+      "path": "/api/cron/post-recurring-rent",
+      "schedule": "45 6 * * *"
+    },
+    {
       "path": "/api/cron/dispatch-scheduled-emails",
       "schedule": "*/5 * * * *"
     }

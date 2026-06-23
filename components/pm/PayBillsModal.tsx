@@ -24,7 +24,7 @@ import {
 interface BillRow {
   id: string;
   vendorId: string | null;
-  dueDate: string;
+  invoiceDate: string;
   status: string;
   refNo: string;
   amount: number;
@@ -273,7 +273,7 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
                 <th />
                 <th>Vendor</th>
                 <th>Ref</th>
-                <th>Due</th>
+                <th>Invoice</th>
                 <th>Amount</th>
                 <th>Pay</th>
               </tr>
@@ -309,7 +309,7 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
                     </td>
                     <td className="text-fg-muted">{b.refNo || "—"}</td>
                     <td className="text-fg-muted">
-                      {new Date(b.dueDate).toLocaleDateString()}
+                      {new Date(b.invoiceDate).toLocaleDateString()}
                     </td>
                     <td className="tabular-nums">
                       ${(b.amount / 100).toFixed(2)}

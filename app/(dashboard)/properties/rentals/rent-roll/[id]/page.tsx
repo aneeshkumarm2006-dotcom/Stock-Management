@@ -551,9 +551,9 @@ export default function LeaseDetailPage() {
                   </table>
                 )}
                 <p className="mt-2 text-xs text-fg-muted">
-                  TODO Phase 6 — nightly cron will auto-post. Click{" "}
-                  <em>Post recurring due now</em> to fire the manual sweep
-                  for testing.
+                  A nightly cron auto-posts charges as they come due. Use{" "}
+                  <em>Post recurring due now</em> to post any due charges
+                  immediately without waiting for the sweep.
                 </p>
               </CardContent>
             </Card>

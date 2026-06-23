@@ -13,6 +13,7 @@ import {
 import { depositUpdateSchema } from '@/lib/validation/pm/deposit';
 import { logActivity } from '@/lib/pm/activity';
 import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
+import { reverseJournalEntry } from '@/lib/pm/reverseJournalEntry';
 import { serializeDeposit } from '../serialize';
 
 export const runtime = 'nodejs';
@@ -159,38 +160,14 @@ export async function DELETE(
     throw err;
   }
 
-  // Void the linked JE by hand (mirror /void route logic so reversal posts
-  // without re-running lock checks).
-  if (linkedJe) {
-    const je = linkedJe;
-    if (je && je.status === 'Posted') {
-      const reversingLines = je.lines.map((line) => ({
-        accountId: line.accountId,
-        scopeType: line.scopeType,
-        scopeId: line.scopeId,
-        unitId: line.unitId,
-        name: line.name,
-        description: line.description ? `Reversal: ${line.description}` : 'Reversal',
-        debit: line.credit,
-        credit: line.debit,
-      })) as typeof je.lines;
-      const reversal = await JournalEntry.create({
-        organizationId: je.organizationId,
-        date: je.date,
-        scopeType: je.scopeType,
-        scopeId: je.scopeId,
-        memo: `Reversal of deposit ${String(doc._id)}`,
-        lines: reversingLines,
-        status: 'Posted',
-        reversesJournalEntryId: je._id,
-        createdByUserId: new Types.ObjectId(ctx.userId),
-      });
-      je.status = 'Voided';
-      je.voidedAt = new Date();
-      je.voidedByUserId = new Types.ObjectId(ctx.userId);
-      je.reversedByJournalEntryId = reversal._id;
-      await je.save();
-    }
+  // Void the linked JE (we already lock-checked above, so the reversal posts
+  // without re-running the gate — the shared helper performs no lock check).
+  if (linkedJe && linkedJe.status === 'Posted') {
+    await reverseJournalEntry({
+      je: linkedJe,
+      ctx,
+      memo: `Reversal of deposit ${String(doc._id)}`,
+    });
   }
 
   doc.status = 'Voided';

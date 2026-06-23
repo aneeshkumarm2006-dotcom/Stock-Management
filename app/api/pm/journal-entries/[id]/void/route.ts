@@ -18,6 +18,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { logActivity } from '@/lib/pm/activity';
 import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
+import { reverseJournalEntry } from '@/lib/pm/reverseJournalEntry';
 import { serializeJournalEntry } from '../../serialize';
 
 export const runtime = 'nodejs';
@@ -91,37 +92,9 @@ export async function POST(
     throw err;
   }
 
-  const reversingLines = original.lines.map((line) => ({
-    accountId: line.accountId,
-    scopeType: line.scopeType,
-    scopeId: line.scopeId,
-    unitId: line.unitId,
-    name: line.name,
-    description: line.description ? `Reversal: ${line.description}` : 'Reversal',
-    debit: line.credit, // swap
-    credit: line.debit,
-  })) as typeof original.lines;
-
-  const reversal = await JournalEntry.create({
-    organizationId: orgObjectId,
-    date: original.date,
-    scopeType: original.scopeType,
-    scopeId: original.scopeId,
-    memo: `Reversal of JE ${String(original._id)}${
-      original.memo ? ` — ${original.memo}` : ''
-    }`.slice(0, 256),
-    attachmentFileId: null,
-    lines: reversingLines,
-    status: 'Posted',
-    reversesJournalEntryId: original._id,
-    createdByUserId: new Types.ObjectId(ctx.userId),
-  });
-
-  original.status = 'Voided';
-  original.voidedAt = new Date();
-  original.voidedByUserId = new Types.ObjectId(ctx.userId);
-  original.reversedByJournalEntryId = reversal._id;
-  await original.save();
+  // Build the paired reversing entry and flip the original to Voided. The
+  // helper's default memo matches the prior inline behavior exactly.
+  const { reversal } = await reverseJournalEntry({ je: original, ctx });
 
   await logActivity({
     orgId: ctx.orgId,

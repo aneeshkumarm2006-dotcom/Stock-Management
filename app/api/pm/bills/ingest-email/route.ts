@@ -141,7 +141,7 @@ export async function POST(request: Request) {
   const bill = await Bill.create({
     organizationId: orgObjectId,
     vendorId: null,
-    dueDate: due,
+    invoiceDate: due,
     status: 'Draft',
     memo: parsed.data.body?.slice(0, 2000) ?? `Inbound email from ${parsed.data.from}`,
     refNo: parsed.data.refNo,
