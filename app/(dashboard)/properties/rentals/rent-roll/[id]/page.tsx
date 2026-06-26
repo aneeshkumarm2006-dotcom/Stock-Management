@@ -574,7 +574,7 @@ export default function LeaseDetailPage() {
                         {c.dueDate && (
                           <span className="text-fg-muted">
                             {" "}
-                            · due {new Date(c.dueDate).toLocaleDateString()}
+                            · due {formatDateOnly(c.dueDate)}
                           </span>
                         )}
                         {c.posted && (

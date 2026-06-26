@@ -38,16 +38,28 @@ export function toDateInputValueUTC(d: Date | string | null | undefined): string
 }
 
 /**
- * Render a date-only value (lease start/end) as a localized date string without
- * a timezone shift. Dates are stored as UTC midnight; rendering them with
- * `new Date(x).toLocaleDateString()` shows the previous day in UTC-negative
- * zones. Extract the calendar date and re-anchor to local noon so the displayed
- * day always matches what was entered, regardless of the viewer's timezone.
- * Returns "—" for null/empty.
+ * A date-only value → a Date anchored to *local noon* on its calendar day.
+ * Dates are stored as UTC midnight; reconstructing at local noon means the
+ * calendar day can never roll across a boundary in any realistic timezone.
+ * Returns null for null/empty/invalid. Use when a caller needs a Date for
+ * custom formatting (e.g. date-fns `format`); prefer formatDateOnly for plain
+ * localized display.
+ */
+export function parseDateOnly(d: Date | string | null | undefined): Date | null {
+  const iso = toDateInputValueUTC(d);
+  if (!iso) return null;
+  const [y, mo, day] = iso.split("-").map(Number) as [number, number, number];
+  return new Date(y, mo - 1, day, 12);
+}
+
+/**
+ * Render a date-only value (lease start/end, invoice/paid/due dates) as a
+ * localized date string without a timezone shift. Dates are stored as UTC
+ * midnight; rendering them with `new Date(x).toLocaleDateString()` shows the
+ * previous day in UTC-negative zones. Re-anchoring to local noon (via
+ * parseDateOnly) keeps the displayed day matching what was entered, regardless
+ * of the viewer's timezone. Returns "—" for null/empty.
  */
 export function formatDateOnly(d: Date | string | null | undefined): string {
-  const iso = toDateInputValueUTC(d);
-  if (!iso) return "—";
-  const [y, mo, day] = iso.split("-").map(Number) as [number, number, number];
-  return new Date(y, mo - 1, day, 12).toLocaleDateString();
+  return parseDateOnly(d)?.toLocaleDateString() ?? "—";
 }

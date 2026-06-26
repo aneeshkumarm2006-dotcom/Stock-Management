@@ -11,6 +11,7 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface Row {
   id: string;
@@ -141,7 +142,7 @@ export default function ProjectsPage() {
                   </td>
                   <td className="text-fg-muted">
                     {r.dueDate
-                      ? new Date(r.dueDate).toLocaleDateString()
+                      ? formatDateOnly(r.dueDate)
                       : "—"}
                   </td>
                 </tr>

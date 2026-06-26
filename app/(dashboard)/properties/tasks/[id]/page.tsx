@@ -27,6 +27,7 @@ import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { AddWorkOrderModal } from "@/components/pm/AddWorkOrderModal";
 import { AddTaskModal } from "@/components/pm/AddTaskModal";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 import { RequestOwnerContributionModal } from "@/components/pm/RequestOwnerContributionModal";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { useToast } from "@/components/ui/toast";
@@ -243,7 +244,7 @@ export default function TaskDetailPage() {
                   doc.pastDue ? "text-error font-bold" : "text-fg-muted"
                 }
               >
-                Due {new Date(doc.dueDate).toLocaleDateString()}
+                Due {formatDateOnly(doc.dueDate)}
               </span>
             )}
             {projects.map((p) => (
@@ -367,7 +368,7 @@ export default function TaskDetailPage() {
                     {ocrLinks.map((o) => (
                       <tr key={o.id} className="border-b border-border/40">
                         <td className="py-1">{o.status}</td>
-                        <td>{new Date(o.dueDate).toISOString().slice(0, 10)}</td>
+                        <td>{formatDateOnly(o.dueDate)}</td>
                         <td className="text-right tabular-nums">
                           <CurrencyAmount cents={o.requestedAmount} />
                         </td>

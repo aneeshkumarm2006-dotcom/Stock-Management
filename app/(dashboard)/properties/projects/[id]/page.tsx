@@ -22,6 +22,7 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { AddProjectTasksModal } from "@/components/pm/AddProjectTasksModal";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface ProjectDetail {
   id: string;
@@ -195,7 +196,7 @@ export default function ProjectDetailPage() {
             </span>
             {doc.dueDate && (
               <span className="text-fg-muted">
-                Due {new Date(doc.dueDate).toLocaleDateString()}
+                Due {formatDateOnly(doc.dueDate)}
               </span>
             )}
           </div>
@@ -315,7 +316,7 @@ export default function ProjectDetailPage() {
                           }
                         >
                           {t.dueDate
-                            ? new Date(t.dueDate).toLocaleDateString()
+                            ? formatDateOnly(t.dueDate)
                             : "—"}
                         </td>
                         <td className="text-right">

@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { ComingSoon } from "@/components/pm/ComingSoon";
 import { AddTaskModal } from "@/components/pm/AddTaskModal";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface TaskRow {
   id: string;
@@ -275,7 +276,7 @@ function TaskTable({
                 t.pastDue ? "text-error font-bold" : "text-fg-muted"
               }
             >
-              {t.dueDate ? new Date(t.dueDate).toLocaleDateString() : "—"}
+              {t.dueDate ? formatDateOnly(t.dueDate) : "—"}
             </td>
             <td className="text-fg-muted">
               {t.workOrderIds.length > 0 ? t.workOrderIds.length : "—"}

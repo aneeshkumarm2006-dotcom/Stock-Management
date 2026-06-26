@@ -104,6 +104,39 @@ export async function GET(request: Request) {
     cells.set(k, (cells.get(k) ?? 0) + signedNet);
   }
 
+  // Surface amounts scoped to ARCHIVED (inactive/deleted) properties so they
+  // never silently vanish from the P&L. The aggregation keys such cells by the
+  // real property _id, but the column list above only contains *active*
+  // properties — a posted expense on a later-archived property would then have
+  // no column to render into and would be dropped from every column/grand total
+  // (BR-AC-15 reconciliation). Give each orphan scope its own "(archived)"
+  // column so the cells render and the totals add up.
+  const activePropIds = new Set(properties.map((p) => String(p._id)));
+  const orphanPropIds = new Set<string>();
+  for (const row of rows) {
+    if (row._id.scopeType === 'Property' && row._id.scopeId) {
+      const pid = String(row._id.scopeId);
+      if (!activePropIds.has(pid)) orphanPropIds.add(pid);
+    }
+  }
+  const archivedProps = orphanPropIds.size
+    ? await Property.find({
+        organizationId: orgObjectId,
+        _id: {
+          $in: Array.from(orphanPropIds).map((id) => new Types.ObjectId(id)),
+        },
+      })
+        .select({ _id: 1, propertyName: 1 })
+        .lean<Array<{ _id: Types.ObjectId; propertyName: string }>>()
+    : [];
+  const archivedNameById = new Map(
+    archivedProps.map((p) => [String(p._id), p.propertyName]),
+  );
+  const archivedColumns = Array.from(orphanPropIds).map((id) => ({
+    id,
+    name: `${archivedNameById.get(id) || 'Archived property'} (archived)`,
+  }));
+
   // Phase 9 (BR-AC-20) — surface HOA per-association groupings. Pull
   // associationName per active BankAccount; the page can use this to
   // render an "Associations" sub-total row. Only emitted when at least
@@ -142,6 +175,7 @@ export async function GET(request: Request) {
         id: String(p._id),
         name: p.propertyName,
       })),
+      ...archivedColumns,
     ],
     cells: Array.from(cells.entries()).map(([k, v]) => {
       const [accountId, propertyId] = k.split('|');

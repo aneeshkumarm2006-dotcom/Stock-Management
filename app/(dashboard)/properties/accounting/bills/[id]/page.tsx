@@ -21,6 +21,7 @@ import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { EditBillModal } from "@/components/pm/EditBillModal";
 import { useToast } from "@/components/ui/toast";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface BillLine {
   accountId: string;
@@ -127,7 +128,7 @@ export default function BillDetailPage() {
             <span className="text-fg-muted">{doc.status}</span>
           </CardTitle>
           <div className="text-xs text-fg-muted">
-            Invoice {new Date(doc.invoiceDate).toLocaleDateString()} · Source: {doc.createdBy}
+            Invoice {formatDateOnly(doc.invoiceDate)} · Source: {doc.createdBy}
             {doc.refNo && ` · Ref: ${doc.refNo}`}
           </div>
         </CardHeader>
@@ -197,11 +198,7 @@ export default function BillDetailPage() {
                 <Field label="Work order" value={doc.workOrderId || "—"} />
                 <Field
                   label="Paid date"
-                  value={
-                    doc.paidDate
-                      ? new Date(doc.paidDate).toLocaleDateString()
-                      : "—"
-                  }
+                  value={formatDateOnly(doc.paidDate)}
                 />
               </dl>
             </CardContent>

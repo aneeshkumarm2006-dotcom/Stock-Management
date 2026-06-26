@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 import { useToast } from "@/components/ui/toast";
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
@@ -918,7 +919,7 @@ function PropertyTasksTab({ propertyId }: { propertyId: string }) {
                     }
                   >
                     {t.dueDate
-                      ? new Date(t.dueDate).toLocaleDateString()
+                      ? formatDateOnly(t.dueDate)
                       : "—"}
                   </td>
                 </tr>

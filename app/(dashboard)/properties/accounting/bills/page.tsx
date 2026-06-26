@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/toast";
 import { RecordBillModal } from "@/components/pm/RecordBillModal";
 import { PayBillsModal } from "@/components/pm/PayBillsModal";
 import { RequestOwnerContributionModal } from "@/components/pm/RequestOwnerContributionModal";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface BillRow {
   id: string;
@@ -20,6 +21,7 @@ interface BillRow {
   refNo: string;
   amount: number;
   workOrderId: string | null;
+  journalEntryId: string | null;
   createdBy: string;
 }
 
@@ -28,7 +30,16 @@ interface VendorOption {
   displayName: string;
 }
 
-type StatusFilter = "open" | "drafts" | "paid" | "all";
+type StatusFilter = "open" | "drafts" | "paid" | "unreflected" | "all";
+
+// Why a bill is missing from Financials — keyed by the reconciliation API's
+// reason codes (see lib/pm/billReflection.ts). Shown as the badge tooltip.
+const REASON_LABEL: Record<string, string> = {
+  UNPOSTED: "Draft — not posted to the ledger, so it doesn't reach Financials",
+  JE_MISSING: "Its journal entry is missing or not posted",
+  NON_PL_ACCOUNT: "Posted to a non-income/expense account (e.g. an asset)",
+  OUTSIDE_DATE_RANGE: "Dated outside the selected Financials period",
+};
 
 export default function BillsPage() {
   const { toast } = useToast();
@@ -40,6 +51,10 @@ export default function BillsPage() {
   const [recordOpen, setRecordOpen] = React.useState(false);
   const [payOpen, setPayOpen] = React.useState(false);
   const [ocrOpen, setOcrOpen] = React.useState(false);
+  // billId → reason for bills that don't show in Financials.
+  const [unreflected, setUnreflected] = React.useState<Map<string, string>>(
+    new Map(),
+  );
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -52,6 +67,23 @@ export default function BillsPage() {
       setError("Network error");
     } finally {
       setLoading(false);
+    }
+    // Reflection badges load independently so the list never waits on the
+    // heavier reconciliation query. No date window → flags only structural
+    // exclusions (drafts, missing JEs, non-P&L accounts), i.e. bills absent
+    // from Financials regardless of the period being viewed.
+    try {
+      const reconRes = await fetch("/api/pm/financials/reconciliation");
+      if (reconRes.ok) {
+        const recon = (await reconRes.json()) as {
+          unreflected: { billId: string; reason: string }[];
+        };
+        setUnreflected(
+          new Map(recon.unreflected.map((u) => [u.billId, u.reason])),
+        );
+      }
+    } catch {
+      /* badges are best-effort */
     }
   }, []);
 
@@ -78,8 +110,10 @@ export default function BillsPage() {
     }
     if (filter === "drafts") return rows.filter((r) => r.status === "Draft");
     if (filter === "paid") return rows.filter((r) => r.status === "Paid");
+    if (filter === "unreflected")
+      return rows.filter((r) => unreflected.has(r.id));
     return rows;
-  }, [rows, filter]);
+  }, [rows, filter, unreflected]);
 
   return (
     <div className="space-y-4">
@@ -150,6 +184,12 @@ export default function BillsPage() {
               onClick={() => setFilter("paid")}
             />
             <FilterChip
+              label="Not in Financials"
+              count={rows.filter((r) => unreflected.has(r.id)).length}
+              selected={filter === "unreflected"}
+              onClick={() => setFilter("unreflected")}
+            />
+            <FilterChip
               label="All"
               count={rows.length}
               selected={filter === "all"}
@@ -197,10 +237,23 @@ export default function BillsPage() {
                   </td>
                   <td className="text-fg-muted">{b.refNo || "—"}</td>
                   <td className="text-fg-muted">
-                    {new Date(b.invoiceDate).toLocaleDateString()}
+                    {formatDateOnly(b.invoiceDate)}
                   </td>
                   <td>
-                    <BillStatusChip status={b.status} />
+                    <div className="flex flex-col items-start gap-1">
+                      <BillStatusChip status={b.status} />
+                      {unreflected.has(b.id) && (
+                        <span
+                          title={
+                            REASON_LABEL[unreflected.get(b.id) ?? ""] ??
+                            "Not reflected in Financials"
+                          }
+                          className="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-warning"
+                        >
+                          Not in Financials
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="tabular-nums font-bold text-fg">
                     ${(b.amount / 100).toFixed(2)}

@@ -30,6 +30,7 @@ interface BillLeanLike {
   amount: number;
   scope?: { type: string; id?: unknown };
   workOrderId?: unknown;
+  journalEntryId?: unknown;
   createdBy: string;
   updatedAt: Date;
 }
@@ -73,6 +74,7 @@ export async function GET(request: Request) {
         ? { type: r.scope.type, id: r.scope.id ? String(r.scope.id) : null }
         : null,
       workOrderId: r.workOrderId ? String(r.workOrderId) : null,
+      journalEntryId: r.journalEntryId ? String(r.journalEntryId) : null,
       createdBy: r.createdBy,
       updatedAt: r.updatedAt,
     })),

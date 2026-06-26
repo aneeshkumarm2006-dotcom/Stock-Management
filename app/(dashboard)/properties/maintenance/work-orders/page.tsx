@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { AddWorkOrderModal } from "@/components/pm/AddWorkOrderModal";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface WoRow {
   id: string;
@@ -168,7 +169,7 @@ export default function WorkOrdersPage() {
                     <PriorityChip priority={w.priority} />
                   </td>
                   <td className={w.pastDue ? "text-error font-bold" : "text-fg-muted"}>
-                    {w.dueDate ? new Date(w.dueDate).toLocaleDateString() : "—"}
+                    {w.dueDate ? formatDateOnly(w.dueDate) : "—"}
                   </td>
                   <td className="text-fg-muted">{w.billStatus}</td>
                   <td className="tabular-nums text-fg">

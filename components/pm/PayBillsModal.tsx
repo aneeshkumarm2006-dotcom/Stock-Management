@@ -20,6 +20,7 @@ import {
   BILL_PAYMENT_METHODS,
   type BillPaymentMethod,
 } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface BillRow {
   id: string;
@@ -309,7 +310,7 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
                     </td>
                     <td className="text-fg-muted">{b.refNo || "—"}</td>
                     <td className="text-fg-muted">
-                      {new Date(b.invoiceDate).toLocaleDateString()}
+                      {formatDateOnly(b.invoiceDate)}
                     </td>
                     <td className="tabular-nums">
                       ${(b.amount / 100).toFixed(2)}

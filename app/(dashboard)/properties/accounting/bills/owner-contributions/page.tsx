@@ -23,6 +23,7 @@ import { RequestOwnerContributionModal } from "@/components/pm/RequestOwnerContr
 import type { OwnerContributionStatus } from "@/types/pm";
 import { WarningInline } from "@/components/pm/WarningBadge";
 import { getWarningMessage } from "@/lib/pm/warnings";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface OcrRow {
   id: string;
@@ -181,7 +182,7 @@ export default function OwnerContributionsPage() {
                       <StatusBadge status={r.status} />
                     </td>
                     <td className="text-fg-muted">
-                      {new Date(r.dueDate).toISOString().slice(0, 10)}
+                      {formatDateOnly(r.dueDate)}
                     </td>
                     <td className="text-right tabular-nums">
                       <CurrencyAmount cents={r.requestedAmount} />

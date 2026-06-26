@@ -8,6 +8,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { WidgetCard } from "../WidgetCard";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { parseDateOnly } from "@/lib/utils/dateInput";
 
 interface TaskRow {
   id: string;
@@ -82,7 +83,7 @@ export function OverdueTasksWidget() {
               </Link>
               {t.dueDate && (
                 <span className="shrink-0 text-xs text-loss">
-                  Due {format(new Date(t.dueDate), "MMM d")}
+                  Due {format(parseDateOnly(t.dueDate)!, "MMM d")}
                 </span>
               )}
             </li>

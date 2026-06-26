@@ -40,16 +40,64 @@ interface Matrix {
   columns: Column[];
   cells: Cell[];
 }
+interface ReconReasonBucket {
+  count: number;
+  cents: number;
+}
+interface ReconSummary {
+  totalUnreflected: number;
+  totalUnreflectedCents: number;
+  byReason: Record<string, ReconReasonBucket>;
+}
+
+// Human phrases for the "not reflected" banner breakdown, keyed by the
+// reconciliation API's reason codes (lib/pm/billReflection.ts).
+const RECON_REASON_PHRASE: Record<string, string> = {
+  UNPOSTED: "draft / unposted",
+  JE_MISSING: "missing journal entry",
+  NON_PL_ACCOUNT: "non-P&L account",
+  OUTSIDE_DATE_RANGE: "outside this date range",
+};
+
+function reconBreakdown(summary: ReconSummary): string {
+  return Object.entries(summary.byReason)
+    .filter(([, v]) => v.count > 0)
+    .map(([k, v]) => `${v.count} ${RECON_REASON_PHRASE[k] ?? k}`)
+    .join(", ");
+}
+
+// Period selector: flip the single from/to window between a whole month, a
+// whole year, or a hand-picked range. The matrix/reconciliation routes already
+// take from/to, so this is purely a client-side convenience over them — no API
+// change. Bounds are built as date-only UTC-midnight strings to match the rest
+// of the P&L (the "to" boundary is inclusive, like the existing `to = today`).
+type PeriodMode = "month" | "year" | "range";
+
+function monthBounds(ym: string): { from: string; to: string } {
+  const [y, m] = ym.split("-").map(Number) as [number, number];
+  const lastDay = new Date(y, m, 0).getDate(); // day 0 of next month = last of this
+  const mm = String(m).padStart(2, "0");
+  return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(lastDay).padStart(2, "0")}` };
+}
+
+function yearBounds(y: number): { from: string; to: string } {
+  return { from: `${y}-01-01`, to: `${y}-12-31` };
+}
 
 export default function FinancialsPage() {
   const { toast } = useToast();
   const today = new Date();
-  const startOfYear = new Date(today.getFullYear(), 0, 1);
-  const [from, setFrom] = React.useState<string>(
-    startOfYear.toISOString().slice(0, 10),
-  );
-  const [to, setTo] = React.useState<string>(today.toISOString().slice(0, 10));
+  const initialMonth = `${today.getFullYear()}-${String(
+    today.getMonth() + 1,
+  ).padStart(2, "0")}`;
+  const initialBounds = monthBounds(initialMonth);
+  const [mode, setMode] = React.useState<PeriodMode>("month");
+  const [month, setMonth] = React.useState<string>(initialMonth);
+  const [year, setYear] = React.useState<number>(today.getFullYear());
+  const [from, setFrom] = React.useState<string>(initialBounds.from);
+  const [to, setTo] = React.useState<string>(initialBounds.to);
   const [data, setData] = React.useState<Matrix | null>(null);
+  const [recon, setRecon] = React.useState<ReconSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [toggling, setToggling] = React.useState(false);
 
@@ -58,14 +106,58 @@ export default function FinancialsPage() {
     const params = new URLSearchParams();
     if (from) params.set("from", from);
     if (to) params.set("to", to);
-    const r = await fetch(`/api/pm/financials/matrix?${params.toString()}`);
-    if (r.ok) setData((await r.json()) as Matrix);
+    // Pull the matrix and the bill-reconciliation summary for the same window
+    // together, so the banner reflects exactly what this view does/doesn't show.
+    const [matrixRes, reconRes] = await Promise.all([
+      fetch(`/api/pm/financials/matrix?${params.toString()}`),
+      fetch(`/api/pm/financials/reconciliation?${params.toString()}`),
+    ]);
+    if (matrixRes.ok) setData((await matrixRes.json()) as Matrix);
+    if (reconRes.ok) {
+      setRecon(((await reconRes.json()) as { summary: ReconSummary }).summary);
+    }
     setLoading(false);
   }, [from, to]);
 
   React.useEffect(() => {
     load();
   }, [load]);
+
+  function applyMonth(ym: string) {
+    setMonth(ym);
+    const b = monthBounds(ym);
+    setFrom(b.from);
+    setTo(b.to);
+  }
+  function applyYear(y: number) {
+    setYear(y);
+    const b = yearBounds(y);
+    setFrom(b.from);
+    setTo(b.to);
+  }
+  function shiftMonth(delta: number) {
+    const [y, m] = month.split("-").map(Number) as [number, number];
+    const d = new Date(y, m - 1 + delta, 1); // rolls across year boundaries
+    applyMonth(
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    );
+  }
+  function switchMode(next: PeriodMode) {
+    setMode(next);
+    if (next === "month") applyMonth(month);
+    else if (next === "year") applyYear(year);
+    // "range" keeps the current from/to so the user can hand-edit them.
+  }
+
+  const periodLabel =
+    mode === "month"
+      ? new Date(`${month}-01T00:00:00`).toLocaleDateString(undefined, {
+          month: "long",
+          year: "numeric",
+        })
+      : mode === "year"
+        ? String(year)
+        : `${from || "…"} → ${to || "…"}`;
 
   async function toggleAccountingMode() {
     if (!data) return;
@@ -156,26 +248,130 @@ export default function FinancialsPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="space-y-1">
-              <Label>From</Label>
-              <Input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="h-9"
-              />
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="inline-flex overflow-hidden rounded border border-border">
+                {(["month", "year", "range"] as PeriodMode[]).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => switchMode(m)}
+                    className={
+                      "px-3 py-1 text-xs font-medium " +
+                      (mode === m
+                        ? "bg-fg text-bg"
+                        : "bg-surface text-fg-muted hover:text-fg")
+                    }
+                  >
+                    {m === "month" ? "Month" : m === "year" ? "Year" : "Custom range"}
+                  </button>
+                ))}
+              </div>
+
+              {mode === "month" && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => shiftMonth(-1)}
+                    aria-label="Previous month"
+                  >
+                    ‹
+                  </Button>
+                  <Input
+                    type="month"
+                    value={month}
+                    onChange={(e) => applyMonth(e.target.value)}
+                    className="h-9 w-44"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => shiftMonth(1)}
+                    aria-label="Next month"
+                  >
+                    ›
+                  </Button>
+                </div>
+              )}
+
+              {mode === "year" && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => applyYear(year - 1)}
+                    aria-label="Previous year"
+                  >
+                    ‹
+                  </Button>
+                  <Input
+                    type="number"
+                    value={year}
+                    onChange={(e) => {
+                      const y = Number(e.target.value);
+                      if (y >= 1900 && y <= 3000) applyYear(y);
+                    }}
+                    className="h-9 w-28 tabular-nums"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => applyYear(year + 1)}
+                    aria-label="Next year"
+                  >
+                    ›
+                  </Button>
+                </div>
+              )}
             </div>
-            <div className="space-y-1">
-              <Label>To</Label>
-              <Input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="h-9"
-              />
-            </div>
+
+            {mode === "range" && (
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="space-y-1">
+                  <Label>From</Label>
+                  <Input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>To</Label>
+                  <Input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    className="h-9"
+                  />
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-fg-muted">
+              Showing{" "}
+              <span className="font-medium text-fg">{periodLabel}</span>
+            </p>
           </div>
+
+          {recon && recon.totalUnreflected > 0 && (
+            <div className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-fg">
+              <span className="font-bold">
+                {recon.totalUnreflected} bill
+                {recon.totalUnreflected === 1 ? "" : "s"} totaling{" "}
+                <CurrencyAmount value={fromCents(recon.totalUnreflectedCents)} />
+              </span>{" "}
+              {recon.totalUnreflected === 1 ? "is" : "are"} not reflected here
+              {reconBreakdown(recon) ? ` (${reconBreakdown(recon)})` : ""}.{" "}
+              <Link
+                href="/properties/accounting/bills"
+                className="font-bold underline"
+              >
+                Review bills →
+              </Link>
+            </div>
+          )}
 
           {loading && <p className="text-sm text-fg-muted">Loading…</p>}
           {!loading && data && data.accounts.length === 0 && (

@@ -28,6 +28,7 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { CancelDraftLeaseDialog } from "@/components/pm/CancelDraftLeaseDialog";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 
 interface DraftLeaseDetail {
@@ -331,7 +332,7 @@ export default function DraftLeaseDetailPage() {
                           <td className="py-1">{c.memo || "—"}</td>
                           <td>
                             {c.dueDate
-                              ? new Date(c.dueDate).toLocaleDateString()
+                              ? formatDateOnly(c.dueDate)
                               : "—"}
                           </td>
                           <td>

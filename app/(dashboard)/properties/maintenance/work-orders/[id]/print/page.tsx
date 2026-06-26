@@ -5,6 +5,7 @@
 
 import * as React from "react";
 import { useParams, notFound } from "next/navigation";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface PartsRow {
   qty: number;
@@ -66,7 +67,7 @@ export default function WorkOrderPrintPage() {
         </p>
         {doc.dueDate && (
           <p className="text-sm text-fg-muted">
-            Due: {new Date(doc.dueDate).toLocaleDateString()}
+            Due: {formatDateOnly(doc.dueDate)}
           </p>
         )}
       </section>
