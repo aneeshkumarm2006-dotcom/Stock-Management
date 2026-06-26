@@ -26,6 +26,7 @@ import {
   assertWriteAllowed,
   LockedPeriodError,
 } from '@/lib/pm/lockedPeriod';
+import { buildRentChargeLines } from '@/lib/pm/rentCharge';
 import type { RentCycle } from '@/types/pm';
 
 export const runtime = 'nodejs';
@@ -212,6 +213,67 @@ export async function POST(
     });
   }
 
+  // Primary rent (base + split recovery charges) is ITSELF a recurring charge,
+  // driven off `primaryRent.nextDueDate` + the lease `rentCycle`. The rent
+  // TERMS are the source of truth — there is no separate recurringCharges[] row
+  // for base rent — so post one period here if due, mirroring the per-row sweep
+  // above. (Previously this block only advanced the cursor cosmetically, so a
+  // lease whose rent lived in primaryRent posted nothing → "Posted 0 charge(s)".)
+  if (lease.primaryRent?.nextDueDate && lease.primaryRent.nextDueDate <= asOf) {
+    const dueDate = lease.primaryRent.nextDueDate;
+    let locked = false;
+    try {
+      await assertWriteAllowed({
+        orgId: ctx.orgId,
+        txnDate: dueDate,
+        scopePropertyId: String(lease.propertyId),
+        ctx,
+      });
+    } catch (err) {
+      if (err instanceof LockedPeriodError) {
+        locked = true;
+        skipped.push({ chargeId: 'primary-rent', reason: err.policyMessage });
+      } else {
+        throw err;
+      }
+    }
+    if (!locked) {
+      const built = buildRentChargeLines(
+        {
+          primaryRent: lease.primaryRent,
+          splitRentCharges: lease.splitRentCharges,
+          propertyId: lease.propertyId,
+          unitId: lease.unitId,
+        },
+        accountsReceivableCoaId,
+      );
+      if (built) {
+        const je = await JournalEntry.create({
+          organizationId: orgId,
+          date: dueDate,
+          scopeType: 'Property',
+          scopeId: lease.propertyId,
+          memo: `Rent charge for lease #${lease.leaseNumber}`,
+          lines: built.lines,
+          status: 'Posted',
+          postedAt: new Date(),
+          createdByUserId: new Types.ObjectId(ctx.userId),
+        });
+        const newNext = advance(dueDate, lease.rentCycle);
+        lease.primaryRent.nextDueDate = newNext;
+        // Persist the advanced cursor ATOMICALLY with its committed JE before
+        // returning, so a re-run cannot double-post this period.
+        await lease.save();
+        posted.push({
+          chargeId: 'primary-rent',
+          amount: built.total,
+          journalEntryId: String(je._id),
+          newNextDate: newNext.toISOString(),
+        });
+      }
+    }
+  }
+
   if (posted.length > 0) {
     await logActivity({
       orgId: ctx.orgId,
@@ -221,22 +283,6 @@ export async function POST(
       actorUserId: ctx.userId,
       payload: { count: posted.length, asOfDate: asOf.toISOString() },
     });
-  }
-
-  // Bonus loop — also advance the primary rent's `nextDueDate` once for
-  // visibility, since the rent roll surfaces it. (Real rent JE rides through
-  // recurringCharges for now; primaryRent is the "what the lease says" view.)
-  if (
-    lease.primaryRent?.nextDueDate &&
-    lease.primaryRent.nextDueDate <= asOf
-  ) {
-    lease.primaryRent.nextDueDate = advance(
-      lease.primaryRent.nextDueDate,
-      lease.rentCycle,
-    );
-    // Per-charge saves above don't cover this mutation (it happens after the
-    // loop), so persist it here unconditionally when primaryRent advanced.
-    await lease.save();
   }
 
   void DAY_MS;

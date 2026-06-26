@@ -320,7 +320,16 @@ export async function PATCH(
       accountId: new Types.ObjectId(primaryRent.accountId),
       rentMethod: resolvedRent.rentMethod,
       ratePerSqftCents: resolvedRent.ratePerSqftCents,
-      nextDueDate: primaryRent.nextDueDate ? new Date(primaryRent.nextDueDate) : null,
+      // `nextDueDate` is the rent-posting cursor (see rentCharge.ts). PRESERVE
+      // it when the edit omits it — otherwise an unrelated rent-terms edit would
+      // rewind the cursor and re-post already-charged periods. Only an explicit
+      // value (or explicit null) in the payload changes it.
+      nextDueDate:
+        primaryRent.nextDueDate !== undefined
+          ? primaryRent.nextDueDate
+            ? new Date(primaryRent.nextDueDate)
+            : null
+          : doc.primaryRent?.nextDueDate ?? null,
       memo: primaryRent.memo,
     };
   }

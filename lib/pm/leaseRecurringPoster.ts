@@ -24,6 +24,7 @@ import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
 import { logActivity } from '@/lib/pm/activity';
 import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
+import { buildRentChargeLines } from '@/lib/pm/rentCharge';
 import type { PmContext } from '@/lib/auth/getCurrentUser';
 import type { RentCycle } from '@/types/pm';
 
@@ -115,10 +116,16 @@ export async function runLeaseRecurringPoster(
   }
   const accountsReceivableCoaId = arCoa._id;
 
+  // Candidates: any Active/Future lease with EITHER a recurringCharges[] row OR
+  // a primary-rent schedule cursor. (The old filter required a recurringCharges
+  // row, so a lease whose rent lived only in primaryRent was never swept.)
   const leases = await Lease.find({
     organizationId: orgObjectId,
     status: { $in: ['Active', 'Future'] },
-    'recurringCharges.0': { $exists: true },
+    $or: [
+      { 'recurringCharges.0': { $exists: true } },
+      { 'primaryRent.nextDueDate': { $ne: null } },
+    ],
   });
 
   const results: LeasePostResult[] = [];
@@ -260,26 +267,121 @@ export async function runLeaseRecurringPoster(
       }
     }
 
-    // Advance the primary rent's `nextDueDate` once for rent-roll visibility,
-    // mirroring the manual sweep. Guarded on its current value so concurrent
-    // runs don't double-advance. (The real rent JE rides through
-    // recurringCharges; primaryRent is the "what the lease says" view.)
+    // Primary rent (base + split recovery charges) is itself a recurring charge,
+    // driven off `primaryRent.nextDueDate` + the lease `rentCycle`. Post one
+    // period per run with the SAME atomic-claim discipline as the rows above so
+    // concurrent runs collapse to a single post. (Previously this only advanced
+    // the cursor cosmetically, so leases whose rent lived in primaryRent never
+    // posted a JE.) Primary rent has no postNDaysInAdvance — it posts on/after
+    // the real due date, matching the manual sweep.
     if (
       lease.primaryRent?.nextDueDate &&
       startOfDay(lease.primaryRent.nextDueDate) <= today
     ) {
-      const advanced = advanceRentDate(
-        lease.primaryRent.nextDueDate,
-        lease.rentCycle,
-      );
-      await Lease.updateOne(
-        {
-          _id: lease._id,
-          organizationId: orgObjectId,
-          'primaryRent.nextDueDate': lease.primaryRent.nextDueDate,
-        },
-        { $set: { 'primaryRent.nextDueDate': advanced } },
-      );
+      const dueDate = lease.primaryRent.nextDueDate;
+      let locked = false;
+      try {
+        await assertWriteAllowed({
+          orgId,
+          txnDate: dueDate,
+          scopePropertyId: String(lease.propertyId),
+          ctx: systemCtx,
+        });
+      } catch (err) {
+        if (err instanceof LockedPeriodError) {
+          locked = true;
+          results.push({
+            leaseId: String(lease._id),
+            chargeId: 'primary-rent',
+            posted: false,
+            note: `Locked period: ${err.policyMessage}`,
+          });
+        } else {
+          throw err;
+        }
+      }
+
+      if (!locked) {
+        const claimedNext = advanceRentDate(dueDate, lease.rentCycle);
+        const claim = await Lease.findOneAndUpdate(
+          {
+            _id: lease._id,
+            organizationId: orgObjectId,
+            'primaryRent.nextDueDate': dueDate,
+          },
+          { $set: { 'primaryRent.nextDueDate': claimedNext } },
+          { new: false },
+        );
+        if (!claim) {
+          results.push({
+            leaseId: String(lease._id),
+            chargeId: 'primary-rent',
+            posted: false,
+            note: 'Already claimed by a concurrent run',
+          });
+        } else {
+          const built = buildRentChargeLines(
+            {
+              primaryRent: lease.primaryRent,
+              splitRentCharges: lease.splitRentCharges,
+              propertyId: lease.propertyId,
+              unitId: lease.unitId,
+            },
+            accountsReceivableCoaId,
+          );
+          if (!built) {
+            // Nothing to post (0 rent) — release the claim so the cursor holds.
+            await Lease.updateOne(
+              {
+                _id: lease._id,
+                organizationId: orgObjectId,
+                'primaryRent.nextDueDate': claimedNext,
+              },
+              { $set: { 'primaryRent.nextDueDate': dueDate } },
+            );
+          } else {
+            try {
+              const je = await JournalEntry.create({
+                organizationId: orgObjectId,
+                date: dueDate,
+                scopeType: 'Property',
+                scopeId: lease.propertyId,
+                memo: `Rent charge for lease #${lease.leaseNumber}`,
+                lines: built.lines,
+                status: 'Posted',
+                postedAt: new Date(now),
+                createdByUserId: orgObjectId,
+              });
+              postedThisLease += 1;
+              results.push({
+                leaseId: String(lease._id),
+                chargeId: 'primary-rent',
+                posted: true,
+                journalEntryId: String(je._id),
+                amount: built.total,
+                newNextDate: claimedNext.toISOString(),
+              });
+            } catch (err) {
+              // Posting failed after the claim — roll the cursor back so it
+              // re-fires next run rather than silently skipping a period.
+              await Lease.updateOne(
+                {
+                  _id: lease._id,
+                  organizationId: orgObjectId,
+                  'primaryRent.nextDueDate': claimedNext,
+                },
+                { $set: { 'primaryRent.nextDueDate': dueDate } },
+              );
+              results.push({
+                leaseId: String(lease._id),
+                chargeId: 'primary-rent',
+                posted: false,
+                note: err instanceof Error ? err.message : 'Posting failed',
+              });
+            }
+          }
+        }
+      }
     }
 
     if (postedThisLease > 0) {

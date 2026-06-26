@@ -520,40 +520,63 @@ export default function LeaseDetailPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                {data.recurringCharges.length === 0 ? (
-                  <p className="text-sm text-fg-muted">None.</p>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead className="text-xs uppercase text-fg-muted border-b border-border">
-                      <tr>
-                        <th className="py-1 text-left">Memo</th>
-                        <th>Frequency</th>
-                        <th>Next date</th>
-                        <th>Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.recurringCharges.map((c) => (
-                        <tr key={c.id} className="border-b border-border/40">
-                          <td className="py-1">{c.memo || "—"}</td>
-                          <td>{c.frequency}</td>
-                          <td className="text-fg-muted">
-                            {c.nextDate
-                              ? new Date(c.nextDate).toLocaleDateString()
-                              : "—"}
-                          </td>
-                          <td>
-                            <CurrencyAmount cents={c.amount} />
-                          </td>
+                {(() => {
+                  const splitTotal = data.splitRentCharges.reduce(
+                    (sum, c) => sum + c.amount,
+                    0,
+                  );
+                  const rentTotal = data.primaryRent.amount + splitTotal;
+                  if (rentTotal <= 0 && data.recurringCharges.length === 0) {
+                    return <p className="text-sm text-fg-muted">None.</p>;
+                  }
+                  return (
+                    <table className="w-full text-sm">
+                      <thead className="text-xs uppercase text-fg-muted border-b border-border">
+                        <tr>
+                          <th className="py-1 text-left">Memo</th>
+                          <th>Frequency</th>
+                          <th>Next date</th>
+                          <th>Amount</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
+                      </thead>
+                      <tbody>
+                        {/* Base rent posts from the lease TERMS (primaryRent +
+                            recovery split charges), not a recurringCharges row. */}
+                        {rentTotal > 0 && (
+                          <tr className="border-b border-border/40">
+                            <td className="py-1">
+                              {data.primaryRent.memo || "Rent (base + recovery)"}
+                            </td>
+                            <td>{data.rentCycle}</td>
+                            <td className="text-fg-muted">
+                              {formatDateOnly(data.primaryRent.nextDueDate)}
+                            </td>
+                            <td>
+                              <CurrencyAmount cents={rentTotal} />
+                            </td>
+                          </tr>
+                        )}
+                        {data.recurringCharges.map((c) => (
+                          <tr key={c.id} className="border-b border-border/40">
+                            <td className="py-1">{c.memo || "—"}</td>
+                            <td>{c.frequency}</td>
+                            <td className="text-fg-muted">
+                              {formatDateOnly(c.nextDate)}
+                            </td>
+                            <td>
+                              <CurrencyAmount cents={c.amount} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                })()}
                 <p className="mt-2 text-xs text-fg-muted">
-                  A nightly cron auto-posts charges as they come due. Use{" "}
-                  <em>Post recurring due now</em> to post any due charges
-                  immediately without waiting for the sweep.
+                  Base rent posts from the lease terms; any extra rows are
+                  additional recurring charges. A nightly cron auto-posts each as
+                  it comes due — use <em>Post recurring due now</em> to post any
+                  due charges immediately without waiting for the sweep.
                 </p>
               </CardContent>
             </Card>

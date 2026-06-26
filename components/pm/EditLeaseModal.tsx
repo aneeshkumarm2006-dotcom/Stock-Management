@@ -86,6 +86,7 @@ interface LeaseGet {
     accountId: string;
     rentMethod: RentMethod;
     ratePerSqftCents: number;
+    nextDueDate: string | null;
     memo: string;
   };
   splitRentCharges: Array<{ accountId: string; amount: number; memo: string }>;
@@ -115,6 +116,9 @@ export function EditLeaseModal({
   const [leaseType, setLeaseType] = React.useState<LeaseType>("Fixed");
   const [startDate, setStartDate] = React.useState("");
   const [endDate, setEndDate] = React.useState("");
+  // Next rent due date — the cursor the recurring-rent poster reads. Editable so
+  // a stale or mis-seeded cursor can be moved to the period rent should post from.
+  const [nextDueDate, setNextDueDate] = React.useState("");
   const [rentCycle, setRentCycle] = React.useState<RentCycle>("Monthly");
   const [rentMethod, setRentMethod] = React.useState<RentMethod>("Fixed");
   const [rentRows, setRentRows] = React.useState<RentRow[]>(defaultRentRows());
@@ -192,6 +196,7 @@ export function EditLeaseModal({
       setLeaseType(lease.leaseType);
       setStartDate(toDateInputValueUTC(lease.startDate));
       setEndDate(toDateInputValueUTC(lease.endDate));
+      setNextDueDate(toDateInputValueUTC(lease.primaryRent.nextDueDate));
       setRentCycle(lease.rentCycle);
       const method = lease.primaryRent.rentMethod ?? "Fixed";
       setRentMethod(method);
@@ -303,7 +308,11 @@ export function EditLeaseModal({
           rentMethod,
           ratePerSqft:
             rentMethod === "RatePerSqft" ? Number(base.rate) || 0 : undefined,
-          nextDueDate: startDate,
+          // `nextDueDate` is the rent-posting cursor. Send the (user-editable)
+          // value; blank clears the schedule. The old code forced this to
+          // `startDate` on every save, which would rewind the cursor and re-post
+          // already-charged periods.
+          nextDueDate: nextDueDate || null,
         },
         splitRentCharges,
         securityDepositReceived: Number(deposit) || 0,
@@ -400,6 +409,19 @@ export function EditLeaseModal({
                 onChange={(e) => setEndDate(e.target.value)}
                 disabled={leaseType === "At-will"}
               />
+            </div>
+
+            {/* Next rent due date — the recurring-rent posting cursor. */}
+            <div>
+              <Label>Next rent due date</Label>
+              <Input
+                type="date"
+                value={nextDueDate}
+                onChange={(e) => setNextDueDate(e.target.value)}
+              />
+              <p className="mt-1 text-xs text-fg-muted">
+                Rent posts from this date forward. Clear it to stop auto-posting.
+              </p>
             </div>
 
             {/* Rent method */}
