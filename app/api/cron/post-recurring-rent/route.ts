@@ -28,10 +28,18 @@ export async function GET(request: Request) {
 
   await connectToDatabase();
   // Run per-org so the worker's queries are tenant-scoped. Every org that owns
-  // at least one Active/Future lease carrying recurring charges is processed.
+  // at least one Active/Future lease with a posting schedule is processed.
+  // The schedule lives in EITHER a `recurringCharges[]` row OR the base-rent
+  // cursor `primaryRent.nextDueDate`; this $or must mirror the worker's own
+  // candidate query (runLeaseRecurringPoster). The old filter required a
+  // recurringCharges row, so an org whose rent lived only in primaryRent was
+  // never swept and its `nextDueDate` cursor never advanced.
   const orgIds = (await Lease.distinct('organizationId', {
     status: { $in: ['Active', 'Future'] },
-    'recurringCharges.0': { $exists: true },
+    $or: [
+      { 'recurringCharges.0': { $exists: true } },
+      { 'primaryRent.nextDueDate': { $ne: null } },
+    ],
   })) as unknown[];
 
   const results = [];

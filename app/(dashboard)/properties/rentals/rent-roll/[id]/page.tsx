@@ -332,11 +332,11 @@ export default function LeaseDetailPage() {
                   </div>
                   <div>
                     <div className="text-xs text-fg-muted">Next due</div>
-                    <div>
-                      {data.primaryRent.nextDueDate
-                        ? new Date(data.primaryRent.nextDueDate).toLocaleDateString()
-                        : "—"}
-                    </div>
+                    {/* Date-only field stored at UTC midnight — render via
+                        formatDateOnly, never new Date(x).toLocaleDateString(),
+                        which shows the previous day west of GMT (e.g. a 7/01
+                        cursor renders as 6/30). */}
+                    <div>{formatDateOnly(data.primaryRent.nextDueDate)}</div>
                   </div>
                   <div className="col-span-2">
                     <div className="text-xs text-fg-muted">Security deposit</div>
