@@ -19,6 +19,7 @@ import {
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
 import { BillPayment } from '@/lib/db/models/pm/BillPayment';
 import { reverseJournalEntry } from '@/lib/pm/reverseJournalEntry';
+import { repostBillJournalEntry } from '@/lib/pm/repostBillJournalEntry';
 import { assertWriteAllowed } from '@/lib/pm/lockedPeriod';
 
 export const runtime = 'nodejs';
@@ -200,9 +201,10 @@ export async function PATCH(
   }
 
   // A posted bill (Due/Overdue/Partially paid/Paid) already has an accrual JE.
-  // When a financially-material field changes we reverse that JE and re-post a
-  // fresh one so the ledger keeps matching the bill (full edit + auto re-post).
-  // A PATCH that flips status to Voided is a void, not an edit — skip re-posting.
+  // When a financially-material field changes we UPDATE that JE in place so the
+  // ledger keeps matching the bill WITHOUT leaving a void + reversal pair in the
+  // GL (which previously cancelled the bill out of the Financials). A PATCH that
+  // flips status to Voided is a void, not an edit — skip re-posting.
   const isPosted = !wasDraft && status !== 'Voided';
 
   const afterLines = (doc.lines ?? []).map((l) => ({
@@ -293,18 +295,11 @@ export async function PATCH(
       throw err;
     }
 
-    if (oldJe && oldJe.status === 'Posted') {
-      await reverseJournalEntry({
-        je: oldJe,
-        ctx,
-        memo: `Reversal (bill edit) of JE ${String(oldJe._id)}`,
-      });
-    }
-
     try {
-      const result = await postBillToLedger({
+      const result = await repostBillJournalEntry({
         orgId: ctx.orgId,
         ctx,
+        existingJe: oldJe,
         bill: {
           _id: doc._id,
           invoiceDate: doc.invoiceDate,
@@ -316,8 +311,8 @@ export async function PATCH(
         },
       });
       repostPayload = {
-        oldJournalEntryId: oldJe ? String(oldJe._id) : null,
-        newJournalEntryId: String(result.journalEntryId),
+        journalEntryId: String(result.journalEntryId),
+        updatedInPlace: oldJe?.status === 'Posted',
       };
       doc.journalEntryId = result.journalEntryId;
       reposted = true;
@@ -352,4 +347,128 @@ export async function PATCH(
     ok: true,
     journalEntryId: doc.journalEntryId ? String(doc.journalEntryId) : null,
   });
+}
+
+// DELETE /api/pm/bills/[id]?mode=hard|void — remove a bill (default: hard).
+//   hard → permanently delete the bill AND its accrual JE so nothing remains in
+//          the GL or Financials (only a "Bill deleted" activity-log line stays).
+//   void → keep the bill as Voided and write a reversing JE (full audit trail,
+//          leaves a reversal row in the GL).
+// Both modes block when the bill has payments (409) and respect the
+// locked-period gate (423) on the JE date.
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } },
+) {
+  const ctx = await getPmContext();
+  if (!ctx) return unauthorizedResponse();
+
+  const mode =
+    new URL(request.url).searchParams.get('mode') === 'void' ? 'void' : 'hard';
+
+  const doc = await load(params.id, ctx.orgId);
+  if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  if (doc.status === 'Voided') {
+    return NextResponse.json(
+      { error: 'Bill is already voided.' },
+      { status: 409 },
+    );
+  }
+
+  // A bill with applied payments has separate, immutable payment JEs we can't
+  // keep consistent — force void-the-payments-first (same guard as the edit path).
+  const paymentCount = await BillPayment.countDocuments({
+    organizationId: new Types.ObjectId(ctx.orgId),
+    billId: doc._id,
+  });
+  if (paymentCount > 0) {
+    return NextResponse.json(
+      {
+        error:
+          'This bill has payments applied. Void the payments before deleting the bill.',
+      },
+      { status: 409 },
+    );
+  }
+
+  const je = doc.journalEntryId
+    ? await JournalEntry.findOne({
+        _id: doc.journalEntryId,
+        organizationId: new Types.ObjectId(ctx.orgId),
+      })
+    : null;
+
+  const scopePropertyId =
+    je && je.scopeType === 'Property' && je.scopeId
+      ? String(je.scopeId)
+      : doc.scope?.type === 'Property' && doc.scope.id
+        ? String(doc.scope.id)
+        : null;
+
+  // Lock-period gate on the entry's date before any write.
+  try {
+    await assertWriteAllowed({
+      orgId: ctx.orgId,
+      txnDate: je?.date ?? doc.invoiceDate,
+      scopePropertyId,
+      ctx,
+    });
+  } catch (err) {
+    if (err instanceof LockedPeriodError) {
+      return NextResponse.json(
+        { error: err.policyMessage, policyId: err.policyId },
+        { status: 423 },
+      );
+    }
+    throw err;
+  }
+
+  if (mode === 'void') {
+    let reversalId: Types.ObjectId | null = null;
+    if (je && je.status === 'Posted') {
+      const { reversal } = await reverseJournalEntry({
+        je,
+        ctx,
+        memo: `Reversal of bill ${String(doc._id)}`,
+      });
+      reversalId = reversal._id;
+    }
+    doc.status = 'Voided';
+    doc.voidingJournalEntryId = reversalId;
+    doc.voidedAt = new Date();
+    doc.voidedByUserId = new Types.ObjectId(ctx.userId);
+    await doc.save();
+
+    await logActivity({
+      orgId: ctx.orgId,
+      parentType: 'Bill',
+      parentId: doc._id,
+      eventType: 'Bill voided',
+      actorUserId: ctx.userId,
+      payload: {
+        reversalJournalEntryId: reversalId ? String(reversalId) : null,
+      },
+    });
+
+    return NextResponse.json({ ok: true, mode: 'void' });
+  }
+
+  // mode === 'hard' — permanently remove the bill and its accrual JE.
+  const hardDeletedJournalEntryId = je ? String(je._id) : null;
+  const amountCents = doc.amount;
+  const billId = doc._id;
+  if (je) await je.deleteOne();
+  await doc.deleteOne();
+
+  await logActivity({
+    orgId: ctx.orgId,
+    parentType: 'Bill',
+    parentId: billId,
+    eventType: 'Bill deleted',
+    actorUserId: ctx.userId,
+    payload: { hardDeletedJournalEntryId, amountCents },
+  });
+
+  return NextResponse.json({ ok: true, mode: 'hard' });
 }

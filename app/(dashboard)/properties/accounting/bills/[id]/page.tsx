@@ -4,7 +4,7 @@
 
 import * as React from "react";
 import { useParams, useRouter, notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -20,6 +20,7 @@ import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { EditBillModal } from "@/components/pm/EditBillModal";
+import { DeleteBillDialog } from "@/components/pm/DeleteBillDialog";
 import { useToast } from "@/components/ui/toast";
 import { formatDateOnly } from "@/lib/utils/dateInput";
 
@@ -55,6 +56,7 @@ export default function BillDetailPage() {
   const [loading, setLoading] = React.useState(true);
   const [busy, setBusy] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -118,6 +120,16 @@ export default function BillDetailPage() {
               Post bill
             </Button>
           )}
+          {doc.status !== "Voided" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-error hover:text-error"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete bill
+            </Button>
+          )}
         </div>
       </div>
 
@@ -169,7 +181,7 @@ export default function BillDetailPage() {
                 <p className="mt-2 text-xs text-fg-muted">
                   {doc.status === "Partially paid" || doc.status === "Paid"
                     ? "This bill has payments applied. Use Edit bill to update the vendor or reference; to change amounts, dates, scope, or memo, void the payments first."
-                    : "Use Edit bill to change a posted bill — this reverses the journal entry and re-posts a corrected one."}
+                    : "Use Edit bill to change a posted bill — this updates the bill's journal entry in place."}
                 </p>
               )}
               {doc.status === "Voided" && (
@@ -279,6 +291,16 @@ export default function BillDetailPage() {
           setEditOpen(false);
           await load();
         }}
+      />
+
+      <DeleteBillDialog
+        bill={
+          deleteOpen
+            ? { id: doc.id, amount: doc.amount, status: doc.status }
+            : null
+        }
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => router.push("/properties/accounting/bills")}
       />
     </div>
   );
