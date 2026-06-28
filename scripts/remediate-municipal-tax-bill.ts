@@ -31,6 +31,8 @@
  *   npx --yes tsx scripts/remediate-municipal-tax-bill.ts            # preview the default bill
  *   npx --yes tsx scripts/remediate-municipal-tax-bill.ts --id=<billId>
  *   npx --yes tsx scripts/remediate-municipal-tax-bill.ts --id=<billId> --apply
+ *   npx --yes tsx scripts/remediate-municipal-tax-bill.ts --all          # preview EVERY edited bill
+ *   npx --yes tsx scripts/remediate-municipal-tax-bill.ts --all --apply  # fix EVERY edited bill
  *
  * Defaults target the known bill: amount 7653886 cents ($76,538.86),
  * memo "2026 Municipal Tax Adjusted". Override with --amount / --memo / --id.
@@ -196,26 +198,78 @@ async function findStrays(bill: {
   return { ok: true, keepId, pairs };
 }
 
-async function scan() {
+type BillLite = {
+  _id: Types.ObjectId;
+  organizationId: Types.ObjectId;
+  amount: number;
+  memo?: string;
+  journalEntryId?: Types.ObjectId | null;
+};
+
+/** Every bill that was edited under the old reverse+repost flow (has at least
+ *  one 'Bill re-posted' activity-log entry), de-duplicated to one per bill. */
+async function collectEditedBills(): Promise<BillLite[]> {
   const logs = await ActivityLogEntry.find({
     parentType: 'Bill',
     eventType: 'Bill re-posted',
-  }).lean<{ organizationId: Types.ObjectId; parentId: Types.ObjectId }[]>();
+  }).lean<{ parentId: Types.ObjectId }[]>();
 
-  const billIds = new Map<string, { organizationId: Types.ObjectId; parentId: Types.ObjectId }>();
-  for (const l of logs) billIds.set(String(l.parentId), l);
+  const seen = new Set<string>();
+  const bills: BillLite[] = [];
+  for (const l of logs) {
+    const key = String(l.parentId);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const bill = await Bill.findById(l.parentId).lean<BillLite | null>();
+    if (bill) bills.push(bill);
+  }
+  return bills;
+}
 
-  console.log(`Scanning ${billIds.size} edited bill(s) for stray reversals…`);
+/** Delete (or, when !apply, just preview) the validated stray pairs for ONE
+ *  bill. All mirror-twin validation lives in findStrays; this only ever acts on
+ *  pairs it already blessed. A validation failure surfaces via `reason`. */
+async function remediateBill(
+  bill: BillLite,
+  apply: boolean,
+): Promise<{ poisoned: boolean; pairs: number; reason?: string }> {
+  const res = await findStrays(bill);
+  if (!res.ok) return { poisoned: false, pairs: 0, reason: res.reason };
+
+  for (const { original, reversal } of res.pairs) {
+    console.log(
+      `    • voided original ${String(original._id)} (${original.totalDebits} cents) + posted reversal ${String(reversal._id)} (${reversal.totalDebits} cents)`,
+    );
+  }
+
+  if (!apply) return { poisoned: true, pairs: res.pairs.length };
+
+  for (const { original, reversal } of res.pairs) {
+    await JournalEntry.deleteOne({ _id: reversal._id });
+    await JournalEntry.deleteOne({ _id: original._id });
+  }
+  await ActivityLogEntry.create({
+    organizationId: bill.organizationId,
+    parentType: 'Bill',
+    parentId: bill._id,
+    eventType: 'GL remediation — stray reversal removed',
+    actorUserId: null,
+    payload: {
+      keptJournalEntryId: res.keepId ? String(res.keepId) : null,
+      deleted: res.pairs.map(({ original, reversal }) => ({
+        originalJournalEntryId: String(original._id),
+        reversalJournalEntryId: String(reversal._id),
+      })),
+    },
+  });
+  return { poisoned: true, pairs: res.pairs.length };
+}
+
+async function scan() {
+  const bills = await collectEditedBills();
+  console.log(`Scanning ${bills.length} edited bill(s) for stray reversals…`);
   let poisoned = 0;
-  for (const ref of Array.from(billIds.values())) {
-    const bill = await Bill.findById(ref.parentId).lean<{
-      _id: Types.ObjectId;
-      organizationId: Types.ObjectId;
-      amount: number;
-      memo?: string;
-      journalEntryId?: Types.ObjectId | null;
-    } | null>();
-    if (!bill) continue;
+  for (const bill of bills) {
     const res = await findStrays(bill);
     if (res.ok) {
       poisoned++;
@@ -227,14 +281,59 @@ async function scan() {
   console.log(
     poisoned === 0
       ? '✓ No poisoned bills found.'
-      : `Found ${poisoned} poisoned bill(s). Re-run with --id=<billId> --apply to fix each.`,
+      : `Found ${poisoned} poisoned bill(s). Re-run with --all --apply to fix them all (or --id=<billId> --apply one at a time).`,
   );
+}
+
+/** Remediate EVERY edited bill in one pass. Preview-by-default; pass --apply to
+ *  delete. Each bill is validated independently, so one bill that fails
+ *  validation is SKIPPED (reported at the end) without blocking the rest. */
+async function fixAll(apply: boolean) {
+  const bills = await collectEditedBills();
+  console.log(
+    `${apply ? 'Remediating' : 'Previewing'} ${bills.length} edited bill(s)…`,
+  );
+  let poisonedBills = 0;
+  let totalPairs = 0;
+  const skipped: { id: string; reason: string }[] = [];
+  for (const bill of bills) {
+    let res;
+    try {
+      res = await remediateBill(bill, apply);
+    } catch (err) {
+      skipped.push({ id: String(bill._id), reason: (err as Error).message });
+      console.log(`  ✗ Bill ${String(bill._id)} — ERROR: ${(err as Error).message}`);
+      continue;
+    }
+    if (!res.poisoned) {
+      if (res.reason && res.reason.startsWith('Validation failed')) {
+        skipped.push({ id: String(bill._id), reason: res.reason });
+        console.log(`  ✗ Bill ${String(bill._id)} — SKIPPED: ${res.reason}`);
+      }
+      continue;
+    }
+    poisonedBills++;
+    totalPairs += res.pairs;
+    console.log(
+      `  ${apply ? '✓ fixed ' : '⚠ would fix'} Bill ${String(bill._id)} ("${bill.memo ?? ''}") — ${res.pairs} pair(s).`,
+    );
+  }
+  console.log(
+    apply
+      ? `\n✓ Done. Fixed ${poisonedBills} bill(s); deleted ${totalPairs * 2} stray JE(s). Financials should now reflect every bill.`
+      : `\n${poisonedBills} bill(s) would be fixed (${totalPairs * 2} stray JE(s) deleted). Re-run with --all --apply to apply.`,
+  );
+  if (skipped.length > 0) {
+    console.log(`\n⚠ ${skipped.length} bill(s) skipped — review manually:`);
+    for (const f of skipped) console.log(`  - ${f.id}: ${f.reason}`);
+  }
 }
 
 async function main() {
   loadEnvLocal();
   const apply = process.argv.includes('--apply');
   const doScan = process.argv.includes('--scan');
+  const doAll = process.argv.includes('--all');
   const idArg = argValue('--id');
   const amountArg = Number(argValue('--amount') ?? DEFAULT_AMOUNT);
   const memoArg = argValue('--memo') ?? DEFAULT_MEMO;
@@ -250,6 +349,12 @@ async function main() {
 
   if (doScan) {
     await scan();
+    await mongoose.disconnect();
+    return;
+  }
+
+  if (doAll) {
+    await fixAll(apply);
     await mongoose.disconnect();
     return;
   }
