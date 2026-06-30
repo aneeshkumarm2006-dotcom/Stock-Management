@@ -35,6 +35,10 @@ import { assertWriteAllowed } from '@/lib/pm/lockedPeriod';
 import { canOverrideLockedPeriod } from '@/lib/pm/roles';
 import { computeLeaseStatus } from '@/lib/pm/leaseStatus';
 import { rentCentsFromRateCents } from '@/lib/pm/rent';
+import {
+  deriveCurrentRentFromSchedule,
+  type RentSchedulePeriodModel,
+} from '@/lib/validation/pm/rentSchedule';
 import type { PmContext } from '@/lib/auth/getCurrentUser';
 
 export class PromotionError extends Error {
@@ -410,6 +414,32 @@ export async function executeDraftLease(
     };
   }
 
+  // Commercial rent-escalation schedule (the "Lease Summary"). When the draft
+  // carries one, it copies verbatim onto the lease and DRIVES GL posting; the
+  // resolved CURRENT period also overrides primaryRent/splits so the move-in JE
+  // and every legacy reader use the right current rent.
+  const scheduleModel = draftObj.rentSchedule ?? [];
+  const derivedRent =
+    scheduleModel.length > 0
+      ? deriveCurrentRentFromSchedule(
+          scheduleModel as unknown as RentSchedulePeriodModel[],
+          txnDate,
+        )
+      : null;
+  let leasePrimaryRent = resolvedPrimaryRent;
+  let leaseSplitCharges = draftObj.splitRentCharges ?? [];
+  if (derivedRent) {
+    leasePrimaryRent = {
+      ...resolvedPrimaryRent,
+      amount: derivedRent.amount,
+      accountId: derivedRent.accountId,
+      rentMethod: 'Fixed',
+      ratePerSqftCents: 0,
+      memo: derivedRent.memo,
+    };
+    leaseSplitCharges = derivedRent.splitRentCharges;
+  }
+
   const last = await Lease.findOne({ organizationId: orgId })
     .sort({ leaseNumber: -1 })
     .select({ leaseNumber: 1 })
@@ -454,8 +484,11 @@ export async function executeDraftLease(
     }),
     evictionPending: false,
     rentCycle: draftObj.rentCycle,
-    primaryRent: resolvedPrimaryRent,
-    splitRentCharges: draftObj.splitRentCharges ?? [],
+    primaryRent: leasePrimaryRent,
+    splitRentCharges: leaseSplitCharges,
+    rentSchedule: scheduleModel,
+    proportionateSharePct: draftObj.proportionateSharePct,
+    salesTaxRatePct: draftObj.salesTaxRatePct,
     securityDeposit: {
       received: draftObj.securityDeposit ?? 0,
       withheld: 0,
@@ -484,10 +517,13 @@ export async function executeDraftLease(
   // still saves, but the route surfaces the warning so a PM can post a
   // manual JE.
   let journalEntryId: Types.ObjectId | null = null;
-  const rentCents = resolvedPrimaryRent?.amount ?? 0;
+  // Use the schedule-derived current rent (when a schedule exists) so the
+  // first-month JE matches the lease's first active period.
+  const rentCents = leasePrimaryRent?.amount ?? 0;
+  const rentAccountId = leasePrimaryRent?.accountId ?? draft.primaryRent.accountId;
   // §4 — first month's rent also includes the OPEX/Tax recovery splits, each
   // credited to its own income account so the recoveries report separately.
-  const splitCharges = (draftObj.splitRentCharges ?? []).filter(
+  const splitCharges = (leaseSplitCharges ?? []).filter(
     (c) => (c.amount ?? 0) > 0 && c.accountId,
   );
   const splitCents = splitCharges.reduce((s, c) => s + (c.amount ?? 0), 0);
@@ -507,7 +543,7 @@ export async function executeDraftLease(
     });
     if (rentCents > 0) {
       lines.push({
-        accountId: draft.primaryRent.accountId,
+        accountId: rentAccountId,
         scopeType: 'Property',
         scopeId: lease.propertyId,
         unitId: lease.unitId,

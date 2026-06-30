@@ -22,9 +22,14 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { leaseUpdateSchema } from '@/lib/validation/pm/lease';
+import {
+  mapRentScheduleToModel,
+  deriveCurrentRentFromSchedule,
+} from '@/lib/validation/pm/rentSchedule';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
 import { resolveRent, RentResolutionError } from '@/lib/pm/rent';
+import { computePeriodAmounts } from '@/lib/pm/rentSchedule';
 import {
   computeLeaseStatus,
   daysRemaining,
@@ -137,6 +142,33 @@ export async function GET(
       amount: c.amount,
       memo: c.memo ?? '',
     })),
+    // Commercial rent-escalation schedule. Each period carries its raw rates
+    // (annual $/sf) AND the resolved cent amounts so the client table can render
+    // the "Lease Summary" without re-deriving the math.
+    proportionateSharePct: doc.proportionateSharePct ?? null,
+    salesTaxRatePct: doc.salesTaxRatePct ?? null,
+    rentSchedule: (doc.rentSchedule ?? []).map((p) => ({
+      label: p.label,
+      kind: p.kind,
+      startDate: p.startDate,
+      endDate: p.endDate,
+      sizeSqft: p.sizeSqft ?? 0,
+      baseRatePerSqft: p.baseRatePerSqft ?? 0,
+      baseAccountId: p.baseAccountId ? String(p.baseAccountId) : null,
+      opexRatePerSqft: p.opexRatePerSqft ?? 0,
+      opexAccountId: p.opexAccountId ? String(p.opexAccountId) : null,
+      taxRatePerSqft: p.taxRatePerSqft ?? 0,
+      taxAccountId: p.taxAccountId ? String(p.taxAccountId) : null,
+      amounts: computePeriodAmounts(
+        {
+          sizeSqft: p.sizeSqft ?? 0,
+          baseRatePerSqft: p.baseRatePerSqft ?? 0,
+          opexRatePerSqft: p.opexRatePerSqft ?? 0,
+          taxRatePerSqft: p.taxRatePerSqft ?? 0,
+        },
+        doc.salesTaxRatePct ?? null,
+      ),
+    })),
     securityDeposit: {
       received: doc.securityDeposit?.received ?? 0,
       withheld: doc.securityDeposit?.withheld ?? 0,
@@ -243,6 +275,9 @@ export async function PATCH(
     leaseType,
     primaryRent,
     splitRentCharges,
+    rentSchedule,
+    proportionateSharePct,
+    salesTaxRatePct,
     securityDepositReceived,
     recurringCharges,
     oneTimeCharges,
@@ -339,6 +374,29 @@ export async function PATCH(
       amount: toCents(c.amount),
       memo: c.memo,
     }));
+  }
+  if (proportionateSharePct !== undefined) {
+    doc.proportionateSharePct = proportionateSharePct;
+  }
+  if (salesTaxRatePct !== undefined) doc.salesTaxRatePct = salesTaxRatePct;
+  if (rentSchedule !== undefined) {
+    const model = mapRentScheduleToModel(rentSchedule);
+    doc.rentSchedule = model;
+    // Keep the resolved CURRENT period in primaryRent/splits so legacy readers
+    // + the posting fallback stay correct; PRESERVE the posting cursor so a
+    // schedule edit never rewinds it and re-posts a charged period.
+    const derived = deriveCurrentRentFromSchedule(model, new Date());
+    if (derived) {
+      doc.primaryRent = {
+        amount: derived.amount,
+        accountId: derived.accountId,
+        rentMethod: 'Fixed',
+        ratePerSqftCents: 0,
+        nextDueDate: doc.primaryRent?.nextDueDate ?? null,
+        memo: derived.memo,
+      };
+      doc.splitRentCharges = derived.splitRentCharges;
+    }
   }
   if (securityDepositReceived !== undefined) {
     doc.securityDeposit.received = toCents(securityDepositReceived);

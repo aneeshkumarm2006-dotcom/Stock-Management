@@ -12,6 +12,10 @@ import {
   TENANT_TYPES,
 } from '@/types/pm';
 import { LEASE_INLINE_FILE_CAP } from '@/lib/db/models/pm/DraftLease';
+import {
+  rentScheduleSchema,
+  refineRentSchedule,
+} from '@/lib/validation/pm/rentSchedule';
 
 const objectIdString = z
   .string()
@@ -107,6 +111,11 @@ const base = {
   rentCycle: z.enum(RENT_CYCLES as unknown as [string, ...string[]]).optional(),
   primaryRent: primaryRentSchema,
   splitRentCharges: z.array(splitRentSchema).optional(),
+  // Commercial rent-escalation schedule (the "Lease Summary"). Optional —
+  // ordinary single-rent leases omit it. Cross-period rules in the superRefine.
+  rentSchedule: rentScheduleSchema.optional(),
+  proportionateSharePct: z.number().min(0).max(100).optional(),
+  salesTaxRatePct: z.number().min(0).max(100).optional(),
   securityDepositReceived: z.number().nonnegative().optional(),
   recurringCharges: z.array(recurringChargeSchema).optional(),
   oneTimeCharges: z.array(oneTimeChargeSchema).optional(),
@@ -143,7 +152,10 @@ function applyBrLl1(
   }
 }
 
-export const leaseCreateSchema = z.object(base).superRefine(applyBrLl1);
+export const leaseCreateSchema = z.object(base).superRefine((data, ctx) => {
+  applyBrLl1(data, ctx);
+  refineRentSchedule(data.rentSchedule, ctx);
+});
 
 export const leaseUpdateSchema = z
   .object({
@@ -158,7 +170,10 @@ export const leaseUpdateSchema = z
     evictionPending: z.boolean().optional(),
     evictionPendingNote: z.string().max(2000).optional(),
   })
-  .superRefine(applyBrLl1)
+  .superRefine((data, ctx) => {
+    applyBrLl1(data, ctx);
+    refineRentSchedule(data.rentSchedule, ctx);
+  })
   .refine((d) => Object.keys(d).length > 0, {
     message: 'No fields to update',
   });

@@ -35,6 +35,10 @@ import { EvictionToggleDialog } from "@/components/pm/EvictionToggleDialog";
 import { RentersInsuranceModal } from "@/components/pm/RentersInsuranceModal";
 import { PetModal } from "@/components/pm/PetModal";
 import { EditLeaseModal } from "@/components/pm/EditLeaseModal";
+import {
+  LeaseTermScheduleTable,
+  type SchedulePeriodView,
+} from "@/components/pm/LeaseTermScheduleTable";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
 import { formatDateOnly } from "@/lib/utils/dateInput";
@@ -76,6 +80,9 @@ interface LeaseDetail {
     memo: string;
   };
   splitRentCharges: Array<{ amount: number; memo: string }>;
+  proportionateSharePct: number | null;
+  salesTaxRatePct: number | null;
+  rentSchedule: SchedulePeriodView[];
   securityDeposit: {
     received: number;
     withheld: number;
@@ -268,6 +275,9 @@ export default function LeaseDetailPage() {
         <TabsList>
           <TabsTrigger value="summary">Summary</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
+          {data.rentSchedule.length > 0 && (
+            <TabsTrigger value="terms">Lease terms</TabsTrigger>
+          )}
           <TabsTrigger value="tenant">Tenant</TabsTrigger>
           <TabsTrigger value="communications">Communications</TabsTrigger>
           <TabsTrigger value="history">Event history</TabsTrigger>
@@ -631,6 +641,23 @@ export default function LeaseDetailPage() {
             </Card>
           </div>
         </TabsContent>
+
+        {data.rentSchedule.length > 0 && (
+          <TabsContent value="terms">
+            <Card>
+              <CardHeader>
+                <CardTitle>Lease term schedule</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <LeaseTermScheduleTable
+                  periods={data.rentSchedule}
+                  proportionateSharePct={data.proportionateSharePct}
+                  salesTaxRatePct={data.salesTaxRatePct}
+                />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
 
         <TabsContent value="tenant">
           <Card>

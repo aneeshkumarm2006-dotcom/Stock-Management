@@ -29,6 +29,7 @@ import type {
   EsignatureStatus,
   LeaseType,
   LeaseStatus,
+  LeaseTermKind,
   RentCycle,
   RentMethod,
   TenantType,
@@ -37,6 +38,7 @@ import {
   ESIGNATURE_STATUSES,
   LEASE_TYPES,
   LEASE_STATUSES,
+  LEASE_TERM_KINDS,
   RENT_CYCLES,
   RENT_METHODS,
   TENANT_TYPES,
@@ -87,6 +89,44 @@ export interface ILeaseSplitRentCharge {
   accountId: Types.ObjectId;
   amount: number; // cents
   memo?: string;
+}
+
+/**
+ * ILeaseTermPeriod — ONE dated row of a commercial lease's rent-escalation
+ * schedule (the client's "Lease Summary": Year 1‑2, Year 3‑5, … plus a
+ * Renewal Option). Inputs only — every dollar figure is DERIVED from the
+ * per‑sqft rates × `sizeSqft`, so the row never drifts from its own snapshot.
+ *
+ * CONVENTION: rates are ANNUAL DOLLARS per square foot (e.g. 16.5, 17.875).
+ * They are rates/multipliers, not ledger amounts, so they are stored as plain
+ * numbers (a rate can carry a fractional cent like $17.875/sf) — only the
+ * RESOLVED amounts are integer cents:
+ *   annual cents  = round(rate × sizeSqft × 100)
+ *   monthly cents = round(annual / 12)
+ * This is the commercial $/sf/YEAR convention used by the sheet and is
+ * INDEPENDENT of the legacy `primaryRent.rentMethod='RatePerSqft'` (which
+ * treats its rate as a monthly cents rate). See `lib/pm/rentSchedule.ts` for
+ * the single computation source.
+ *
+ * `kind='RenewalOption'` rows are recorded for reference and NEVER post to the
+ * ledger. Only the active `kind='Term'` row drives GL rent posting by date.
+ */
+export interface ILeaseTermPeriod {
+  /** Human label shown on the schedule, e.g. "Year 1-2", "Renewal Option". */
+  label: string;
+  kind: LeaseTermKind;
+  startDate: Date;
+  endDate: Date;
+  /** Square footage SNAPSHOT at save time — the Unit's `sizeSqft` may change
+   *  later, but a recorded period must reproduce its own figures forever. */
+  sizeSqft: number;
+  /** Annual dollars per sq ft. 0 means the component is absent. */
+  baseRatePerSqft: number;
+  baseAccountId?: Types.ObjectId | null;
+  opexRatePerSqft: number;
+  opexAccountId?: Types.ObjectId | null;
+  taxRatePerSqft: number;
+  taxAccountId?: Types.ObjectId | null;
 }
 
 export interface ILeaseRecurringCharge {
@@ -144,6 +184,17 @@ export interface ILease {
   rentCycle: RentCycle;
   primaryRent: ILeasePrimaryRent;
   splitRentCharges: ILeaseSplitRentCharge[];
+  /** Commercial rent-escalation schedule (the "Lease Summary"). When present
+   *  and a Term period is active, it DRIVES GL rent posting; `primaryRent`/
+   *  `splitRentCharges` are kept in sync as the resolved CURRENT period so
+   *  every legacy reader keeps working. Empty for ordinary single-rent leases. */
+  rentSchedule: ILeaseTermPeriod[];
+  /** Tenant's proportionate share of the building (%). Display/summary only —
+   *  does NOT affect posted GL amounts. */
+  proportionateSharePct?: number;
+  /** Combined sales-tax rate for the "Total With GST/QST" summary line (e.g.
+   *  14.975). Display/summary only — NOT posted to the ledger. */
+  salesTaxRatePct?: number;
   securityDeposit: ILeaseSecurityDeposit;
   recurringCharges: ILeaseRecurringCharge[];
   oneTimeCharges: ILeaseOneTimeCharge[];
@@ -189,6 +240,35 @@ const SplitRentSchema = new Schema<ILeaseSplitRentCharge>(
     memo: { type: String, trim: true, maxlength: LEASE_MEMO_MAX },
   },
   { _id: false },
+);
+
+const TermPeriodSchema = new Schema<ILeaseTermPeriod>(
+  {
+    label: { type: String, required: true, trim: true, maxlength: 60 },
+    kind: { type: String, enum: LEASE_TERM_KINDS, default: 'Term' },
+    startDate: { type: Date, required: true },
+    endDate: { type: Date, required: true },
+    sizeSqft: { type: Number, default: 0, min: 0 },
+    baseRatePerSqft: { type: Number, default: 0, min: 0 },
+    baseAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmChartOfAccount',
+      default: null,
+    },
+    opexRatePerSqft: { type: Number, default: 0, min: 0 },
+    opexAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmChartOfAccount',
+      default: null,
+    },
+    taxRatePerSqft: { type: Number, default: 0, min: 0 },
+    taxAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmChartOfAccount',
+      default: null,
+    },
+  },
+  { _id: true },
 );
 
 const PrimaryRentSchema = new Schema<ILeasePrimaryRent>(
@@ -313,6 +393,9 @@ const LeaseSchema = new Schema<ILease>(
     rentCycle: { type: String, enum: RENT_CYCLES, default: 'Monthly' },
     primaryRent: { type: PrimaryRentSchema, required: true },
     splitRentCharges: { type: [SplitRentSchema], default: () => [] },
+    rentSchedule: { type: [TermPeriodSchema], default: () => [] },
+    proportionateSharePct: { type: Number, min: 0, max: 100, default: undefined },
+    salesTaxRatePct: { type: Number, min: 0, max: 100, default: undefined },
     securityDeposit: {
       type: SecurityDepositSchema,
       default: () => ({ received: 0, withheld: 0, refunded: 0 }),

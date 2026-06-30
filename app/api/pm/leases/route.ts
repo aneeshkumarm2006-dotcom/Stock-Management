@@ -13,6 +13,10 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { leaseCreateSchema } from '@/lib/validation/pm/lease';
+import {
+  mapRentScheduleToModel,
+  deriveCurrentRentFromSchedule,
+} from '@/lib/validation/pm/rentSchedule';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
 import { resolveRent, RentResolutionError } from '@/lib/pm/rent';
@@ -123,6 +127,20 @@ export async function POST(request: Request) {
 
   await connectToDatabase();
   const orgId = new Types.ObjectId(ctx.orgId);
+
+  // Reconcile persisted lease `status` + `Tenant.currentLeaseId` BEFORE the
+  // guards below read them. Lease expiry is time-driven (deriveLeaseStatus),
+  // but the persisted values only refresh on a lease write — the nightly
+  // reconcile cron is the durable fix, yet a lease that lapsed since the last
+  // write still carries a stale `Active` status / dangling `currentLeaseId`.
+  // Without this, the occupancy / already-assigned guards would falsely 409 a
+  // unit or tenant whose lease has actually expired. Idempotent and cheap
+  // relative to the assignment it gates; never let a sync hiccup block create.
+  try {
+    await recomputeLeaseStatuses(ctx.orgId);
+  } catch (syncErr) {
+    console.error('recomputeLeaseStatuses before lease create failed', syncErr);
+  }
 
   // ── FK existence + assignment guards ────────────────────────────────────
   // POST is the direct-create path (most leases arrive via draft-lease
@@ -241,6 +259,12 @@ export async function POST(request: Request) {
     .lean<{ leaseNumber: number } | null>();
   const leaseNumber = (last?.leaseNumber ?? 0) + 1;
 
+  // Commercial rent-escalation schedule (optional). When present, it DRIVES GL
+  // posting by date and we keep `primaryRent`/`splitRentCharges` synced to the
+  // CURRENT period so the rent roll / financials show the right current rent.
+  const rentScheduleModel = mapRentScheduleToModel(parsed.data.rentSchedule);
+  const derivedRent = deriveCurrentRentFromSchedule(rentScheduleModel, new Date());
+
   try {
     const doc = await Lease.create({
       organizationId: orgId,
@@ -279,20 +303,29 @@ export async function POST(request: Request) {
       evictionPending: false,
       rentCycle: (parsed.data.rentCycle ?? 'Monthly') as RentCycle,
       primaryRent: {
-        amount: resolvedRent.amountCents,
-        accountId: new Types.ObjectId(parsed.data.primaryRent.accountId),
-        rentMethod: resolvedRent.rentMethod,
-        ratePerSqftCents: resolvedRent.ratePerSqftCents,
+        // When a schedule is present its current period is authoritative for the
+        // resolved snapshot; otherwise use the form's single rent (§3).
+        amount: derivedRent ? derivedRent.amount : resolvedRent.amountCents,
+        accountId: derivedRent
+          ? derivedRent.accountId
+          : new Types.ObjectId(parsed.data.primaryRent.accountId),
+        rentMethod: derivedRent ? 'Fixed' : resolvedRent.rentMethod,
+        ratePerSqftCents: derivedRent ? 0 : resolvedRent.ratePerSqftCents,
         nextDueDate: parsed.data.primaryRent.nextDueDate
           ? new Date(parsed.data.primaryRent.nextDueDate)
           : null,
-        memo: parsed.data.primaryRent.memo,
+        memo: derivedRent ? derivedRent.memo : parsed.data.primaryRent.memo,
       },
-      splitRentCharges: (parsed.data.splitRentCharges ?? []).map((c) => ({
-        accountId: new Types.ObjectId(c.accountId),
-        amount: toCents(c.amount),
-        memo: c.memo,
-      })),
+      splitRentCharges: derivedRent
+        ? derivedRent.splitRentCharges
+        : (parsed.data.splitRentCharges ?? []).map((c) => ({
+            accountId: new Types.ObjectId(c.accountId),
+            amount: toCents(c.amount),
+            memo: c.memo,
+          })),
+      rentSchedule: rentScheduleModel,
+      proportionateSharePct: parsed.data.proportionateSharePct,
+      salesTaxRatePct: parsed.data.salesTaxRatePct,
       securityDeposit: {
         received: toCents(parsed.data.securityDepositReceived ?? 0),
         withheld: 0,

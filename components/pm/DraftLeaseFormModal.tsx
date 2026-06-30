@@ -27,6 +27,11 @@ import { computeWarnings } from "@/lib/pm/warnings";
 import { WarningInline } from "@/components/pm/WarningBadge";
 import { LeaseTypeHelp } from "@/components/pm/LeaseTypeHelp";
 import { formatMoney } from "@/lib/pm/currency";
+import {
+  LeaseTermScheduleEditor,
+  scheduleRowsToPayload,
+  type ScheduleRow,
+} from "@/components/pm/LeaseTermScheduleEditor";
 
 interface PropertyOption {
   id: string;
@@ -113,6 +118,9 @@ export function DraftLeaseFormModal({
   const [rentRows, setRentRows] = React.useState<RentRow[]>(defaultRentRows());
   const [rentMemo, setRentMemo] = React.useState("");
   const [securityDeposit, setSecurityDeposit] = React.useState("0");
+  const [scheduleRows, setScheduleRows] = React.useState<ScheduleRow[]>([]);
+  const [proportionateSharePct, setProportionateSharePct] = React.useState("");
+  const [salesTaxRatePct, setSalesTaxRatePct] = React.useState("");
   const [tenants, setTenants] = React.useState<TenantDraft[]>([newTenant()]);
   const [residentCenterWelcome, setResidentCenterWelcome] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -129,6 +137,9 @@ export function DraftLeaseFormModal({
     setRentRows(defaultRentRows());
     setRentMemo("");
     setSecurityDeposit("0");
+    setScheduleRows([]);
+    setProportionateSharePct("");
+    setSalesTaxRatePct("");
     setTenants([newTenant()]);
     setResidentCenterWelcome(false);
     let cancelled = false;
@@ -293,6 +304,13 @@ export function DraftLeaseFormModal({
       },
       splitRentCharges,
       securityDeposit: Number(securityDeposit) || 0,
+      rentSchedule: scheduleRowsToPayload(scheduleRows),
+      proportionateSharePct:
+        proportionateSharePct.trim() === ""
+          ? undefined
+          : Number(proportionateSharePct) || 0,
+      salesTaxRatePct:
+        salesTaxRatePct.trim() === "" ? undefined : Number(salesTaxRatePct) || 0,
       tenants: cleanTenants.map((t) => ({
         firstName: t.firstName,
         lastName: t.lastName,
@@ -527,6 +545,46 @@ export function DraftLeaseFormModal({
               Send Resident Center welcome email (default OFF — BR-LL-7)
             </label>
           </div>
+        </div>
+
+        {/* Commercial rent-escalation schedule (the "Lease Summary") */}
+        <div className="space-y-2 border-t border-border pt-3">
+          <h3 className="text-sm font-semibold">
+            Lease term schedule (past &amp; future) — optional
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Record an escalating rent across dated periods plus renewal options.
+            When set, the active term period drives rent posting.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Proportionate share %</Label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="e.g. 33"
+                value={proportionateSharePct}
+                onChange={(e) => setProportionateSharePct(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label>GST/QST rate % (summary only)</Label>
+              <Input
+                type="number"
+                step="0.001"
+                placeholder="e.g. 14.975"
+                value={salesTaxRatePct}
+                onChange={(e) => setSalesTaxRatePct(e.target.value)}
+              />
+            </div>
+          </div>
+          <LeaseTermScheduleEditor
+            rows={scheduleRows}
+            onRowsChange={setScheduleRows}
+            incomeAccounts={incomeAccounts}
+            defaultSizeSqft={selectedUnitSqft}
+            salesTaxRatePct={Number(salesTaxRatePct) || null}
+          />
         </div>
 
         <div>

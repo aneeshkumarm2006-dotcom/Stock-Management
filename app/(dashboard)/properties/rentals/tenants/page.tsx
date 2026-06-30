@@ -3,8 +3,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DeleteTenantDialog } from "@/components/pm/DeleteTenantDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +43,7 @@ export default function TenantsPage() {
   const [filter, setFilter] = React.useState<ActiveFilter>("active");
   const [search, setSearch] = React.useState("");
   const [modalOpen, setModalOpen] = React.useState(false);
+  const [deleteTarget, setDeleteTarget] = React.useState<TenantRow | null>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -109,19 +111,20 @@ export default function TenantsPage() {
                 <th>Email</th>
                 <th>Role</th>
                 <th>Property / Unit</th>
+                <th className="w-10" aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={5} className="py-4 text-fg-muted">
+                  <td colSpan={6} className="py-4 text-fg-muted">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && visible.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-4 text-fg-muted">
+                  <td colSpan={6} className="py-4 text-fg-muted">
                     No tenants match.
                   </td>
                 </tr>
@@ -174,6 +177,17 @@ export default function TenantsPage() {
                       "—"
                     )}
                   </td>
+                  <td className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Delete ${t.displayName}`}
+                      className="text-fg-muted hover:text-error"
+                      onClick={() => setDeleteTarget(t)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -189,6 +203,20 @@ export default function TenantsPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onSaved={load}
+      />
+
+      <DeleteTenantDialog
+        tenant={
+          deleteTarget
+            ? {
+                id: deleteTarget.id,
+                displayName: deleteTarget.displayName,
+                active: deleteTarget.active,
+              }
+            : null
+        }
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={load}
       />
     </div>
   );

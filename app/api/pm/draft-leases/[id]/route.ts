@@ -22,6 +22,7 @@ import {
   draftLeaseUpdateSchema,
   isValidDraftLeaseTransition,
 } from '@/lib/validation/pm/draftLease';
+import { mapRentScheduleToModel } from '@/lib/validation/pm/rentSchedule';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
 import { rentCentsFromRateCents } from '@/lib/pm/rent';
@@ -101,6 +102,21 @@ export async function GET(
       accountId: String(c.accountId),
       amount: c.amount,
       memo: c.memo ?? '',
+    })),
+    proportionateSharePct: doc.proportionateSharePct ?? null,
+    salesTaxRatePct: doc.salesTaxRatePct ?? null,
+    rentSchedule: (doc.rentSchedule ?? []).map((p) => ({
+      label: p.label,
+      kind: p.kind,
+      startDate: p.startDate,
+      endDate: p.endDate,
+      sizeSqft: p.sizeSqft ?? 0,
+      baseRatePerSqft: p.baseRatePerSqft ?? 0,
+      baseAccountId: p.baseAccountId ? String(p.baseAccountId) : null,
+      opexRatePerSqft: p.opexRatePerSqft ?? 0,
+      opexAccountId: p.opexAccountId ? String(p.opexAccountId) : null,
+      taxRatePerSqft: p.taxRatePerSqft ?? 0,
+      taxAccountId: p.taxAccountId ? String(p.taxAccountId) : null,
     })),
     securityDeposit: doc.securityDeposit,
     recurringCharges: (doc.recurringCharges ?? []).map((c) => ({
@@ -199,6 +215,9 @@ export async function PATCH(
     leaseType,
     primaryRent,
     splitRentCharges,
+    rentSchedule,
+    proportionateSharePct,
+    salesTaxRatePct,
     securityDeposit,
     recurringCharges,
     oneTimeCharges,
@@ -319,6 +338,13 @@ export async function PATCH(
       memo: c.memo,
     }));
   }
+  if (rentSchedule !== undefined) {
+    doc.rentSchedule = mapRentScheduleToModel(rentSchedule);
+  }
+  if (proportionateSharePct !== undefined) {
+    doc.proportionateSharePct = proportionateSharePct;
+  }
+  if (salesTaxRatePct !== undefined) doc.salesTaxRatePct = salesTaxRatePct;
   if (securityDeposit !== undefined) {
     doc.securityDeposit = toCents(securityDeposit);
   }

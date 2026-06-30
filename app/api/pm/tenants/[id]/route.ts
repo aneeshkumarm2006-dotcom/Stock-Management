@@ -14,6 +14,8 @@ import { tenantUpdateSchema } from '@/lib/validation/pm/tenant';
 import { logActivity } from '@/lib/pm/activity';
 import { tenantDisplayName } from '@/lib/pm/tenantName';
 import { syncTenantSnapshots } from '@/lib/pm/tenantSync';
+import { computeLeaseStatus } from '@/lib/pm/leaseStatus';
+import { computePeriodAmounts } from '@/lib/pm/rentSchedule';
 
 export const runtime = 'nodejs';
 
@@ -108,6 +110,77 @@ export async function GET(
     }
   }
 
+  // All leases this tenant appears on (as tenant OR cosigner), past + present +
+  // future, each with its rent schedule — powers the "Lease terms (past &
+  // future)" history on the tenant detail page. Sorted oldest-first.
+  const tenantLeases = await Lease.find({
+    organizationId: doc.organizationId,
+    $or: [
+      { 'tenants.tenantId': doc._id },
+      { 'cosigners.tenantId': doc._id },
+    ],
+  })
+    .sort({ startDate: 1 })
+    .lean();
+
+  const [propDocs, unitDocs] = await Promise.all([
+    Property.find({
+      organizationId: doc.organizationId,
+      _id: { $in: tenantLeases.map((l) => l.propertyId) },
+    })
+      .select({ propertyName: 1 })
+      .lean<{ _id: Types.ObjectId; propertyName?: string }[]>(),
+    Unit.find({
+      organizationId: doc.organizationId,
+      _id: { $in: tenantLeases.map((l) => l.unitId) },
+    })
+      .select({ unitId: 1 })
+      .lean<{ _id: Types.ObjectId; unitId?: string }[]>(),
+  ]);
+  const propName = new Map(propDocs.map((p) => [String(p._id), p.propertyName ?? '']));
+  const unitName = new Map(unitDocs.map((u) => [String(u._id), u.unitId ?? '']));
+
+  const allLeases = tenantLeases.map((l) => ({
+    id: String(l._id),
+    leaseNumber: l.leaseNumber,
+    propertyName: propName.get(String(l.propertyId)) || '(Unknown property)',
+    unitName: unitName.get(String(l.unitId)) || '(Unknown unit)',
+    status: computeLeaseStatus({
+      startDate: l.startDate,
+      endDate: l.endDate ?? null,
+      leaseType: l.leaseType,
+      manual: l.status,
+    }),
+    leaseType: l.leaseType,
+    startDate: l.startDate ?? null,
+    endDate: l.endDate ?? null,
+    primaryRentAmount: l.primaryRent?.amount ?? 0,
+    totalRentAmount:
+      (l.primaryRent?.amount ?? 0) +
+      (l.splitRentCharges ?? []).reduce((s, c) => s + (c.amount ?? 0), 0),
+    proportionateSharePct: l.proportionateSharePct ?? null,
+    salesTaxRatePct: l.salesTaxRatePct ?? null,
+    rentSchedule: (l.rentSchedule ?? []).map((p) => ({
+      label: p.label,
+      kind: p.kind,
+      startDate: p.startDate,
+      endDate: p.endDate,
+      sizeSqft: p.sizeSqft ?? 0,
+      baseRatePerSqft: p.baseRatePerSqft ?? 0,
+      opexRatePerSqft: p.opexRatePerSqft ?? 0,
+      taxRatePerSqft: p.taxRatePerSqft ?? 0,
+      amounts: computePeriodAmounts(
+        {
+          sizeSqft: p.sizeSqft ?? 0,
+          baseRatePerSqft: p.baseRatePerSqft ?? 0,
+          opexRatePerSqft: p.opexRatePerSqft ?? 0,
+          taxRatePerSqft: p.taxRatePerSqft ?? 0,
+        },
+        l.salesTaxRatePct ?? null,
+      ),
+    })),
+  }));
+
   return NextResponse.json({
     id: String(doc._id),
     tenantType: doc.tenantType ?? 'Individual',
@@ -127,6 +200,7 @@ export async function GET(
     active: doc.active,
     currentLeaseId: doc.currentLeaseId ? String(doc.currentLeaseId) : null,
     currentLease,
+    allLeases,
   });
 }
 
@@ -218,23 +292,85 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } },
 ) {
   const ctx = await getPmContext();
   if (!ctx) return unauthorizedResponse();
+
+  // Two removal modes on one verb, mirroring the Bill delete route:
+  //   • (default) archive   — reversible soft delete; the "Inactivate" action.
+  //   • mode=permanent      — hard delete; wipes the tenant document for good.
+  const mode =
+    new URL(request.url).searchParams.get('mode') === 'permanent'
+      ? 'permanent'
+      : 'archive';
+
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  doc.active = false;
-  await doc.save();
+
+  if (mode === 'archive') {
+    doc.active = false;
+    await doc.save();
+
+    await logActivity({
+      orgId: ctx.orgId,
+      parentType: 'Tenant',
+      parentId: doc._id,
+      eventType: 'Tenant archived',
+      actorUserId: ctx.userId,
+    });
+
+    return NextResponse.json({ ok: true });
+  }
+
+  // Permanent delete is a deliberate two-step: the tenant must be Inactivated
+  // (reversible archive) first. Refuse to wipe a still-active tenant so the
+  // irreversible action can never happen by accident from a live record.
+  if (doc.active) {
+    return NextResponse.json(
+      {
+        error:
+          'This tenant is still active. Inactivate the tenant first, then delete it permanently.',
+      },
+      { status: 409 },
+    );
+  }
+
+  // Secondary integrity guard: even once inactive, refuse while the tenant is
+  // named on a live (Active or Future) lease, where a hard delete would orphan
+  // the lease's tenant reference. Past/Ended/Cancelled leases keep their
+  // point-in-time snapshot (syncTenantSnapshots) and do not block — mirrors the
+  // Unit delete guard.
+  const blockingLease = await Lease.findOne({
+    organizationId: doc.organizationId,
+    status: { $in: ['Active', 'Future'] },
+    $or: [{ 'tenants.tenantId': doc._id }, { 'cosigners.tenantId': doc._id }],
+  })
+    .select({ leaseNumber: 1, status: 1 })
+    .lean<{ leaseNumber: number; status: string } | null>();
+  if (blockingLease) {
+    return NextResponse.json(
+      {
+        error: `This tenant is named on lease #${blockingLease.leaseNumber} (${blockingLease.status}). End or cancel the lease before deleting the tenant.`,
+      },
+      { status: 409 },
+    );
+  }
+
+  // Capture the display name before the document is gone so the audit line
+  // (which outlives the tenant) still reads meaningfully.
+  const name = tenantDisplayName(doc);
+  await doc.deleteOne();
 
   await logActivity({
     orgId: ctx.orgId,
     parentType: 'Tenant',
     parentId: doc._id,
-    eventType: 'Tenant archived',
+    eventType: 'Tenant permanently deleted',
     actorUserId: ctx.userId,
+    payload: { name },
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, mode: 'permanent' });
 }

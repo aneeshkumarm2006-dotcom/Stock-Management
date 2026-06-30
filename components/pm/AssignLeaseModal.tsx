@@ -32,6 +32,11 @@ import { TenantPicker, type TenantOption } from "@/components/pm/TenantPicker";
 import { LeaseTypeHelp } from "@/components/pm/LeaseTypeHelp";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
 import { formatMoney } from "@/lib/pm/currency";
+import {
+  LeaseTermScheduleEditor,
+  scheduleRowsToPayload,
+  type ScheduleRow,
+} from "@/components/pm/LeaseTermScheduleEditor";
 
 interface PropertyOption {
   id: string;
@@ -130,6 +135,9 @@ export function AssignLeaseModal({
   const [rentCycle, setRentCycle] = React.useState<RentCycle>("Monthly");
   const [rentMethod, setRentMethod] = React.useState<RentMethod>("Fixed");
   const [rentRows, setRentRows] = React.useState<RentRow[]>(defaultRentRows());
+  const [scheduleRows, setScheduleRows] = React.useState<ScheduleRow[]>([]);
+  const [proportionateSharePct, setProportionateSharePct] = React.useState("");
+  const [salesTaxRatePct, setSalesTaxRatePct] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
   function updateRow(key: RentRowKey, patch: Partial<RentRow>) {
@@ -150,6 +158,9 @@ export function AssignLeaseModal({
     setRentCycle("Monthly");
     setRentMethod("Fixed");
     setRentRows(defaultRentRows());
+    setScheduleRows([]);
+    setProportionateSharePct("");
+    setSalesTaxRatePct("");
 
     let cancelled = false;
     Promise.all([
@@ -321,6 +332,15 @@ export function AssignLeaseModal({
         splitRentCharges,
         securityDepositReceived: 0,
         tenants: [ref],
+        rentSchedule: scheduleRowsToPayload(scheduleRows),
+        proportionateSharePct:
+          proportionateSharePct.trim() === ""
+            ? undefined
+            : Number(proportionateSharePct) || 0,
+        salesTaxRatePct:
+          salesTaxRatePct.trim() === ""
+            ? undefined
+            : Number(salesTaxRatePct) || 0,
       }),
     });
     setSaving(false);
@@ -565,6 +585,44 @@ export function AssignLeaseModal({
                 Total: {formatMoney(Math.round(totalMonthlyDollars * 100))} / mo
               </span>
             </div>
+          </div>
+
+          {/* Commercial rent-escalation schedule (the "Lease Summary") */}
+          <div className="col-span-2 space-y-2 border-t border-border pt-3">
+            <Label>Lease term schedule (past &amp; future) — optional</Label>
+            <p className="text-xs text-fg-muted">
+              Record an escalating rent across dated periods plus renewal options.
+              When set, the active term period drives rent posting.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Proportionate share %</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g. 33"
+                  value={proportionateSharePct}
+                  onChange={(e) => setProportionateSharePct(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>GST/QST rate % (summary only)</Label>
+                <Input
+                  type="number"
+                  step="0.001"
+                  placeholder="e.g. 14.975"
+                  value={salesTaxRatePct}
+                  onChange={(e) => setSalesTaxRatePct(e.target.value)}
+                />
+              </div>
+            </div>
+            <LeaseTermScheduleEditor
+              rows={scheduleRows}
+              onRowsChange={setScheduleRows}
+              incomeAccounts={accounts}
+              defaultSizeSqft={selectedUnitSqft}
+              salesTaxRatePct={Number(salesTaxRatePct) || null}
+            />
           </div>
         </div>
 

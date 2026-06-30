@@ -310,6 +310,19 @@ export const RENT_METHODS: readonly RentMethod[] = [
   "RatePerSqft",
 ] as const;
 
+/** LeaseTermKind — a rent-schedule period is either a `Term` (an executed or
+ *  scheduled lease period that drives GL rent posting while it is the active
+ *  period) or a `RenewalOption` (a future option recorded for reference that
+ *  NEVER posts until it is exercised). Commercial leases (see the client's
+ *  "Lease Summary") escalate rent across several Term periods, then carry one
+ *  or more RenewalOption periods beyond the last Term. */
+export type LeaseTermKind = "Term" | "RenewalOption";
+
+export const LEASE_TERM_KINDS: readonly LeaseTermKind[] = [
+  "Term",
+  "RenewalOption",
+] as const;
+
 /** RentersInsurancePolicy.carrier — third-party vs Buildium-bundled MSI. */
 export type RentersInsuranceCarrier = "MSI" | "Third Party";
 

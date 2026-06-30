@@ -25,6 +25,7 @@ import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
 import { logActivity } from '@/lib/pm/activity';
 import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
 import { buildRentChargeLines } from '@/lib/pm/rentCharge';
+import { resolveScheduledRentForDate } from '@/lib/pm/rentSchedule';
 import type { PmContext } from '@/lib/auth/getCurrentUser';
 import type { RentCycle } from '@/types/pm';
 
@@ -320,17 +321,16 @@ export async function runLeaseRecurringPoster(
             note: 'Already claimed by a concurrent run',
           });
         } else {
-          const built = buildRentChargeLines(
-            {
-              primaryRent: lease.primaryRent,
-              splitRentCharges: lease.splitRentCharges,
-              propertyId: lease.propertyId,
-              unitId: lease.unitId,
-            },
-            accountsReceivableCoaId,
-          );
+          // Resolve the rent for THIS due date. With a rent schedule, the
+          // active Term period drives the charge (escalations auto-apply by
+          // date); without one, this is the legacy primaryRent/splitRentCharges.
+          const source = resolveScheduledRentForDate(lease, dueDate);
+          const built = source
+            ? buildRentChargeLines(source, accountsReceivableCoaId)
+            : null;
           if (!built) {
-            // Nothing to post (0 rent) — release the claim so the cursor holds.
+            // Nothing to post (0 rent, or schedule has no active Term at the due
+            // date) — release the claim so the cursor holds.
             await Lease.updateOne(
               {
                 _id: lease._id,

@@ -10,6 +10,7 @@ import {
   DRAFT_LEASE_EXECUTION_STATUSES,
 } from '@/types/pm';
 import { LEASE_INLINE_FILE_CAP } from '@/lib/db/models/pm/DraftLease';
+import { rentScheduleSchema } from '@/lib/validation/pm/rentSchedule';
 
 const objectIdString = z
   .string()
@@ -93,6 +94,11 @@ const base = {
   rentCycle: z.enum(RENT_CYCLES as unknown as [string, ...string[]]).optional(),
   primaryRent: primaryRentSchema.optional(),
   splitRentCharges: z.array(splitRentSchema).optional(),
+  // Rent-escalation schedule — lenient on drafts (a draft may be incomplete);
+  // the active-lease create/PATCH schema enforces ordering/posting rules.
+  rentSchedule: rentScheduleSchema.optional(),
+  proportionateSharePct: z.number().min(0).max(100).optional(),
+  salesTaxRatePct: z.number().min(0).max(100).optional(),
   securityDeposit: z.number().nonnegative().optional(),
   recurringCharges: z.array(recurringChargeSchema).optional(),
   oneTimeCharges: z.array(oneTimeChargeSchema).optional(),

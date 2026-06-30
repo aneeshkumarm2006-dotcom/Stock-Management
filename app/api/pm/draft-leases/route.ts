@@ -15,6 +15,7 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { draftLeaseCreateSchema } from '@/lib/validation/pm/draftLease';
+import { mapRentScheduleToModel } from '@/lib/validation/pm/rentSchedule';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
 import { rentCentsFromRateCents } from '@/lib/pm/rent';
@@ -194,6 +195,9 @@ export async function POST(request: Request) {
         amount: toCents(c.amount ?? 0),
         memo: c.memo,
       })),
+      rentSchedule: mapRentScheduleToModel(parsed.data.rentSchedule),
+      proportionateSharePct: parsed.data.proportionateSharePct,
+      salesTaxRatePct: parsed.data.salesTaxRatePct,
       securityDeposit: toCents(parsed.data.securityDeposit ?? 0),
       recurringCharges: (parsed.data.recurringCharges ?? []).map((c) => ({
         amount: toCents(c.amount ?? 0),

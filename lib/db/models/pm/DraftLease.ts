@@ -26,6 +26,7 @@ import { Schema, model, models, Types, type Model } from 'mongoose';
 import type {
   EsignatureStatus,
   LeaseType,
+  LeaseTermKind,
   DraftLeaseExecutionStatus,
   RentCycle,
   RentMethod,
@@ -34,6 +35,7 @@ import type {
 import {
   ESIGNATURE_STATUSES,
   LEASE_TYPES,
+  LEASE_TERM_KINDS,
   DRAFT_LEASE_EXECUTION_STATUSES,
   RENT_CYCLES,
   RENT_METHODS,
@@ -73,6 +75,22 @@ export interface IDraftLeaseSplitRentCharge {
   accountId: Types.ObjectId;
   amount: number; // cents
   memo?: string;
+}
+
+/** Identical shape to the active lease's `ILeaseTermPeriod` so promotion is a
+ *  straight copy. See Lease.ts for the rate convention (annual dollars per sf). */
+export interface IDraftLeaseTermPeriod {
+  label: string;
+  kind: LeaseTermKind;
+  startDate: Date;
+  endDate: Date;
+  sizeSqft: number;
+  baseRatePerSqft: number;
+  baseAccountId?: Types.ObjectId | null;
+  opexRatePerSqft: number;
+  opexAccountId?: Types.ObjectId | null;
+  taxRatePerSqft: number;
+  taxAccountId?: Types.ObjectId | null;
 }
 
 export interface IDraftLeasePrimaryRent {
@@ -143,6 +161,11 @@ export interface IDraftLease {
   rentCycle: RentCycle;
   primaryRent: IDraftLeasePrimaryRent;
   splitRentCharges: IDraftLeaseSplitRentCharge[];
+  /** Commercial rent-escalation schedule; copied verbatim into the Lease on
+   *  execute. Empty for ordinary single-rent drafts. */
+  rentSchedule: IDraftLeaseTermPeriod[];
+  proportionateSharePct?: number;
+  salesTaxRatePct?: number;
   securityDeposit: number; // cents
   recurringCharges: IDraftLeaseRecurringCharge[];
   oneTimeCharges: IDraftLeaseOneTimeCharge[];
@@ -203,6 +226,35 @@ const SplitRentSchema = new Schema<IDraftLeaseSplitRentCharge>(
     memo: { type: String, trim: true, maxlength: LEASE_MEMO_MAX },
   },
   { _id: false },
+);
+
+const TermPeriodSchema = new Schema<IDraftLeaseTermPeriod>(
+  {
+    label: { type: String, required: true, trim: true, maxlength: 60 },
+    kind: { type: String, enum: LEASE_TERM_KINDS, default: 'Term' },
+    startDate: { type: Date, required: true },
+    endDate: { type: Date, required: true },
+    sizeSqft: { type: Number, default: 0, min: 0 },
+    baseRatePerSqft: { type: Number, default: 0, min: 0 },
+    baseAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmChartOfAccount',
+      default: null,
+    },
+    opexRatePerSqft: { type: Number, default: 0, min: 0 },
+    opexAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmChartOfAccount',
+      default: null,
+    },
+    taxRatePerSqft: { type: Number, default: 0, min: 0 },
+    taxAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmChartOfAccount',
+      default: null,
+    },
+  },
+  { _id: true },
 );
 
 const PrimaryRentSchema = new Schema<IDraftLeasePrimaryRent>(
@@ -334,6 +386,9 @@ const DraftLeaseSchema = new Schema<IDraftLease>(
       default: () => ({ amount: 0 }),
     },
     splitRentCharges: { type: [SplitRentSchema], default: () => [] },
+    rentSchedule: { type: [TermPeriodSchema], default: () => [] },
+    proportionateSharePct: { type: Number, min: 0, max: 100, default: undefined },
+    salesTaxRatePct: { type: Number, min: 0, max: 100, default: undefined },
     securityDeposit: { type: Number, default: 0, min: 0 },
     recurringCharges: { type: [RecurringChargeSchema], default: () => [] },
     oneTimeCharges: { type: [OneTimeChargeSchema], default: () => [] },

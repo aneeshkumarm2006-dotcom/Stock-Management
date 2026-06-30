@@ -27,6 +27,7 @@ import {
   LockedPeriodError,
 } from '@/lib/pm/lockedPeriod';
 import { buildRentChargeLines } from '@/lib/pm/rentCharge';
+import { resolveScheduledRentForDate } from '@/lib/pm/rentSchedule';
 import type { RentCycle } from '@/types/pm';
 
 export const runtime = 'nodejs';
@@ -238,15 +239,15 @@ export async function POST(
       }
     }
     if (!locked) {
-      const built = buildRentChargeLines(
-        {
-          primaryRent: lease.primaryRent,
-          splitRentCharges: lease.splitRentCharges,
-          propertyId: lease.propertyId,
-          unitId: lease.unitId,
-        },
-        accountsReceivableCoaId,
-      );
+      // Resolve the rent for THIS due date. With a rent schedule, the active
+      // Term period's base+OPEX+tax drive the charge (escalations auto-apply);
+      // without one, this is the legacy primaryRent/splitRentCharges. A null
+      // source means a schedule with no active Term at the due date — nothing
+      // to post — so we leave the cursor put.
+      const source = resolveScheduledRentForDate(lease, dueDate);
+      const built = source
+        ? buildRentChargeLines(source, accountsReceivableCoaId)
+        : null;
       if (built) {
         const je = await JournalEntry.create({
           organizationId: orgId,

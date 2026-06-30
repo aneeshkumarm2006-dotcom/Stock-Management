@@ -9,7 +9,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import {
   Tabs,
   TabsContent,
@@ -112,8 +114,10 @@ function RentRollPageInner() {
     ? (insuranceParam as InsuranceWindow)
     : null;
 
+  const { toast } = useToast();
   const [rows, setRows] = React.useState<LeaseRow[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [reconciling, setReconciling] = React.useState(false);
   const [statusFilter, setStatusFilter] =
     React.useState<"Active,Future" | LeaseStatus | "all">("Active,Future");
   const [search, setSearch] = React.useState("");
@@ -134,6 +138,42 @@ function RentRollPageInner() {
   React.useEffect(() => {
     load();
   }, [load]);
+
+  // Stopgap for stale persisted statuses: a lease that lapsed by date keeps its
+  // last-written `status`/`currentLeaseId` until a lease write (or the nightly
+  // cron) reconciles it — which can make tenant/unit assignment falsely fail.
+  // This button reconciles the whole org on demand, then reloads the table.
+  const reconcileStatuses = React.useCallback(async () => {
+    setReconciling(true);
+    try {
+      const r = await fetch("/api/pm/leases/reconcile-statuses", {
+        method: "POST",
+      });
+      const data = (await r.json().catch(() => ({}))) as {
+        updated?: number;
+        tenantsTouched?: number;
+        error?: string;
+      };
+      if (!r.ok) {
+        toast({
+          title: "Reconcile failed",
+          description: data.error ?? "Try again.",
+          variant: "error",
+        });
+        return;
+      }
+      toast({
+        title: "Statuses reconciled",
+        description: `${data.updated ?? 0} lease(s) updated, ${
+          data.tenantsTouched ?? 0
+        } tenant link(s) corrected.`,
+        variant: "success",
+      });
+      await load();
+    } finally {
+      setReconciling(false);
+    }
+  }, [toast, load]);
 
   // Fix 13 — the `?insurance=` deep link was banner-only and never filtered the
   // table. We fetch the org-wide renters-insurance rollup in parallel and build
@@ -263,7 +303,15 @@ function RentRollPageInner() {
                 >
                   All
                 </button>
-                <div className="ml-auto w-full max-w-xs">
+                <div className="ml-auto flex w-full max-w-md items-center gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={reconcileStatuses}
+                    disabled={reconciling}
+                    title="Refresh lease statuses and tenant assignment links from today's date. Fixes expired leases that still block a unit or tenant from being reassigned."
+                  >
+                    {reconciling ? "Reconciling…" : "Reconcile statuses"}
+                  </Button>
                   <Input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}

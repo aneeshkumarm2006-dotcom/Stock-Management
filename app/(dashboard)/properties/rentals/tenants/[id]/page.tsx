@@ -7,8 +7,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter, notFound } from "next/navigation";
-import { ArrowLeft, MessageSquare } from "lucide-react";
+import { ArrowLeft, MessageSquare, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Tabs,
@@ -24,7 +25,12 @@ import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { AssignLeaseModal } from "@/components/pm/AssignLeaseModal";
 import { EditLeaseModal } from "@/components/pm/EditLeaseModal";
+import {
+  LeaseTermScheduleTable,
+  type SchedulePeriodView,
+} from "@/components/pm/LeaseTermScheduleTable";
 import { EditTenantTypeModal } from "@/components/pm/EditTenantTypeModal";
+import { DeleteTenantDialog } from "@/components/pm/DeleteTenantDialog";
 import { BreadcrumbOverride } from "@/components/layout/BreadcrumbOverride";
 import { useToast } from "@/components/ui/toast";
 import { formatDateOnly } from "@/lib/utils/dateInput";
@@ -67,6 +73,21 @@ interface TenantDetail {
     totalRentAmount: number; // cents — Base + OPEX/Tax (§4)
     splitRentCharges: { amount: number; memo: string }[];
   } | null;
+  allLeases: Array<{
+    id: string;
+    leaseNumber: number;
+    propertyName: string;
+    unitName: string;
+    status: string;
+    leaseType: string;
+    startDate: string | null;
+    endDate: string | null;
+    primaryRentAmount: number;
+    totalRentAmount: number;
+    proportionateSharePct: number | null;
+    salesTaxRatePct: number | null;
+    rentSchedule: SchedulePeriodView[];
+  }>;
 }
 
 const PHONE_KEYS = ["mobile", "home", "work", "fax"] as const;
@@ -80,6 +101,7 @@ export default function TenantDetailPage() {
   const [assignOpen, setAssignOpen] = React.useState(false);
   const [editLeaseOpen, setEditLeaseOpen] = React.useState(false);
   const [editTypeOpen, setEditTypeOpen] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -156,14 +178,23 @@ export default function TenantDetailPage() {
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Tenants
         </Button>
-        <Button
-          variant="destructive"
-          size="sm"
-          onClick={archive}
-          disabled={!doc.active}
-        >
-          {doc.active ? "Inactivate" : "Inactive"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={archive}
+            disabled={!doc.active}
+          >
+            {doc.active ? "Inactivate" : "Inactive"}
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -407,6 +438,66 @@ export default function TenantDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Lease terms — past & future. Every lease this tenant has held,
+              oldest first, each with its rent-escalation schedule when present. */}
+          {doc.allLeases.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Lease terms (past &amp; future)</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {doc.allLeases.map((l) => (
+                  <div key={l.id} className="rounded border border-border p-3">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <Link
+                        href={`/properties/rentals/rent-roll/${l.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        Lease #{l.leaseNumber}
+                      </Link>
+                      <Badge
+                        variant={
+                          l.status === "Active"
+                            ? "gain"
+                            : l.status === "Future"
+                              ? "muted"
+                              : l.status === "Expired"
+                                ? "loss"
+                                : "outline"
+                        }
+                      >
+                        {l.status}
+                      </Badge>
+                      <span className="text-fg-muted">
+                        {l.propertyName} · {l.unitName}
+                      </span>
+                      <span className="text-fg-muted">
+                        {l.startDate ? formatDateOnly(l.startDate) : "—"} →{" "}
+                        {l.endDate
+                          ? formatDateOnly(l.endDate)
+                          : l.leaseType === "At-will"
+                            ? "At-will"
+                            : "—"}
+                      </span>
+                      <span className="ml-auto">
+                        <CurrencyAmount cents={l.totalRentAmount} /> / mo
+                      </span>
+                    </div>
+                    {l.rentSchedule.length > 0 && (
+                      <div className="mt-3">
+                        <LeaseTermScheduleTable
+                          periods={l.rentSchedule}
+                          proportionateSharePct={l.proportionateSharePct}
+                          salesTaxRatePct={l.salesTaxRatePct}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="communications" className="mt-4">
@@ -425,6 +516,20 @@ export default function TenantDetailPage() {
           <FilesPanel locationType="Tenant" locationId={doc.id} />
         </TabsContent>
       </Tabs>
+
+      <DeleteTenantDialog
+        tenant={
+          deleteOpen
+            ? {
+                id: doc.id,
+                displayName: doc.displayName,
+                active: doc.active,
+              }
+            : null
+        }
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => router.push("/properties/rentals/tenants")}
+      />
 
       <EditTenantTypeModal
         open={editTypeOpen}
