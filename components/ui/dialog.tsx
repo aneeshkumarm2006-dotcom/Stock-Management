@@ -77,7 +77,9 @@ export function DialogContent({
   return (
     <div
       className={cn(
-        "rounded-md border border-border bg-surface-high p-6 shadow-2xl",
+        // Cap to the viewport (the wrapper adds p-4 = 2rem) and scroll inside so
+        // tall forms (e.g. the lease term schedule editor) stay fully reachable.
+        "max-h-[calc(100vh-2rem)] overflow-y-auto rounded-md border border-border bg-surface-high p-6 shadow-2xl",
         className,
       )}
     >

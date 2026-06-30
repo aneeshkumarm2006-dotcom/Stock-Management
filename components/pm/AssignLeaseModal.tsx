@@ -42,10 +42,19 @@ interface PropertyOption {
   id: string;
   propertyName: string;
 }
+interface UnitOccupant {
+  tenantId: string;
+  tenantType?: TenantType;
+  firstName: string;
+  lastName: string;
+  companyName?: string;
+  isCosigner: boolean;
+}
 interface UnitOption {
   id: string;
   unitId: string;
   sizeSqft: number | null;
+  occupants: UnitOccupant[];
 }
 interface AccountOption {
   id: string;
@@ -209,16 +218,26 @@ export function AssignLeaseModal({
     let cancelled = false;
     fetch(`/api/pm/units?propertyId=${propertyId}`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((data: { id: string; unitId: string; sizeSqft: number | null }[]) => {
-        if (cancelled) return;
-        setUnits(
-          data.map((r) => ({
-            id: r.id,
-            unitId: r.unitId,
-            sizeSqft: r.sizeSqft ?? null,
-          })),
-        );
-      });
+      .then(
+        (
+          data: {
+            id: string;
+            unitId: string;
+            sizeSqft: number | null;
+            occupants?: UnitOccupant[];
+          }[],
+        ) => {
+          if (cancelled) return;
+          setUnits(
+            data.map((r) => ({
+              id: r.id,
+              unitId: r.unitId,
+              sizeSqft: r.sizeSqft ?? null,
+              occupants: r.occupants ?? [],
+            })),
+          );
+        },
+      );
     return () => {
       cancelled = true;
     };
@@ -232,6 +251,10 @@ export function AssignLeaseModal({
   // resolve against the selected unit's sizeSqft.
   const selectedUnitSqft =
     units.find((u) => u.id === unitId)?.sizeSqft ?? null;
+  // Existing occupants of the chosen unit. A unit may carry more than one
+  // active tenant; we don't block assigning here, just warn (non-blocking).
+  const selectedUnitOccupants =
+    units.find((u) => u.id === unitId)?.occupants ?? [];
   const rowMonthlyDollars = React.useCallback(
     (r: RentRow): number => {
       if (rentMethod === "RatePerSqft") {
@@ -636,6 +659,13 @@ export function AssignLeaseModal({
           <p className="mt-3 text-sm text-amber-600">
             No income account found — add one under Accounting → Chart of
             accounts.
+          </p>
+        )}
+        {unitId && selectedUnitOccupants.length > 0 && (
+          <p className="mt-3 text-sm text-amber-600">
+            This unit is already assigned to{" "}
+            {selectedUnitOccupants.map((o) => tenantDisplayName(o)).join(", ")}.
+            Assigning here will place more than one active tenant on the unit.
           </p>
         )}
 

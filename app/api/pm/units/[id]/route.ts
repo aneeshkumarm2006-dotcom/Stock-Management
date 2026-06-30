@@ -17,6 +17,7 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { unitUpdateSchema } from '@/lib/validation/pm/unit';
 import { logActivity } from '@/lib/pm/activity';
+import type { TenantType } from '@/types/pm';
 
 export const runtime = 'nodejs';
 
@@ -53,10 +54,13 @@ export async function GET(
     .sort({ createdAt: -1 })
     .lean();
 
-  // Phase 3 — derive `currentTenants` from the Active lease on this unit.
+  // Phase 3 — derive `currentTenants` from the Active lease(s) on this unit.
   // BR-LL-2 allows Future + Active to coexist; we surface only Active here
-  // because tenants haven't moved in on Future leases yet.
-  const activeLease = await Lease.findOne({
+  // because tenants haven't moved in on Future leases yet. A unit may carry
+  // more than one active tenant (assigning to an occupied unit is allowed), so
+  // we union tenants across every Active lease, deduped by tenantId. The
+  // `activeLease` summary keeps the earliest-starting lease for determinism.
+  const activeLeases = await Lease.find({
     organizationId: doc.organizationId,
     unitId: doc._id,
     status: 'Active',
@@ -69,16 +73,31 @@ export async function GET(
       endDate: 1,
       leaseType: 1,
     })
+    .sort({ startDate: 1 })
     .lean();
-  const currentTenants =
-    activeLease?.tenants?.map((t) => ({
-      tenantId: String(t.tenantId),
-      tenantType: t.tenantType ?? 'Individual',
-      firstName: t.firstName,
-      lastName: t.lastName,
-      companyName: t.companyName ?? '',
-      isCosigner: t.isCosigner,
-    })) ?? [];
+  const currentTenants: {
+    tenantId: string;
+    tenantType: TenantType;
+    firstName: string;
+    lastName: string;
+    companyName: string;
+    isCosigner: boolean;
+  }[] = [];
+  for (const lease of activeLeases) {
+    for (const t of lease.tenants ?? []) {
+      const tid = String(t.tenantId);
+      if (currentTenants.some((c) => c.tenantId === tid)) continue;
+      currentTenants.push({
+        tenantId: tid,
+        tenantType: t.tenantType ?? 'Individual',
+        firstName: t.firstName,
+        lastName: t.lastName,
+        companyName: t.companyName ?? '',
+        isCosigner: t.isCosigner,
+      });
+    }
+  }
+  const activeLease = activeLeases[0] ?? null;
 
   // Hydrate image gallery (preserve order).
   const imageIds = (doc.images ?? []).filter(Boolean) as Types.ObjectId[];

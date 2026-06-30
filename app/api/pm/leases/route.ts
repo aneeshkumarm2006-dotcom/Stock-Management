@@ -133,8 +133,8 @@ export async function POST(request: Request) {
   // but the persisted values only refresh on a lease write — the nightly
   // reconcile cron is the durable fix, yet a lease that lapsed since the last
   // write still carries a stale `Active` status / dangling `currentLeaseId`.
-  // Without this, the occupancy / already-assigned guards would falsely 409 a
-  // unit or tenant whose lease has actually expired. Idempotent and cheap
+  // Without this, the tenant already-assigned guard would falsely 409 a
+  // tenant whose lease has actually expired. Idempotent and cheap
   // relative to the assignment it gates; never let a sync hiccup block create.
   try {
     await recomputeLeaseStatuses(ctx.orgId);
@@ -146,7 +146,8 @@ export async function POST(request: Request) {
   // POST is the direct-create path (most leases arrive via draft-lease
   // execute). It previously trusted the body blindly; assigning an existing
   // tenant from the UI goes through here, so validate the references and
-  // protect the one-live-lease-per-unit / one-active-lease-per-tenant rules.
+  // protect the one-active-lease-per-tenant rule. A unit MAY carry more than
+  // one active tenant — the UI warns about existing occupants but allows it.
   const propertyObjectId = new Types.ObjectId(parsed.data.propertyId);
   const unitObjectId = new Types.ObjectId(parsed.data.unitId);
 
@@ -224,22 +225,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // No double-booking: a unit carries at most one live (Active/Future) lease.
-  const occupying = await Lease.findOne({
-    organizationId: orgId,
-    unitId: unitObjectId,
-    status: { $in: ['Active', 'Future'] },
-  })
-    .select({ leaseNumber: 1 })
-    .lean<{ leaseNumber: number } | null>();
-  if (occupying) {
-    return NextResponse.json(
-      {
-        error: `Unit already has an active or future lease (#${occupying.leaseNumber}). End it before assigning a new tenant.`,
-      },
-      { status: 409 },
-    );
-  }
+  // A unit may carry more than one active tenant: assigning a new tenant to an
+  // already-occupied unit is allowed. The assign UI surfaces a non-blocking
+  // warning naming the existing occupants, so no occupancy guard here.
 
   // A tenant holds only one active assignment (Tenant.currentLeaseId is single).
   const alreadyAssigned = foundTenants.find((t) => Boolean(t.currentLeaseId));

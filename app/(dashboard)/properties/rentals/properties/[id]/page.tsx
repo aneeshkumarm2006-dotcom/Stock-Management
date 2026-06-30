@@ -161,16 +161,33 @@ export default function PropertyDetailPage() {
     load();
   }, [load]);
 
-  // unitId → current occupants (prefer an Active lease over a Future one).
+  // unitId → current occupants. A unit may carry more than one active tenant,
+  // so we union tenant names across ALL of the unit's Active leases (deduped by
+  // tenantId). Future-lease names are a fallback used only when the unit has no
+  // Active lease (the tenant hasn't moved in yet).
   const occupantsByUnit = React.useMemo(() => {
-    const m = new Map<string, { names: string[]; status: string }>();
+    const active = new Map<string, { names: string[]; seen: Set<string> }>();
+    const future = new Map<string, { names: string[]; seen: Set<string> }>();
     for (const l of activeLeases) {
-      const names = l.tenants.map((t) => tenantDisplayName(t));
-      const existing = m.get(l.unitId);
-      if (!existing || (existing.status !== "Active" && l.status === "Active")) {
-        m.set(l.unitId, { names, status: l.status });
+      const bucket = l.status === "Active" ? active : future;
+      const entry = bucket.get(l.unitId) ?? {
+        names: [],
+        seen: new Set<string>(),
+      };
+      for (const t of l.tenants) {
+        if (entry.seen.has(t.tenantId)) continue;
+        entry.seen.add(t.tenantId);
+        entry.names.push(tenantDisplayName(t));
       }
+      bucket.set(l.unitId, entry);
     }
+    const m = new Map<string, { names: string[]; status: string }>();
+    active.forEach((e, unitId) => {
+      m.set(unitId, { names: e.names, status: "Active" });
+    });
+    future.forEach((e, unitId) => {
+      if (!m.has(unitId)) m.set(unitId, { names: e.names, status: "Future" });
+    });
     return m;
   }, [activeLeases]);
 
@@ -739,7 +756,21 @@ export default function PropertyDetailPage() {
                           <td className="text-fg-muted">{u.applianceCount}</td>
                           <td className="text-fg-muted">
                             {occ && occ.names.length > 0 ? (
-                              occ.names.join(", ")
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span>{occ.names.join(", ")}</span>
+                                {doc.active && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setAssignUnitId(u.id);
+                                      setAssignOpen(true);
+                                    }}
+                                  >
+                                    Assign another
+                                  </Button>
+                                )}
+                              </div>
                             ) : doc.active ? (
                               <Button
                                 size="sm"

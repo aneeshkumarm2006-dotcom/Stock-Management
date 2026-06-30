@@ -8,12 +8,14 @@ import { connectToDatabase } from '@/lib/db/mongoose';
 import { Unit } from '@/lib/db/models/pm/Unit';
 import { Property } from '@/lib/db/models/pm/Property';
 import { Appliance } from '@/lib/db/models/pm/Appliance';
+import { Lease } from '@/lib/db/models/pm/Lease';
 import {
   getPmContext,
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { unitCreateSchema } from '@/lib/validation/pm/unit';
 import { logActivity } from '@/lib/pm/activity';
+import type { TenantType } from '@/types/pm';
 
 export const runtime = 'nodejs';
 
@@ -60,6 +62,59 @@ export async function GET(request: Request) {
     for (const row of agg) counts.set(String(row._id), row.count);
   }
 
+  // Occupants per unit, unioned across the unit's live (Active/Future) leases
+  // and deduped by tenantId. A unit may carry more than one active tenant —
+  // assigning a new tenant to an occupied unit is allowed — so the assign modal
+  // reads this to warn "already assigned to …". Mirrors unit-detail's
+  // `currentTenants` ref shape. One extra query, bounded by property.
+  type OccupantRef = {
+    tenantId: string;
+    tenantType: TenantType;
+    firstName: string;
+    lastName: string;
+    companyName: string;
+    isCosigner: boolean;
+  };
+  const occByUnit = new Map<string, OccupantRef[]>();
+  if (rows.length > 0) {
+    const leases = await Lease.find({
+      organizationId: orgId,
+      propertyId: propertyObjectId,
+      status: { $in: ['Active', 'Future'] },
+    })
+      .select({ unitId: 1, tenants: 1 })
+      .lean<
+        {
+          unitId: Types.ObjectId;
+          tenants?: {
+            tenantId: Types.ObjectId;
+            tenantType?: TenantType;
+            firstName: string;
+            lastName: string;
+            companyName?: string;
+            isCosigner: boolean;
+          }[];
+        }[]
+      >();
+    for (const l of leases) {
+      const key = String(l.unitId);
+      const list = occByUnit.get(key) ?? [];
+      for (const t of l.tenants ?? []) {
+        const tid = String(t.tenantId);
+        if (list.some((o) => o.tenantId === tid)) continue;
+        list.push({
+          tenantId: tid,
+          tenantType: t.tenantType ?? 'Individual',
+          firstName: t.firstName,
+          lastName: t.lastName,
+          companyName: t.companyName ?? '',
+          isCosigner: t.isCosigner,
+        });
+      }
+      occByUnit.set(key, list);
+    }
+  }
+
   return NextResponse.json(
     rows.map((u) => ({
       id: String(u._id),
@@ -68,6 +123,7 @@ export async function GET(request: Request) {
       bathrooms: u.bathrooms ?? '',
       sizeSqft: u.sizeSqft ?? null,
       applianceCount: counts.get(String(u._id)) ?? 0,
+      occupants: occByUnit.get(String(u._id)) ?? [],
     })),
   );
 }

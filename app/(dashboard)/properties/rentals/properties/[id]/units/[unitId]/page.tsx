@@ -270,23 +270,28 @@ export default function UnitDetailPage() {
                   </Button>
                 </div>
               ) : (
-                <ul className="space-y-1 text-sm text-fg">
-                  {doc.currentTenants.map((t) => (
-                    <li key={t.tenantId}>
-                      <Link
-                        href={`/properties/rentals/tenants/${t.tenantId}`}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {tenantDisplayName(t)}
-                      </Link>
-                      {t.isCosigner && (
-                        <span className="ml-2 text-xs text-fg-muted">
-                          (cosigner)
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                <div className="flex flex-col items-start gap-3">
+                  <ul className="space-y-1 text-sm text-fg">
+                    {doc.currentTenants.map((t) => (
+                      <li key={t.tenantId}>
+                        <Link
+                          href={`/properties/rentals/tenants/${t.tenantId}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {tenantDisplayName(t)}
+                        </Link>
+                        {t.isCosigner && (
+                          <span className="ml-2 text-xs text-fg-muted">
+                            (cosigner)
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <Button size="sm" onClick={() => setAssignOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Assign another tenant
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
