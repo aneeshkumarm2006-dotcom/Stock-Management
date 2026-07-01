@@ -12,10 +12,24 @@ import { formatPercent } from "@/lib/utils/formatNumber";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { Stat } from "@/components/ui/stat";
 
+/**
+ * The subset of the portfolio aggregates the four stat cards render. Kept
+ * narrower than PortfolioSummary so the page can feed *recomputed* totals for
+ * a filtered (e.g. single-company) view without rebuilding allocations/weights.
+ */
+export type StatCardSummary = Pick<
+  PortfolioSummary,
+  | "totalValue"
+  | "totalInvested"
+  | "totalPnl"
+  | "totalPnlPct"
+  | "displayCurrency"
+>;
+
 export function PortfolioStatCards({
   summary,
 }: {
-  summary: PortfolioSummary;
+  summary: StatCardSummary;
 }) {
   const numberFormat = useSettingsStore((s) => s.numberFormat);
   const cur = summary.displayCurrency;

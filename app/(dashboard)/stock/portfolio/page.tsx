@@ -11,6 +11,7 @@ import {
   usePortfolio,
   type PortfolioRow,
 } from "@/lib/hooks/usePortfolio";
+import type { Currency } from "@/lib/utils/convertCurrency";
 import { useUiStore } from "@/store/useUiStore";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,13 +19,19 @@ import {
   TableSkeleton,
 } from "@/components/skeletons";
 import { EmptyPortfolio } from "@/components/dashboard/EmptyPortfolio";
-import { PortfolioStatCards } from "@/components/portfolio/PortfolioStatCards";
+import {
+  PortfolioStatCards,
+  type StatCardSummary,
+} from "@/components/portfolio/PortfolioStatCards";
 import {
   PortfolioFilters,
   DEFAULT_FILTER,
   DEFAULT_OPTIONAL_COLUMNS,
+  COMPANY_ALL,
+  COMPANY_UNASSIGNED,
   type HoldingsFilter,
   type OptionalColumn,
+  type CompanyOption,
 } from "@/components/portfolio/PortfolioFilters";
 import { HoldingsTable } from "@/components/portfolio/HoldingsTable";
 import { FixedIncomeTable } from "@/components/portfolio/FixedIncomeTable";
@@ -34,6 +41,24 @@ import { DeletePositionDialog } from "@/components/portfolio/DeletePositionDialo
 import { AddHoldingPanel } from "@/components/panels/add/AddHoldingPanel";
 import { EditHoldingPanel } from "@/components/panels/EditHoldingPanel";
 import { PageHead } from "@/components/layout/PageHead";
+
+/**
+ * Recompute the four stat-card aggregates from a subset of holdings. Each row's
+ * `metrics` is already in the display currency (computePortfolio, PDR §9), so
+ * scoping is a straight sum — no FX or re-derivation needed. Mirrors the totals
+ * math in computePortfolio so a single-company view matches the whole-portfolio
+ * numbers exactly.
+ */
+function summarizeRows(
+  rows: PortfolioRow[],
+  displayCurrency: Currency,
+): StatCardSummary {
+  const totalValue = rows.reduce((s, r) => s + r.metrics.currentValue, 0);
+  const totalInvested = rows.reduce((s, r) => s + r.metrics.invested, 0);
+  const totalPnl = totalValue - totalInvested;
+  const totalPnlPct = totalInvested > 0 ? (totalPnl / totalInvested) * 100 : 0;
+  return { totalValue, totalInvested, totalPnl, totalPnlPct, displayCurrency };
+}
 
 function SectionHeading({ title, count }: { title: string; count: number }) {
   return (
@@ -90,23 +115,63 @@ export default function PortfolioPage() {
   const [toDelete, setToDelete] = useState<PortfolioRow | null>(null);
   const [toUpdateValue, setToUpdateValue] = useState<PortfolioRow | null>(null);
 
-  // Split holdings into per-type sections. Equities keep the filterable table;
-  // the rest get type-appropriate section tables.
+  // The distinct "held-by" companies that own at least one holding, plus
+  // whether any holding is unassigned. Derived from the *full* row set so the
+  // filter always lists every company regardless of the current scope.
+  const companies = useMemo<CompanyOption[]>(() => {
+    const byId = new Map<string, string>();
+    for (const r of rows) {
+      if (r.companyId) byId.set(r.companyId, r.companyName ?? "Unnamed company");
+    }
+    return Array.from(byId, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }, [rows]);
+
+  const hasUnassigned = useMemo(() => rows.some((r) => !r.companyId), [rows]);
+
+  // Company scope applies portfolio-wide: it filters every section AND drives
+  // the recomputed stat cards below (PDR §5.3 metrics reflect the scope).
+  const scopedRows = useMemo(() => {
+    if (filter.company === COMPANY_ALL) return rows;
+    if (filter.company === COMPANY_UNASSIGNED)
+      return rows.filter((r) => !r.companyId);
+    return rows.filter((r) => r.companyId === filter.company);
+  }, [rows, filter.company]);
+
+  const selectedCompanyName =
+    filter.company === COMPANY_ALL
+      ? null
+      : filter.company === COMPANY_UNASSIGNED
+        ? "Unassigned"
+        : (companies.find((c) => c.id === filter.company)?.name ?? "Company");
+
+  // Stat cards reflect the company scope: whole-portfolio totals by default,
+  // recomputed subtotals when a company is selected.
+  const scopedSummary = useMemo<StatCardSummary | null>(() => {
+    if (!summary) return null;
+    if (filter.company === COMPANY_ALL) return summary;
+    return summarizeRows(scopedRows, displayCurrency);
+  }, [summary, filter.company, scopedRows, displayCurrency]);
+
+  // Split scoped holdings into per-type sections. Equities keep the filterable
+  // table; the rest get type-appropriate section tables.
   const equityRows = useMemo(
-    () => rows.filter((r) => (r.assetType ?? "EQUITY") === "EQUITY"),
-    [rows],
+    () => scopedRows.filter((r) => (r.assetType ?? "EQUITY") === "EQUITY"),
+    [scopedRows],
   );
   const fixedIncomeRows = useMemo(
-    () => rows.filter((r) => r.assetType === "GIC" || r.assetType === "BOND"),
-    [rows],
+    () =>
+      scopedRows.filter((r) => r.assetType === "GIC" || r.assetType === "BOND"),
+    [scopedRows],
   );
   const mutualFundRows = useMemo(
-    () => rows.filter((r) => r.assetType === "MUTUAL_FUND"),
-    [rows],
+    () => scopedRows.filter((r) => r.assetType === "MUTUAL_FUND"),
+    [scopedRows],
   );
   const cashRows = useMemo(
-    () => rows.filter((r) => r.assetType === "CASH"),
-    [rows],
+    () => scopedRows.filter((r) => r.assetType === "CASH"),
+    [scopedRows],
   );
 
   // Filters apply to the equities section only.
@@ -148,9 +213,11 @@ export default function PortfolioPage() {
       <PageHead
         title="Portfolio"
         subtitle={
-          rows.length > 0
-            ? `${rows.length} active ${rows.length === 1 ? "holding" : "holdings"}${distinctExchanges > 0 ? ` · across ${distinctExchanges} ${distinctExchanges === 1 ? "exchange" : "exchanges"}` : ""}`
-            : "Filter, sort, edit, and value every position in your portfolio"
+          rows.length === 0
+            ? "Filter, sort, edit, and value every position in your portfolio"
+            : selectedCompanyName
+              ? `Held by ${selectedCompanyName} · ${scopedRows.length} of ${rows.length} ${rows.length === 1 ? "holding" : "holdings"}`
+              : `${rows.length} active ${rows.length === 1 ? "holding" : "holdings"}${distinctExchanges > 0 ? ` · across ${distinctExchanges} ${distinctExchanges === 1 ? "exchange" : "exchanges"}` : ""}`
         }
         actions={
           <Button onClick={() => openAddPanel()}>
@@ -187,27 +254,47 @@ export default function PortfolioPage() {
             </p>
           )}
 
-          <PortfolioStatCards summary={summary} />
+          <PortfolioStatCards summary={scopedSummary ?? summary} />
+
+          {/* Filters toolbar — the "Held by" company scope lives here and stays
+              reachable even when the scoped view has no equities, so it renders
+              outside the equities block below. */}
+          <PortfolioFilters
+            filter={filter}
+            onChange={setFilter}
+            sectors={sectors}
+            companies={companies}
+            hasUnassigned={hasUnassigned}
+            exchangeCounts={exchangeCounts}
+            optionalColumns={optionalColumns}
+            onOptionalColumnsChange={setOptionalColumns}
+          />
 
           {/* Equities — the filterable/sortable table. */}
           {equityRows.length > 0 && (
-            <>
-              <PortfolioFilters
-                filter={filter}
-                onChange={setFilter}
-                sectors={sectors}
-                exchangeCounts={exchangeCounts}
-                optionalColumns={optionalColumns}
-                onOptionalColumnsChange={setOptionalColumns}
-              />
-              <HoldingsTable
-                rows={filtered}
-                totalRowCount={equityRows.length}
-                displayCurrency={displayCurrency}
-                optionalColumns={optionalColumns}
-                onDelete={setToDelete}
-              />
-            </>
+            <HoldingsTable
+              rows={filtered}
+              totalRowCount={equityRows.length}
+              displayCurrency={displayCurrency}
+              optionalColumns={optionalColumns}
+              onDelete={setToDelete}
+            />
+          )}
+
+          {/* Nothing matches the current company scope. */}
+          {scopedRows.length === 0 && (
+            <div className="rounded-md border border-border bg-surface px-6 py-16 text-center">
+              <p className="text-sm font-semibold text-fg">
+                No holdings held by {selectedCompanyName}
+              </p>
+              <button
+                type="button"
+                onClick={() => setFilter({ ...filter, company: COMPANY_ALL })}
+                className="mt-2 text-xs font-bold text-primary hover:underline"
+              >
+                Show all companies
+              </button>
+            </div>
           )}
 
           {/* Fixed income — GICs & Bonds. */}

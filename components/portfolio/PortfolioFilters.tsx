@@ -6,14 +6,20 @@
 // unfiltered row set so the pills always show the user's actual exchange
 // distribution.
 import * as React from "react";
-import { Search, RotateCcw, Columns3, Check } from "lucide-react";
+import { Search, RotateCcw, Columns3, Check, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+
+/** Sentinel filter values for the "Held by" company filter. */
+export const COMPANY_ALL = "ALL";
+export const COMPANY_UNASSIGNED = "UNASSIGNED";
 
 export interface HoldingsFilter {
   query: string;
   exchange: "ALL" | "NYSE" | "NASDAQ" | "TSX";
   sector: string; // "ALL" or a sector name
   country: "ALL" | "US" | "CA";
+  /** Held-by company scope: COMPANY_ALL, COMPANY_UNASSIGNED, or a company id. */
+  company: string;
 }
 
 export const DEFAULT_FILTER: HoldingsFilter = {
@@ -21,7 +27,14 @@ export const DEFAULT_FILTER: HoldingsFilter = {
   exchange: "ALL",
   sector: "ALL",
   country: "ALL",
+  company: COMPANY_ALL,
 };
+
+/** A "held-by" company that owns at least one holding. */
+export interface CompanyOption {
+  id: string;
+  name: string;
+}
 
 /** Optional columns the user can re-enable through the Columns popover. */
 export type OptionalColumn = "sector" | "livePrice" | "currency";
@@ -52,6 +65,8 @@ export function PortfolioFilters({
   filter,
   onChange,
   sectors,
+  companies,
+  hasUnassigned,
   exchangeCounts,
   optionalColumns,
   onOptionalColumnsChange,
@@ -59,6 +74,10 @@ export function PortfolioFilters({
   filter: HoldingsFilter;
   onChange: (next: HoldingsFilter) => void;
   sectors: string[];
+  /** Companies that own at least one holding, for the "Held by" filter. */
+  companies: CompanyOption[];
+  /** Whether any holding has no held-by company (adds an "Unassigned" option). */
+  hasUnassigned: boolean;
   /** Live exchange row counts (computed from unfiltered rows). */
   exchangeCounts: Record<"NYSE" | "NASDAQ" | "TSX", number>;
   optionalColumns: Record<OptionalColumn, boolean>;
@@ -73,12 +92,19 @@ export function PortfolioFilters({
     filter.query !== "" ||
     filter.exchange !== "ALL" ||
     filter.sector !== "ALL" ||
-    filter.country !== "ALL";
+    filter.country !== "ALL" ||
+    filter.company !== COMPANY_ALL;
 
   const totalCount =
     exchangeCounts.NYSE + exchangeCounts.NASDAQ + exchangeCounts.TSX;
   const countFor = (id: HoldingsFilter["exchange"]) =>
     id === "ALL" ? totalCount : exchangeCounts[id];
+
+  // The company filter scopes the whole portfolio (all sections + the stat
+  // cards), so it renders whenever any company exists — even when the current
+  // scope has no equities and the exchange controls below are hidden.
+  const showCompanyFilter = companies.length > 0;
+  const showEquityControls = totalCount > 0;
 
   const [columnsOpen, setColumnsOpen] = React.useState(false);
   const popoverRef = React.useRef<HTMLDivElement>(null);
@@ -109,50 +135,83 @@ export function PortfolioFilters({
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface p-[6px]">
+      {/* Held by (company) — scopes the whole portfolio, including the stat
+          cards above. Always available so the scope can be cleared. */}
+      {showCompanyFilter && (
+        <label className="relative">
+          <Building2 className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
+          <select
+            aria-label="Filter by held-by company"
+            value={filter.company}
+            onChange={(e) => set("company", e.target.value)}
+            className={cn(
+              "h-9 rounded border pl-8 pr-7 text-xs font-semibold text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
+              filter.company !== COMPANY_ALL
+                ? "border-primary bg-secondary-container text-primary"
+                : "border-border bg-surface",
+            )}
+          >
+            <option value={COMPANY_ALL}>All companies</option>
+            {companies.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+            {hasUnassigned && (
+              <option value={COMPANY_UNASSIGNED}>Unassigned</option>
+            )}
+          </select>
+        </label>
+      )}
+
       {/* Search */}
-      <div className="relative w-full sm:w-72">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-        <input
-          type="text"
-          value={filter.query}
-          onChange={(e) => set("query", e.target.value)}
-          placeholder="Search ticker or name…"
-          className="h-9 w-full rounded border border-border bg-surface pl-9 pr-3 text-sm text-fg placeholder:text-fg-muted/60 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
-        />
-      </div>
+      {showEquityControls && (
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
+          <input
+            type="text"
+            value={filter.query}
+            onChange={(e) => set("query", e.target.value)}
+            placeholder="Search ticker or name…"
+            className="h-9 w-full rounded border border-border bg-surface pl-9 pr-3 text-sm text-fg placeholder:text-fg-muted/60 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+          />
+        </div>
+      )}
 
       {/* Exchange pills */}
-      <div className="flex flex-wrap items-center gap-1">
-        {EXCHANGE_PILLS.map((p) => {
-          const active = filter.exchange === p.id;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => set("exchange", p.id)}
-              aria-pressed={active}
-              className={cn(
-                "inline-flex items-center gap-[6px] rounded px-3 py-[6px] text-[12px] font-semibold transition-colors",
-                active
-                  ? "bg-secondary-container text-primary"
-                  : "text-fg-muted hover:bg-surface-low hover:text-fg",
-              )}
-            >
-              {p.label}
-              <span
+      {showEquityControls && (
+        <div className="flex flex-wrap items-center gap-1">
+          {EXCHANGE_PILLS.map((p) => {
+            const active = filter.exchange === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => set("exchange", p.id)}
+                aria-pressed={active}
                 className={cn(
-                  "rounded px-[6px] py-[1px] text-[10.5px] font-bold tabular-nums",
+                  "inline-flex items-center gap-[6px] rounded px-3 py-[6px] text-[12px] font-semibold transition-colors",
                   active
-                    ? "bg-surface text-primary"
-                    : "bg-surface-low text-fg-muted",
+                    ? "bg-secondary-container text-primary"
+                    : "text-fg-muted hover:bg-surface-low hover:text-fg",
                 )}
               >
-                {countFor(p.id)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                {p.label}
+                <span
+                  className={cn(
+                    "rounded px-[6px] py-[1px] text-[10.5px] font-bold tabular-nums",
+                    active
+                      ? "bg-surface text-primary"
+                      : "bg-surface-low text-fg-muted",
+                  )}
+                >
+                  {countFor(p.id)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Columns popover — right-aligned */}
       <div ref={popoverRef} className="relative ml-auto">
