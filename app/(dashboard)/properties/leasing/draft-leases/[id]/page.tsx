@@ -145,6 +145,31 @@ export default function DraftLeaseDetailPage() {
     await load();
   }
 
+  async function markSigned() {
+    const res = await fetch(`/api/pm/draft-leases/${data!.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        esignatureStatus: "Signed",
+        executionStatus: "Ready to execute",
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast({
+        title: "Mark as signed failed",
+        description: err.error ?? "Try again.",
+        variant: "error",
+      });
+      return;
+    }
+    toast({
+      title: "Marked as signed",
+      description: "The draft is now ready to execute.",
+    });
+    await load();
+  }
+
   async function execute() {
     setExecuting(true);
     const res = await fetch(`/api/pm/draft-leases/${data!.id}/execute`, {
@@ -215,6 +240,11 @@ export default function DraftLeaseDetailPage() {
                 Cancel draft
               </Button>
             )}
+          {data.executionStatus === "Out for signature" && (
+            <Button variant="outline" size="sm" onClick={markSigned}>
+              Mark as signed
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={execute}
@@ -268,11 +298,45 @@ export default function DraftLeaseDetailPage() {
                 data={{
                   startDate: data.startDate,
                   endDate: data.endDate,
+                  primaryRentAmount: data.primaryRent.amount,
                 } as Record<string, unknown>}
                 fields={[
                   { key: "startDate", label: "Start date", type: "date" },
                   { key: "endDate", label: "End date", type: "date" },
+                  {
+                    key: "primaryRentAmount",
+                    label: "Primary rent (monthly)",
+                    type: "number",
+                    toInput: (v) => (v == null ? "" : String(Number(v) / 100)),
+                    toPayload: (s) => (s.trim() === "" ? undefined : Number(s)),
+                    display: (v) => (
+                      <>
+                        <CurrencyAmount cents={Number(v ?? 0)} /> / cycle
+                      </>
+                    ),
+                  },
                 ]}
+                payloadTransform={(p) => {
+                  const { primaryRentAmount, ...rest } = p as Record<
+                    string,
+                    unknown
+                  >;
+                  // A cleared rent field arrives as null; treat null/undefined
+                  // as "unchanged" so we never PATCH an invalid null amount.
+                  if (primaryRentAmount == null) return rest;
+                  return {
+                    ...rest,
+                    primaryRent: {
+                      amount: primaryRentAmount,
+                      ...(data.primaryRent.accountId
+                        ? { accountId: data.primaryRent.accountId }
+                        : {}),
+                      rentMethod: "Fixed",
+                      nextDueDate: data.primaryRent.nextDueDate,
+                      memo: data.primaryRent.memo,
+                    },
+                  };
+                }}
                 title="Draft lease"
                 canEdit={data.executionStatus !== "Executed" && data.executionStatus !== "Cancelled"}
                 onSaved={load}
@@ -281,17 +345,6 @@ export default function DraftLeaseDetailPage() {
                 <div>
                   <div className="text-xs text-fg-muted">Lease type</div>
                   <div>{data.leaseType}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-fg-muted">Primary rent</div>
-                  <div>
-                    <CurrencyAmount cents={data.primaryRent.amount} /> / cycle
-                  </div>
-                  {data.primaryRent.memo && (
-                    <div className="text-xs text-fg-muted">
-                      {data.primaryRent.memo}
-                    </div>
-                  )}
                 </div>
                 <div>
                   <div className="text-xs text-fg-muted">Security deposit</div>

@@ -446,15 +446,32 @@ LeaseSchema.pre('validate', function (next) {
   next();
 });
 
+/** Snaps an instant to the start of its calendar day (local time). */
+function startOfDay(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
 /** Derives status from dates. Routes call this on read so a date-driven
- *  status flip happens without a cron job. */
+ *  status flip happens without a cron job.
+ *
+ *  Comparison is at CALENDAR-DAY granularity, not by instant: a lease is only
+ *  `Future` when its start day is after today, and only `Expired` the day
+ *  after its end day. `startDate`/`endDate` for date-only pickers are stored
+ *  at 00:00 UTC, so an instant comparison (`now < start`) used to read a lease
+ *  created to start "today" as `Future` for part of the day in ahead-of-UTC
+ *  timezones — which then left `Tenant.currentLeaseId` unset (that sync only
+ *  fires for `Active` leases), so an assigned tenant still showed as
+ *  "Not assigned". Day-granularity makes "starts today" Active for the whole
+ *  day and keeps a lease Active through its final day. */
 export function deriveLeaseStatus(lease: Pick<ILease, 'status' | 'startDate' | 'endDate' | 'leaseType'>): LeaseStatus {
   if (lease.status === 'Ended' || lease.status === 'Cancelled') return lease.status;
-  const now = Date.now();
-  const start = lease.startDate ? lease.startDate.getTime() : null;
-  const end = lease.endDate ? lease.endDate.getTime() : null;
-  if (start !== null && now < start) return 'Future';
-  if (end !== null && now > end) return 'Expired';
+  const today = startOfDay(Date.now());
+  const startDay = lease.startDate ? startOfDay(lease.startDate.getTime()) : null;
+  const endDay = lease.endDate ? startOfDay(lease.endDate.getTime()) : null;
+  if (startDay !== null && today < startDay) return 'Future';
+  if (endDay !== null && today > endDay) return 'Expired';
   return 'Active';
 }
 

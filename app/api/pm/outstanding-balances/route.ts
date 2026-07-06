@@ -4,6 +4,12 @@
 // the row label. Returns the top 5 by balance plus the count of all leases
 // with a positive balance.
 //
+// It ALSO returns a per-country breakdown (`groups`): the client operates in
+// Canada and the United States and wants each country listed separately with
+// its own subtotal. Grouping key is each property's `address.country`
+// (normalized). Org currency is single-currency, so grouping by country never
+// mixes currencies within a total.
+//
 // Why aggregate here rather than client-side:
 //  - The journal is large; we never want the dashboard to pull every JE.
 //  - AR account discovery is org-wide and shouldn't be re-computed per
@@ -32,6 +38,36 @@ interface AggRow {
   balanceCents: number;
 }
 
+interface Row {
+  propertyId: string | null;
+  unitId: string | null;
+  leaseId: string | null;
+  label: string;
+  balanceCents: number;
+}
+
+interface CountryGroup {
+  country: string;
+  totalCents: number;
+  count: number;
+  top: Row[];
+}
+
+const OTHER = 'Other';
+
+// Normalize the free-text `address.country` into a stable display bucket. The
+// data uses ISO-ish codes ("US"/"CA") but we accept common spellings too.
+function normalizeCountry(raw: string | undefined | null): string {
+  const c = (raw ?? '').trim().toUpperCase();
+  if (['US', 'USA', 'U.S.', 'U.S.A.', 'UNITED STATES'].includes(c)) {
+    return 'United States';
+  }
+  if (['CA', 'CAN', 'CANADA'].includes(c)) return 'Canada';
+  return raw && raw.trim() ? raw.trim() : OTHER;
+}
+
+const emptyPayload = { totalCents: 0, count: 0, top: [] as Row[], groups: [] as CountryGroup[] };
+
 export async function GET() {
   const ctx = await getPmContext();
   if (!ctx) return unauthorizedResponse();
@@ -48,7 +84,7 @@ export async function GET() {
     .lean();
 
   if (arAccounts.length === 0) {
-    return NextResponse.json({ totalCents: 0, count: 0, top: [] });
+    return NextResponse.json(emptyPayload);
   }
   const arAccountIds = arAccounts.map((a) => a._id);
 
@@ -80,28 +116,71 @@ export async function GET() {
   ])) as AggRow[];
 
   if (agg.length === 0) {
-    return NextResponse.json({ totalCents: 0, count: 0, top: [] });
+    return NextResponse.json(emptyPayload);
   }
 
   const totalCents = agg.reduce((acc, r) => acc + r.balanceCents, 0);
-  const top5 = agg.slice(0, 5);
+  const overallTop5 = agg.slice(0, 5);
 
-  // 3. Fetch labels for the top 5 rows. Properties + Units fetched in
-  //    parallel; missing references (e.g., property archived) fall back to
-  //    a placeholder string.
-  const propIds = top5
-    .map((r) => r._id.propertyId)
-    .filter((p): p is Types.ObjectId => p instanceof Types.ObjectId);
-  const unitIds = top5
-    .map((r) => r._id.unitId)
-    .filter((u): u is Types.ObjectId => u instanceof Types.ObjectId);
+  // 3. Fetch every property referenced by the aggregation — we need each one's
+  //    country to build the per-country groups (not just the top 5).
+  const allPropIds = Array.from(
+    new Set(
+      agg
+        .map((r) => r._id.propertyId)
+        .filter((p): p is Types.ObjectId => p instanceof Types.ObjectId)
+        .map((p) => String(p)),
+    ),
+  ).map((s) => new Types.ObjectId(s));
 
-  const [props, units, leases] = await Promise.all([
-    propIds.length === 0
-      ? Promise.resolve([])
-      : Property.find({ _id: { $in: propIds }, organizationId: orgId })
-          .select({ _id: 1, propertyName: 1, propertySubType: 1 })
-          .lean(),
+  const props =
+    allPropIds.length === 0
+      ? []
+      : await Property.find({ _id: { $in: allPropIds }, organizationId: orgId })
+          .select({ _id: 1, propertyName: 1, propertySubType: 1, 'address.country': 1 })
+          .lean();
+  const propById = new Map(props.map((p) => [String(p._id), p]));
+
+  const countryForRow = (r: AggRow): string => {
+    const pKey = r._id.propertyId ? String(r._id.propertyId) : null;
+    const prop = pKey ? propById.get(pKey) : null;
+    if (!prop) return OTHER;
+    return normalizeCountry(
+      (prop as { address?: { country?: string } }).address?.country,
+    );
+  };
+
+  // 4. Group all rows by country → totals + counts + that group's top 5.
+  const groupMap = new Map<string, AggRow[]>();
+  for (const r of agg) {
+    const country = countryForRow(r);
+    const list = groupMap.get(country) ?? [];
+    list.push(r);
+    groupMap.set(country, list);
+  }
+
+  // Rows we actually render (need Unit/Lease labels): overall top 5 ∪ each
+  // group's top 5.
+  const displayRows: AggRow[] = [...overallTop5];
+  const groupTopSlices = new Map<string, AggRow[]>();
+  groupMap.forEach((list, country) => {
+    const slice = list.slice(0, 5);
+    groupTopSlices.set(country, slice);
+    displayRows.push(...slice);
+  });
+
+  // 5. Resolve labels for the rows we display. Units + Leases fetched in
+  //    parallel; missing references fall back to a placeholder string.
+  const unitIds = Array.from(
+    new Set(
+      displayRows
+        .map((r) => r._id.unitId)
+        .filter((u): u is Types.ObjectId => u instanceof Types.ObjectId)
+        .map((u) => String(u)),
+    ),
+  ).map((s) => new Types.ObjectId(s));
+
+  const [units, leases] = await Promise.all([
     unitIds.length === 0
       ? Promise.resolve([])
       : Unit.find({ _id: { $in: unitIds }, organizationId: orgId })
@@ -122,7 +201,6 @@ export async function GET() {
           .lean(),
   ]);
 
-  const propById = new Map(props.map((p) => [String(p._id), p]));
   const unitById = new Map(units.map((u) => [String(u._id), u]));
   const leaseByUnit = new Map<string, { _id: unknown }>();
   for (const l of leases) {
@@ -130,7 +208,7 @@ export async function GET() {
     if (!leaseByUnit.has(key)) leaseByUnit.set(key, l);
   }
 
-  const top = top5.map((row) => {
+  const toRow = (row: AggRow): Row => {
     const pKey = row._id.propertyId ? String(row._id.propertyId) : null;
     const uKey = row._id.unitId ? String(row._id.unitId) : null;
     const prop = pKey ? propById.get(pKey) : null;
@@ -146,11 +224,30 @@ export async function GET() {
       label: `${propertyName}${subType}${unitLabel}`,
       balanceCents: row.balanceCents,
     };
+  };
+
+  const top = overallTop5.map(toRow);
+
+  const groups: CountryGroup[] = Array.from(groupMap.entries()).map(
+    ([country, list]) => ({
+      country,
+      totalCents: list.reduce((acc, r) => acc + r.balanceCents, 0),
+      count: list.length,
+      top: (groupTopSlices.get(country) ?? []).map(toRow),
+    }),
+  );
+
+  // Sort groups by total desc, but always keep "Other" last.
+  groups.sort((a, b) => {
+    if (a.country === OTHER) return 1;
+    if (b.country === OTHER) return -1;
+    return b.totalCents - a.totalCents;
   });
 
   return NextResponse.json({
     totalCents,
     count: agg.length,
     top,
+    groups,
   });
 }
