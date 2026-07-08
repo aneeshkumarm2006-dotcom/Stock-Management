@@ -22,6 +22,7 @@ import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { LEASE_STATUSES, type LeaseStatus, type TenantType } from "@/types/pm";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
 import { formatDateOnly } from "@/lib/utils/dateInput";
+import { compareCountryGroups } from "@/lib/pm/country";
 
 // Dashboard widgets deep-link with these query params (PROPERTY_TODO.md
 // Phase 10 [G-B-12]). Both filters are client-side overlays on top of the
@@ -71,6 +72,9 @@ interface LeaseRow {
   id: string;
   leaseNumber: number;
   propertyId: string;
+  /** Normalized country of the lease's property ("United States" | "Canada" |
+   *  "Other"), for the US/CAN separation. */
+  country: string;
   unitId: string;
   tenants: Array<{
     tenantId: string;
@@ -121,6 +125,9 @@ function RentRollPageInner() {
   const [statusFilter, setStatusFilter] =
     React.useState<"Active,Future" | LeaseStatus | "all">("Active,Future");
   const [search, setSearch] = React.useState("");
+  // The client operates in the US and Canada and wants leases separated by
+  // country. On by default; toggle off for a single flat list.
+  const [groupByCountry, setGroupByCountry] = React.useState(true);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -233,6 +240,84 @@ function RentRollPageInner() {
     return r;
   }, [rows, search, expiringWindow, insuranceWindow, insuranceDays]);
 
+  // Group the visible rows by property country, ordered US → Canada → others →
+  // Other (mirrors the dashboard Outstanding Balances widget's separation).
+  const countryGroups = React.useMemo(() => {
+    const m = new Map<string, LeaseRow[]>();
+    for (const l of filtered) {
+      const c = l.country || "Other";
+      const list = m.get(c) ?? [];
+      list.push(l);
+      m.set(c, list);
+    }
+    return Array.from(m.entries())
+      .map(([country, groupRows]) => ({ country, rows: groupRows }))
+      .sort((a, b) => compareCountryGroups(a.country, b.country));
+  }, [filtered]);
+
+  const renderLeaseRow = (l: LeaseRow) => (
+    <tr
+      key={l.id}
+      className={
+        "border-b border-border/40 " +
+        (l.evictionPending ? "bg-loss/10 border-l-2 border-loss" : "")
+      }
+    >
+      <td className="py-2">
+        <Link
+          href={`/properties/rentals/rent-roll/${l.id}`}
+          className="font-medium hover:underline"
+        >
+          #{l.leaseNumber}
+        </Link>
+        {l.evictionPending && (
+          <Badge variant="loss" className="ml-2">
+            EVICTION PENDING
+          </Badge>
+        )}
+      </td>
+      <td className="text-fg-muted">
+        {l.tenants.map((t) => tenantDisplayName(t)).join(", ") || "—"}
+      </td>
+      <td className="text-fg-muted">{l.leaseType}</td>
+      <td className="text-fg-muted">
+        {formatDateOnly(l.startDate)} →{" "}
+        {l.endDate ? formatDateOnly(l.endDate) : "(At-will)"}
+        {l.daysRemaining != null && (
+          <Badge variant="loss" className="ml-2">
+            {l.daysRemaining}d
+          </Badge>
+        )}
+      </td>
+      <td>
+        <CurrencyAmount cents={l.totalRentAmount ?? l.primaryRentAmount} />
+        {(l.totalRentAmount ?? l.primaryRentAmount) > l.primaryRentAmount && (
+          <div className="text-xs text-fg-muted">
+            Base <CurrencyAmount cents={l.primaryRentAmount} />
+          </div>
+        )}
+      </td>
+      <td>
+        <CurrencyAmount cents={l.securityDepositHeld} />
+      </td>
+      <td>
+        <Badge
+          variant={
+            l.status === "Active"
+              ? "gain"
+              : l.status === "Future"
+                ? "muted"
+                : l.status === "Expired"
+                  ? "loss"
+                  : "outline"
+          }
+        >
+          {l.status}
+        </Badge>
+      </td>
+    </tr>
+  );
+
   return (
     <div className="space-y-4">
       {(expiringWindow || insuranceWindow) && (
@@ -303,6 +388,19 @@ function RentRollPageInner() {
                 >
                   All
                 </button>
+                <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+                <button
+                  onClick={() => setGroupByCountry((v) => !v)}
+                  className={
+                    "rounded-full border px-3 py-1 text-xs font-bold " +
+                    (groupByCountry
+                      ? "border-primary bg-primary text-primary-fg"
+                      : "border-border bg-surface text-fg-muted")
+                  }
+                  title="Separate leases into United States and Canada sections"
+                >
+                  Group by country
+                </button>
                 <div className="ml-auto flex w-full max-w-md items-center gap-2">
                   <Button
                     variant="outline"
@@ -347,74 +445,27 @@ function RentRollPageInner() {
                       </td>
                     </tr>
                   )}
-                  {filtered.map((l) => (
-                    <tr
-                      key={l.id}
-                      className={
-                        "border-b border-border/40 " +
-                        (l.evictionPending
-                          ? "bg-loss/10 border-l-2 border-loss"
-                          : "")
-                      }
-                    >
-                      <td className="py-2">
-                        <Link
-                          href={`/properties/rentals/rent-roll/${l.id}`}
-                          className="font-medium hover:underline"
-                        >
-                          #{l.leaseNumber}
-                        </Link>
-                        {l.evictionPending && (
-                          <Badge variant="loss" className="ml-2">
-                            EVICTION PENDING
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="text-fg-muted">
-                        {l.tenants.map((t) => tenantDisplayName(t)).join(", ") ||
-                          "—"}
-                      </td>
-                      <td className="text-fg-muted">{l.leaseType}</td>
-                      <td className="text-fg-muted">
-                        {formatDateOnly(l.startDate)} →{" "}
-                        {l.endDate ? formatDateOnly(l.endDate) : "(At-will)"}
-                        {l.daysRemaining != null && (
-                          <Badge variant="loss" className="ml-2">
-                            {l.daysRemaining}d
-                          </Badge>
-                        )}
-                      </td>
-                      <td>
-                        <CurrencyAmount
-                          cents={l.totalRentAmount ?? l.primaryRentAmount}
-                        />
-                        {(l.totalRentAmount ?? l.primaryRentAmount) >
-                          l.primaryRentAmount && (
-                          <div className="text-xs text-fg-muted">
-                            Base <CurrencyAmount cents={l.primaryRentAmount} />
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        <CurrencyAmount cents={l.securityDepositHeld} />
-                      </td>
-                      <td>
-                        <Badge
-                          variant={
-                            l.status === "Active"
-                              ? "gain"
-                              : l.status === "Future"
-                                ? "muted"
-                                : l.status === "Expired"
-                                  ? "loss"
-                                  : "outline"
-                          }
-                        >
-                          {l.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
+                  {!loading &&
+                    filtered.length > 0 &&
+                    (groupByCountry
+                      ? countryGroups.map((g) => (
+                          <React.Fragment key={g.country}>
+                            <tr className="bg-surface-high/40">
+                              <td
+                                colSpan={7}
+                                className="py-1.5 text-xs font-bold uppercase tracking-widest text-fg-muted"
+                              >
+                                {g.country}
+                                <span className="ml-2 font-normal normal-case tracking-normal">
+                                  {g.rows.length} lease
+                                  {g.rows.length === 1 ? "" : "s"}
+                                </span>
+                              </td>
+                            </tr>
+                            {g.rows.map(renderLeaseRow)}
+                          </React.Fragment>
+                        ))
+                      : filtered.map(renderLeaseRow))}
                 </tbody>
               </table>
               <p className="text-xs text-fg-muted">

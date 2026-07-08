@@ -43,6 +43,9 @@ export interface IPosition {
   currency: Currency;
   /** Optional "held-by" company (ref Company). Null/absent = unassigned. */
   companyId?: Types.ObjectId | null;
+  /** Optional brokerage/custodian the holding sits at (ref Broker). Distinct
+   *  from companyId (owner) and ticker (issuer). Null/absent = unassigned. */
+  brokerId?: Types.ObjectId | null;
   // --- Non-equity: user-supplied display name ---
   label?: string;
   // --- GIC / BOND (fixed income) ---
@@ -78,6 +81,7 @@ const PositionSchema = new Schema<IPosition>(
     // Common.
     currency: { type: String, required: true, uppercase: true, trim: true },
     companyId: { type: Schema.Types.ObjectId, ref: 'Company', default: null },
+    brokerId: { type: Schema.Types.ObjectId, ref: 'Broker', default: null },
     // Non-equity display name.
     label: { type: String, trim: true, maxlength: 120 },
     // Fixed income (GIC/Bond).
@@ -103,6 +107,8 @@ const PositionSchema = new Schema<IPosition>(
 PositionSchema.index({ userId: 1 });
 PositionSchema.index({ userId: 1, ticker: 1, exchange: 1 });
 PositionSchema.index({ userId: 1, companyId: 1 });
+// Backs the held-at usage count + block-on-delete for brokers.
+PositionSchema.index({ userId: 1, brokerId: 1 });
 
 export const Position: Model<IPosition> =
   (models.Position as Model<IPosition>) ??

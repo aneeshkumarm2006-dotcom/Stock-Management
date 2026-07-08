@@ -46,6 +46,7 @@ export function FixedIncomeTable({
             <TH>Name</TH>
             <TH>Institution</TH>
             <TH>Held By</TH>
+            <TH>Broker</TH>
             <TH className="text-right">Principal</TH>
             <TH className="text-right">Rate</TH>
             <TH>Payout</TH>
@@ -71,6 +72,9 @@ export function FixedIncomeTable({
               </TD>
               <TD className="max-w-[160px] truncate text-fg-muted">
                 {r.companyName ?? "—"}
+              </TD>
+              <TD className="max-w-[160px] truncate text-fg-muted">
+                {r.brokerName ?? "—"}
               </TD>
               <TD className="text-right font-display">
                 {r.principal == null

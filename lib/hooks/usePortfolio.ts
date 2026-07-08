@@ -90,6 +90,9 @@ export interface PortfolioRow {
   /** Optional "held-by" company ref + its resolved name (null = unassigned). */
   companyId: string | null;
   companyName: string | null;
+  /** Optional broker (custodian) ref + its resolved name (null = unassigned). */
+  brokerId: string | null;
+  brokerName: string | null;
   /** Display-currency metrics (invested / value / P&L / weight). */
   metrics: PositionMetrics;
   // --- Non-equity display fields (null on equities) ---
@@ -265,6 +268,8 @@ export function usePortfolio(): PortfolioData {
           price: isEquity ? q?.price ?? null : null,
           companyId: p.companyId,
           companyName: p.companyName ?? null,
+          brokerId: p.brokerId,
+          brokerName: p.brokerName ?? null,
           metrics,
           // Non-equity display fields.
           label: p.label ?? null,
@@ -354,6 +359,8 @@ interface CreateEquityInput {
   buyDate?: string;
   /** Optional held-by company id; null/"" clears it. */
   companyId?: string | null;
+  /** Optional broker (custodian) id; null/"" clears it. */
+  brokerId?: string | null;
 }
 
 interface CreateFixedIncomeInput {
@@ -367,6 +374,7 @@ interface CreateFixedIncomeInput {
   interestRate: number;
   payoutFrequency: PayoutFrequency;
   companyId?: string | null;
+  brokerId?: string | null;
 }
 
 interface CreateMutualFundInput {
@@ -377,6 +385,7 @@ interface CreateMutualFundInput {
   currentValue: number;
   valueAsOf?: string;
   companyId?: string | null;
+  brokerId?: string | null;
 }
 
 interface CreateCashInput {
@@ -385,6 +394,7 @@ interface CreateCashInput {
   currency: Currency;
   currentValue: number;
   companyId?: string | null;
+  brokerId?: string | null;
 }
 
 export type CreatePositionInput =
@@ -404,6 +414,8 @@ export type UpdatePositionInput =
       currency?: Currency;
       /** Optional held-by company id; null/"" clears it. */
       companyId?: string | null;
+      /** Optional broker (custodian) id; null/"" clears it. */
+      brokerId?: string | null;
       // Fixed income
       institution?: string;
       principal?: number;

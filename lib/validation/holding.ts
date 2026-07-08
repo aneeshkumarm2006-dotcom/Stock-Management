@@ -13,6 +13,14 @@ export const companyIdSchema = z
   )
   .optional();
 
+/** brokerId — same shape as companyId. '' / null / undefined → null. */
+export const brokerIdSchema = z
+  .preprocess(
+    (v) => (v === '' || v === null || v === undefined ? null : v),
+    z.union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid broker'), z.null()]),
+  )
+  .optional();
+
 const currency = z
   .string()
   .trim()
@@ -44,6 +52,7 @@ const equityCreate = z.object({
   currency,
   buyDate: z.coerce.date().optional(),
   companyId: companyIdSchema,
+  brokerId: brokerIdSchema,
 });
 
 // --- GIC / BOND (fixed income) — identical shape -------------------------
@@ -57,6 +66,7 @@ const fixedIncomeFields = {
   interestRate: z.number().min(0, 'Interest rate cannot be negative'),
   payoutFrequency,
   companyId: companyIdSchema,
+  brokerId: brokerIdSchema,
 };
 // NOTE: discriminatedUnion members must be plain ZodObjects (no .refine), so
 // the maturity-after-start check is applied via .superRefine on the union.
@@ -72,6 +82,7 @@ const mutualFundCreate = z.object({
   currentValue: z.number().min(0, 'Current value cannot be negative'),
   valueAsOf: z.coerce.date().optional(),
   companyId: companyIdSchema,
+  brokerId: brokerIdSchema,
 });
 
 // --- CASH / OTHER (manual value) -----------------------------------------
@@ -81,6 +92,7 @@ const cashCreate = z.object({
   currency,
   currentValue: z.number().min(0, 'Value cannot be negative'),
   companyId: companyIdSchema,
+  brokerId: brokerIdSchema,
 });
 
 /**
@@ -141,6 +153,7 @@ export const replaceSchema = z
     label: z.string().trim().min(1).max(120).optional(),
     currency: currency.optional(),
     companyId: companyIdSchema,
+    brokerId: brokerIdSchema,
     // Fixed income
     institution: z.string().trim().min(1).max(120).optional(),
     principal: z.number().positive('Principal must be greater than 0').optional(),
@@ -176,6 +189,7 @@ export function serializeHolding(p: Partial<IPosition> & { _id: unknown }) {
     currency: p.currency,
     buyDate: p.buyDate ?? null,
     companyId: p.companyId ? String(p.companyId) : null,
+    brokerId: p.brokerId ? String(p.brokerId) : null,
     label: p.label ?? null,
     institution: p.institution ?? null,
     principal: p.principal ?? null,

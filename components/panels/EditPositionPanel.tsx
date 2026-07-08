@@ -18,6 +18,7 @@ import {
   type PortfolioRow,
 } from "@/lib/hooks/usePortfolio";
 import { useCompanies } from "@/lib/hooks/useCompanies";
+import { useBrokers } from "@/lib/hooks/useBrokers";
 import { useToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
@@ -36,8 +37,9 @@ const schema = z
     avgBuyPrice: z.string().optional(),
     addQuantity: z.string().optional(),
     addPrice: z.string().optional(),
-    // Held-by company is independent of the replace/add validation below.
+    // Held-by company + broker are independent of the replace/add validation.
     companyId: z.string().optional(),
+    brokerId: z.string().optional(),
   })
   .superRefine((d, ctx) => {
     if (d.mode === "replace") {
@@ -91,6 +93,7 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
   const { toast } = useToast();
   const update = useUpdatePosition();
   const companies = useCompanies().data?.companies ?? [];
+  const brokers = useBrokers().data?.brokers ?? [];
 
   const resolved = rows.find((r) => r.id === positionId) ?? null;
   // This panel only edits equities; non-equity types route to their own
@@ -115,6 +118,7 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
       addQuantity: "",
       addPrice: "",
       companyId: "",
+      brokerId: "",
     },
   });
 
@@ -139,6 +143,7 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
       addQuantity: "",
       addPrice: "",
       companyId: row.companyId ?? "",
+      brokerId: row.brokerId ?? "",
     });
   }, [row, reset]);
 
@@ -182,12 +187,18 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
       });
       return;
     }
-    // Held-by is orthogonal to the qty/avg recompute. It rides the replace
-    // path; in "add" mode it goes out as a small follow-up replace PATCH only
-    // when the company actually changed (the server's add schema has no
-    // companyId field).
+    // Held-by company + broker are orthogonal to the qty/avg recompute. They
+    // ride the replace path; in "add" mode they go out as a small follow-up
+    // replace PATCH only when they actually changed (the server's add schema
+    // has no companyId/brokerId field).
     const nextCompanyId = values.companyId ? values.companyId : null;
     const companyChanged = nextCompanyId !== (row.companyId ?? null);
+    const nextBrokerId = values.brokerId ? values.brokerId : null;
+    const brokerChanged = nextBrokerId !== (row.brokerId ?? null);
+    const heldByChanges: { companyId?: string | null; brokerId?: string | null } =
+      {};
+    if (companyChanged) heldByChanges.companyId = nextCompanyId;
+    if (brokerChanged) heldByChanges.brokerId = nextBrokerId;
 
     try {
       if (values.mode === "add") {
@@ -199,10 +210,10 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
             addPrice: Number(values.addPrice),
           },
         });
-        if (companyChanged) {
+        if (Object.keys(heldByChanges).length > 0) {
           await update.mutateAsync({
             id: row.id,
-            input: { mode: "replace", companyId: nextCompanyId },
+            input: { mode: "replace", ...heldByChanges },
           });
         }
       } else {
@@ -211,12 +222,14 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
           quantity?: number;
           avgBuyPrice?: number;
           companyId?: string | null;
+          brokerId?: string | null;
         } = { mode: "replace" };
         if (values.quantity?.trim())
           input.quantity = Number(values.quantity);
         if (values.avgBuyPrice?.trim())
           input.avgBuyPrice = Number(values.avgBuyPrice);
         if (companyChanged) input.companyId = nextCompanyId;
+        if (brokerChanged) input.brokerId = nextBrokerId;
         await update.mutateAsync({ id: row.id, input });
       }
       toast({
@@ -411,6 +424,20 @@ export function EditPositionPanel({ rows }: { rows: PortfolioRow[] }) {
             {companies.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+              </option>
+            ))}
+          </SelectField>
+
+          <SelectField
+            label="Broker"
+            id="edit-brokerId"
+            error={errors.brokerId?.message}
+            {...register("brokerId")}
+          >
+            <option value="">None</option>
+            {brokers.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
               </option>
             ))}
           </SelectField>

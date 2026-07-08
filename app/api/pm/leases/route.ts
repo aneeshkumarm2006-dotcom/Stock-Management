@@ -19,9 +19,10 @@ import {
 } from '@/lib/validation/pm/rentSchedule';
 import { logActivity } from '@/lib/pm/activity';
 import { toCents } from '@/lib/pm/currency';
+import { normalizeCountry } from '@/lib/pm/country';
 import { resolveRent, RentResolutionError } from '@/lib/pm/rent';
 import { LEASE_STATUSES } from '@/types/pm';
-import type { LeaseType, RentCycle } from '@/types/pm';
+import type { LeaseType, RentCycle, LeaseStatus } from '@/types/pm';
 import {
   computeLeaseStatus,
   daysRemaining,
@@ -61,11 +62,36 @@ export async function GET(request: Request) {
     .sort({ status: 1, startDate: -1 })
     .lean();
 
+  // Leases carry no country of their own — it lives on the property. Batch-fetch
+  // the referenced properties and expose each lease's normalized country so the
+  // rent roll can separate US vs Canada (mirrors the outstanding-balances join).
+  const leasePropIds = Array.from(
+    new Set(rows.map((r) => String(r.propertyId)).filter(Boolean)),
+  ).map((s) => new Types.ObjectId(s));
+  const leaseProps =
+    leasePropIds.length === 0
+      ? []
+      : await Property.find({
+          _id: { $in: leasePropIds },
+          organizationId: new Types.ObjectId(ctx.orgId),
+        })
+          .select({ _id: 1, 'address.country': 1 })
+          .lean();
+  const countryByProperty = new Map(
+    leaseProps.map((p) => [
+      String(p._id),
+      normalizeCountry(
+        (p as { address?: { country?: string } }).address?.country,
+      ),
+    ]),
+  );
+
   return NextResponse.json(
     rows.map((r) => ({
       id: String(r._id),
       leaseNumber: r.leaseNumber,
       propertyId: String(r.propertyId),
+      country: countryByProperty.get(String(r.propertyId)) ?? 'Other',
       unitId: String(r.unitId),
       tenants: (r.tenants ?? []).map((t) => ({
         tenantId: String(t.tenantId),
@@ -229,15 +255,103 @@ export async function POST(request: Request) {
   // already-occupied unit is allowed. The assign UI surfaces a non-blocking
   // warning naming the existing occupants, so no occupancy guard here.
 
-  // A tenant holds only one active assignment (Tenant.currentLeaseId is single).
-  const alreadyAssigned = foundTenants.find((t) => Boolean(t.currentLeaseId));
-  if (alreadyAssigned) {
-    return NextResponse.json(
-      {
-        error: `${alreadyAssigned.firstName} ${alreadyAssigned.lastName} is already assigned to a property. Move them out first.`,
-      },
-      { status: 409 },
+  // A tenant holds only one active assignment (Tenant.currentLeaseId is single),
+  // BUT that pointer can go stale and falsely 409 a legitimate assignment:
+  //   - the referenced lease was hard-deleted (dangling ObjectId), or
+  //   - it ended/was cancelled without the pointer being cleared (Ended/
+  //     Cancelled leases fall outside recomputeLeaseStatuses' scan set above).
+  // So don't trust `currentLeaseId` blindly — resolve the referenced leases,
+  // self-heal any stale pointer, and only 409 on one that still exists and is
+  // genuinely non-terminal. The 409 names the blocking lease/unit so the PM can
+  // act instead of guessing.
+  const assignedTenants = foundTenants.filter((t) => Boolean(t.currentLeaseId));
+  if (assignedTenants.length > 0) {
+    const refIds = Array.from(
+      new Map(
+        assignedTenants.map((t) => [
+          String(t.currentLeaseId),
+          new Types.ObjectId(String(t.currentLeaseId)),
+        ]),
+      ).values(),
     );
+    const refLeases = await Lease.find({
+      _id: { $in: refIds },
+      organizationId: orgId,
+    })
+      .select({
+        _id: 1,
+        leaseNumber: 1,
+        unitId: 1,
+        status: 1,
+        startDate: 1,
+        endDate: 1,
+        leaseType: 1,
+      })
+      .lean<
+        {
+          _id: Types.ObjectId;
+          leaseNumber: number;
+          unitId: Types.ObjectId;
+          status: LeaseStatus;
+          startDate: Date;
+          endDate: Date | null;
+          leaseType: LeaseType;
+        }[]
+      >();
+    const refById = new Map(refLeases.map((l) => [String(l._id), l]));
+
+    const blockers: {
+      tenant: (typeof assignedTenants)[number];
+      lease: (typeof refLeases)[number];
+    }[] = [];
+    const staleTenantIds: Types.ObjectId[] = [];
+    for (const t of assignedTenants) {
+      const lease = refById.get(String(t.currentLeaseId));
+      const terminal =
+        !lease ||
+        ['Ended', 'Cancelled', 'Expired'].includes(
+          computeLeaseStatus({
+            startDate: lease.startDate,
+            endDate: lease.endDate,
+            leaseType: lease.leaseType,
+            manual: lease.status,
+          }),
+        );
+      if (terminal) staleTenantIds.push(t._id);
+      else if (lease) blockers.push({ tenant: t, lease });
+    }
+
+    // Self-heal stale pointers so the tenant isn't blocked forever. Never let a
+    // heal hiccup fail the request path.
+    if (staleTenantIds.length > 0) {
+      try {
+        await Tenant.updateMany(
+          { _id: { $in: staleTenantIds }, organizationId: orgId },
+          { $set: { currentLeaseId: null } },
+        );
+      } catch (healErr) {
+        console.error('clear stale currentLeaseId failed', healErr);
+      }
+    }
+
+    const b = blockers[0];
+    if (b) {
+      const blockingUnit = await Unit.findOne({
+        _id: b.lease.unitId,
+        organizationId: orgId,
+      })
+        .select({ _id: 1, unitId: 1 })
+        .lean<{ _id: Types.ObjectId; unitId?: string } | null>();
+      const unitLabel = blockingUnit?.unitId
+        ? ` (unit ${blockingUnit.unitId})`
+        : '';
+      return NextResponse.json(
+        {
+          error: `${b.tenant.firstName} ${b.tenant.lastName} is already assigned to active lease #${b.lease.leaseNumber}${unitLabel}. Move them out of that lease first.`,
+        },
+        { status: 409 },
+      );
+    }
   }
   // ────────────────────────────────────────────────────────────────────────
 
@@ -371,8 +485,12 @@ export async function POST(request: Request) {
       payload: { leaseNumber },
     });
 
+    // Return the persisted status so the client can warn when a freshly-created
+    // lease lands outside the rent roll's default `Active, Future` view (e.g. a
+    // back-dated lease that computes to Expired) — otherwise it reads as "my
+    // lease didn't save."
     return NextResponse.json(
-      { id: String(doc._id), leaseNumber },
+      { id: String(doc._id), leaseNumber, status: doc.status },
       { status: 201 },
     );
   } catch (err: unknown) {

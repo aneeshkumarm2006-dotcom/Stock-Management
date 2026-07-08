@@ -161,6 +161,10 @@ export async function GET(
         }
       : null,
     propertyReserve: doc.propertyReserve,
+    // Income-capitalization valuation inputs (dollars / percent; null = use GL).
+    valuationAnnualIncomeOverride: doc.valuationAnnualIncomeOverride ?? null,
+    valuationAnnualExpenseOverride: doc.valuationAnnualExpenseOverride ?? null,
+    valuationCapRatePct: doc.valuationCapRatePct ?? null,
     listingDescription: doc.listingDescription ?? '',
     amenities: doc.amenities ?? [],
     includedInRent: doc.includedInRent ?? [],

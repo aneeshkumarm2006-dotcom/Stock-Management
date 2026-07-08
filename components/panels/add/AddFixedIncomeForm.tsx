@@ -18,6 +18,7 @@ import { COMMON_CURRENCIES } from "@/lib/utils/exchangeMap";
 import { Field, SelectField } from "../fields";
 import { AddHoldingShell } from "./AddHoldingShell";
 import { HeldByField } from "./HeldByField";
+import { BrokerField } from "./BrokerField";
 
 const FORM_ID = "add-fixed-income-form";
 
@@ -55,6 +56,7 @@ const schema = z
       "AT_MATURITY",
     ]),
     companyId: z.string().optional(),
+    brokerId: z.string().optional(),
   })
   .refine((d) => new Date(d.maturityDate) > new Date(d.startDate), {
     message: "Maturity date must be after the start date",
@@ -96,6 +98,7 @@ export function AddFixedIncomeForm({
       interestRate: "",
       payoutFrequency: "AT_MATURITY",
       companyId: "",
+      brokerId: "",
     },
   });
 
@@ -143,6 +146,7 @@ export function AddFixedIncomeForm({
         interestRate: Number(values.interestRate),
         payoutFrequency: values.payoutFrequency,
         companyId: values.companyId ? values.companyId : null,
+        brokerId: values.brokerId ? values.brokerId : null,
       });
       toast({
         title: isBond ? "Bond added" : "GIC added",
@@ -289,6 +293,12 @@ export function AddFixedIncomeForm({
           id="fi-companyId"
           error={errors.companyId?.message}
           registerProps={register("companyId")}
+        />
+
+        <BrokerField
+          id="fi-brokerId"
+          error={errors.brokerId?.message}
+          registerProps={register("brokerId")}
         />
       </form>
     </AddHoldingShell>

@@ -13,6 +13,10 @@ import { cn } from "@/lib/utils/cn";
 export const COMPANY_ALL = "ALL";
 export const COMPANY_UNASSIGNED = "UNASSIGNED";
 
+/** Sentinel filter values for the "Broker" filter. */
+export const BROKER_ALL = "ALL";
+export const BROKER_UNASSIGNED = "UNASSIGNED";
+
 export interface HoldingsFilter {
   query: string;
   exchange: "ALL" | "NYSE" | "NASDAQ" | "TSX";
@@ -20,6 +24,8 @@ export interface HoldingsFilter {
   country: "ALL" | "US" | "CA";
   /** Held-by company scope: COMPANY_ALL, COMPANY_UNASSIGNED, or a company id. */
   company: string;
+  /** Broker (custodian) scope: BROKER_ALL, BROKER_UNASSIGNED, or a broker id. */
+  broker: string;
 }
 
 export const DEFAULT_FILTER: HoldingsFilter = {
@@ -28,6 +34,7 @@ export const DEFAULT_FILTER: HoldingsFilter = {
   sector: "ALL",
   country: "ALL",
   company: COMPANY_ALL,
+  broker: BROKER_ALL,
 };
 
 /** A "held-by" company that owns at least one holding. */
@@ -67,6 +74,8 @@ export function PortfolioFilters({
   sectors,
   companies,
   hasUnassigned,
+  brokers,
+  hasUnassignedBroker,
   exchangeCounts,
   optionalColumns,
   onOptionalColumnsChange,
@@ -78,6 +87,10 @@ export function PortfolioFilters({
   companies: CompanyOption[];
   /** Whether any holding has no held-by company (adds an "Unassigned" option). */
   hasUnassigned: boolean;
+  /** Brokers that hold at least one holding, for the "Broker" filter. */
+  brokers: CompanyOption[];
+  /** Whether any holding has no broker (adds an "Unassigned" option). */
+  hasUnassignedBroker: boolean;
   /** Live exchange row counts (computed from unfiltered rows). */
   exchangeCounts: Record<"NYSE" | "NASDAQ" | "TSX", number>;
   optionalColumns: Record<OptionalColumn, boolean>;
@@ -93,7 +106,8 @@ export function PortfolioFilters({
     filter.exchange !== "ALL" ||
     filter.sector !== "ALL" ||
     filter.country !== "ALL" ||
-    filter.company !== COMPANY_ALL;
+    filter.company !== COMPANY_ALL ||
+    filter.broker !== BROKER_ALL;
 
   const totalCount =
     exchangeCounts.NYSE + exchangeCounts.NASDAQ + exchangeCounts.TSX;
@@ -104,6 +118,7 @@ export function PortfolioFilters({
   // cards), so it renders whenever any company exists — even when the current
   // scope has no equities and the exchange controls below are hidden.
   const showCompanyFilter = companies.length > 0;
+  const showBrokerFilter = brokers.length > 0;
   const showEquityControls = totalCount > 0;
 
   const [columnsOpen, setColumnsOpen] = React.useState(false);
@@ -159,6 +174,35 @@ export function PortfolioFilters({
             ))}
             {hasUnassigned && (
               <option value={COMPANY_UNASSIGNED}>Unassigned</option>
+            )}
+          </select>
+        </label>
+      )}
+
+      {/* Broker (custodian) — scopes the whole portfolio like the company
+          filter, and composes with it. */}
+      {showBrokerFilter && (
+        <label className="relative">
+          <Building2 className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
+          <select
+            aria-label="Filter by broker"
+            value={filter.broker}
+            onChange={(e) => set("broker", e.target.value)}
+            className={cn(
+              "h-9 rounded border pl-8 pr-7 text-xs font-semibold text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary",
+              filter.broker !== BROKER_ALL
+                ? "border-primary bg-secondary-container text-primary"
+                : "border-border bg-surface",
+            )}
+          >
+            <option value={BROKER_ALL}>All brokers</option>
+            {brokers.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+            {hasUnassignedBroker && (
+              <option value={BROKER_UNASSIGNED}>No broker</option>
             )}
           </select>
         </label>

@@ -49,6 +49,13 @@ const baseFields = {
   operatingAccountId: objectIdString.nullable().optional(),
   depositTrustAccountId: objectIdString.nullable().optional(),
   propertyReserve: z.number().min(0).optional(),
+  // Income-capitalization valuation inputs (dollars for money, percent for cap
+  // rate). Nullable: `null` clears the override → the card falls back to the
+  // live GL figure. Zod strips unknown keys, so these MUST be declared here or
+  // the property PATCH would silently drop them.
+  valuationAnnualIncomeOverride: z.number().min(0).nullable().optional(),
+  valuationAnnualExpenseOverride: z.number().min(0).nullable().optional(),
+  valuationCapRatePct: z.number().min(0).max(100).nullable().optional(),
   listingDescription: z.string().max(8000).optional(),
   amenities: z.array(z.string().max(80)).optional(),
   includedInRent: z.array(z.string().max(80)).optional(),
@@ -82,6 +89,9 @@ export const propertyUpdateSchema = z
     operatingAccountId: baseFields.operatingAccountId.optional(),
     depositTrustAccountId: baseFields.depositTrustAccountId,
     propertyReserve: baseFields.propertyReserve,
+    valuationAnnualIncomeOverride: baseFields.valuationAnnualIncomeOverride,
+    valuationAnnualExpenseOverride: baseFields.valuationAnnualExpenseOverride,
+    valuationCapRatePct: baseFields.valuationCapRatePct,
     listingDescription: baseFields.listingDescription,
     amenities: baseFields.amenities,
     includedInRent: baseFields.includedInRent,

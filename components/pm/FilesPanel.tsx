@@ -58,6 +58,22 @@ interface Props {
   locationId: string | null;
 }
 
+// Cloudinary blocks *inline* delivery of `raw` files (PDFs, ZIPs) unless the
+// account has "Allow delivery of PDF and ZIP files" enabled — so opening a lease
+// PDF via its bare secure_url 401s on many accounts. Forcing an `fl_attachment`
+// delivery serves the file as a download attachment, which is permitted
+// regardless of that toggle, so the link works everywhere. Images/videos are
+// delivered inline unchanged. (The account setting is still the cleaner fix; this
+// keeps lease documents openable without it.)
+export function fileDeliveryUrl(
+  storageUrl: string,
+  resourceType: FileRow["resourceType"],
+): string {
+  if (resourceType !== "raw" || !storageUrl) return storageUrl;
+  if (storageUrl.includes("/fl_attachment/")) return storageUrl;
+  return storageUrl.replace("/upload/", "/upload/fl_attachment/");
+}
+
 export function FilesPanel({ locationType, locationId }: Props) {
   const { toast } = useToast();
   const [rows, setRows] = React.useState<FileRow[]>([]);
@@ -255,7 +271,7 @@ export function FilesPanel({ locationType, locationId }: Props) {
                 <td className="py-2 text-fg">
                   {f.storageUrl ? (
                     <a
-                      href={f.storageUrl}
+                      href={fileDeliveryUrl(f.storageUrl, f.resourceType)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-fg underline-offset-2 hover:underline"
@@ -274,7 +290,7 @@ export function FilesPanel({ locationType, locationId }: Props) {
                   <div className="flex items-center justify-end gap-1">
                     {f.storageUrl && (
                       <a
-                        href={f.storageUrl}
+                        href={fileDeliveryUrl(f.storageUrl, f.resourceType)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-fg"

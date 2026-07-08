@@ -8,6 +8,7 @@ import { connectToDatabase } from '@/lib/db/mongoose';
 import { Position } from '@/lib/db/models/Position';
 import { StockMetadata } from '@/lib/db/models/StockMetadata';
 import { Company } from '@/lib/db/models/Company';
+import { Broker } from '@/lib/db/models/Broker';
 import {
   getCurrentUserId,
   unauthorizedResponse,
@@ -61,6 +62,26 @@ export async function GET() {
     companyDocs.map((c) => [String(c._id), c.name]),
   );
 
+  // One batched Broker join (id → name) so the holdings table can show the
+  // "broker" column without a request per row. Scoped to userId so a stale or
+  // foreign brokerId resolves to a null name rather than leaking another user.
+  const brokerIds = Array.from(
+    new Set(
+      positions
+        .map((p) => p.brokerId)
+        .filter((b): b is NonNullable<typeof b> => Boolean(b))
+        .map(String),
+    ),
+  );
+  const brokerDocs = brokerIds.length
+    ? await Broker.find({ _id: { $in: brokerIds }, userId })
+        .select('name')
+        .lean()
+    : [];
+  const brokerNameById = new Map(
+    brokerDocs.map((b) => [String(b._id), b.name]),
+  );
+
   const enriched = positions.map((p) => {
     const assetType = p.assetType ?? 'EQUITY';
     const meta =
@@ -68,6 +89,7 @@ export async function GET() {
         ? metaByKey.get(`${p.ticker}:${p.exchange}`)
         : undefined;
     const companyId = p.companyId ? String(p.companyId) : null;
+    const brokerId = p.brokerId ? String(p.brokerId) : null;
     return {
       id: String(p._id),
       assetType,
@@ -79,6 +101,8 @@ export async function GET() {
       buyDate: p.buyDate ?? null,
       companyId,
       companyName: companyId ? companyNameById.get(companyId) ?? null : null,
+      brokerId,
+      brokerName: brokerId ? brokerNameById.get(brokerId) ?? null : null,
       // Non-equity fields (null on equities).
       label: p.label ?? null,
       institution: p.institution ?? null,
@@ -129,6 +153,7 @@ export async function POST(request: Request) {
 
   const data = parsed.data;
   const companyId = data.companyId ?? null;
+  const brokerId = data.brokerId ?? null;
 
   await connectToDatabase();
 
@@ -140,9 +165,17 @@ export async function POST(request: Request) {
     }
   }
 
+  // Verify the broker belongs to this user before storing the ref.
+  if (brokerId) {
+    const owned = await Broker.countDocuments({ _id: brokerId, userId });
+    if (owned === 0) {
+      return NextResponse.json({ error: 'Invalid broker' }, { status: 400 });
+    }
+  }
+
   // Build the per-type create payload. The discriminated union guarantees the
   // correct fields are present for each assetType.
-  const created = await Position.create({ ...data, userId, companyId });
+  const created = await Position.create({ ...data, userId, companyId, brokerId });
 
   // Equities get an async company-profile fetch (PDR §5.1) — cached globally
   // (StockMetadata, 7d TTL) and lazily re-fetched by the stock-detail page, so

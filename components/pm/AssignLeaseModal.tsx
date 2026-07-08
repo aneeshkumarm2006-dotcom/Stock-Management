@@ -376,8 +376,23 @@ export function AssignLeaseModal({
       });
       return;
     }
-    const data = (await res.json()) as { id: string };
-    toast({ title: "Tenant assigned", variant: "success" });
+    const data = (await res.json()) as {
+      id: string;
+      leaseNumber?: number;
+      status?: string;
+    };
+    // The lease saved. If it computed to a status outside the rent roll's
+    // default "Active, Future" view (e.g. a back-dated lease → Expired), say so
+    // — otherwise it reads as "my lease didn't save" when it's just filtered out.
+    if (data.status && data.status !== "Active" && data.status !== "Future") {
+      toast({
+        title: `Lease${data.leaseNumber ? ` #${data.leaseNumber}` : ""} created — status ${data.status}`,
+        description:
+          "It won't show under the rent roll's default Active/Future filter. Switch the status filter to All to see it.",
+      });
+    } else {
+      toast({ title: "Tenant assigned", variant: "success" });
+    }
     onClose();
     await onSaved(data.id);
   }

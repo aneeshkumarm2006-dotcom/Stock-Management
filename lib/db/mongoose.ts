@@ -1,6 +1,25 @@
 // Singleton cached Mongoose connection, safe across Next.js hot reloads.
 // Refs: Tech_Stack.md §Database (Connection: global._mongoose).
 import mongoose from 'mongoose';
+import dns from 'dns';
+
+// Windows/Node quirk: some hosts default to a 127.0.0.1 resolver that refuses
+// SRV lookups (mongodb+srv://) even when the OS resolver works, so the runtime
+// server 500s with `querySrv ECONNREFUSED`. The maintenance scripts already
+// honor a MONGODB_DNS_SERVERS override; apply it here too so the dev/runtime
+// server can resolve Atlas. No-op when the var is unset (CI/normal machines).
+let dnsApplied = false;
+function applyDnsOverride(): void {
+  if (dnsApplied) return;
+  dnsApplied = true;
+  const servers = process.env.MONGODB_DNS_SERVERS;
+  if (!servers) return;
+  try {
+    dns.setServers(servers.split(',').map((s) => s.trim()).filter(Boolean));
+  } catch (err) {
+    console.error('Failed to apply MONGODB_DNS_SERVERS override', err);
+  }
+}
 
 interface MongooseCache {
   conn: typeof mongoose | null;
@@ -46,6 +65,7 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
   }
 
   if (!cached.promise) {
+    applyDnsOverride();
     cached.promise = mongoose.connect(uri, {
       bufferCommands: false,
       // Cap the per-process pool so warm serverless instances can't pile up

@@ -30,6 +30,15 @@ import type {
 } from "@/types/pm";
 import { computeWarnings, type PmWarning } from "@/lib/pm/warnings";
 import { WarningInline, WarningBadge } from "@/components/pm/WarningBadge";
+import { normalizeCountry, compareCountryGroups } from "@/lib/pm/country";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { fromCents } from "@/lib/pm/currency";
+import {
+  computeMarketValue,
+  glIncomeExpenseCentsByProperty,
+  trailing12moRange,
+  type MatrixLike,
+} from "@/lib/pm/valuation";
 
 interface PropertyRow {
   id: string;
@@ -41,14 +50,25 @@ interface PropertyRow {
     city?: string;
     state?: string;
     zip?: string;
+    country?: string;
   } | null;
   propertyManagerUserId: string | null;
   ownerCount: number;
+  owners: Array<{
+    rentalOwnerId: string;
+    ownershipPct: number;
+    displayName: string;
+  }>;
   active: boolean;
   propertyReserve: number;
+  valuationAnnualIncomeOverride: number | null;
+  valuationAnnualExpenseOverride: number | null;
+  valuationCapRatePct: number | null;
   operatingAccountId: string | null;
   warnings: PmWarning[];
 }
+
+type PropertyGroupBy = "none" | "owner" | "country";
 
 const RES_SUBTYPES: ResidentialSubType[] = [
   "Single-Family",
@@ -65,7 +85,13 @@ export default function PropertiesListPage() {
     "active" | "inactive" | "all"
   >("active");
   const [filterClass, setFilterClass] = React.useState<"" | PropertyClass>("");
+  const [groupBy, setGroupBy] = React.useState<PropertyGroupBy>("none");
   const [modalOpen, setModalOpen] = React.useState(false);
+  // Trailing-12-month GL income/expense per property (cents), for the Market
+  // value column. Fetched once; combined with each row's overrides + cap rate.
+  const [glByProperty, setGlByProperty] = React.useState<
+    Map<string, { incomeCents: number; expenseCents: number }>
+  >(new Map());
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -82,11 +108,145 @@ export default function PropertiesListPage() {
     load();
   }, [load]);
 
+  // GL income/expense per property for the Market value column. Independent of
+  // the row list (the matrix is keyed by property id), so fetch once.
+  React.useEffect(() => {
+    let cancelled = false;
+    const { from, to } = trailing12moRange();
+    fetch(`/api/pm/financials/matrix?from=${from}&to=${to}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: MatrixLike | null) => {
+        if (cancelled || !data) return;
+        setGlByProperty(glIncomeExpenseCentsByProperty(data));
+      })
+      .catch(() => {
+        /* Market value column falls back to ledger 0 if the matrix is absent. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const marketValueFor = React.useCallback(
+    (p: PropertyRow): number | null => {
+      const gl = glByProperty.get(p.id) ?? { incomeCents: 0, expenseCents: 0 };
+      return computeMarketValue({
+        incomeOverride: p.valuationAnnualIncomeOverride,
+        expenseOverride: p.valuationAnnualExpenseOverride,
+        capRatePct: p.valuationCapRatePct,
+        glIncome: fromCents(gl.incomeCents),
+        glExpense: fromCents(gl.expenseCents),
+      }).marketValue;
+    },
+    [glByProperty],
+  );
+
   const filtered = React.useMemo(() => {
     if (filterActive === "active") return rows.filter((r) => r.active);
     if (filterActive === "inactive") return rows.filter((r) => !r.active);
     return rows;
   }, [rows, filterActive]);
+
+  // Group the visible rows by owner entity or by country. "none" is a single
+  // unlabeled group. A property with multiple owners appears under each owner.
+  const groups = React.useMemo<
+    Array<{ key: string; label: string; rows: PropertyRow[] }>
+  >(() => {
+    if (groupBy === "none") {
+      return [{ key: "all", label: "", rows: filtered }];
+    }
+    if (groupBy === "country") {
+      const m = new Map<string, PropertyRow[]>();
+      for (const p of filtered) {
+        const c = normalizeCountry(p.address?.country);
+        const list = m.get(c) ?? [];
+        list.push(p);
+        m.set(c, list);
+      }
+      return Array.from(m.entries())
+        .map(([label, groupRows]) => ({ key: label, label, rows: groupRows }))
+        .sort((a, b) => compareCountryGroups(a.label, b.label));
+    }
+    // owner
+    const m = new Map<string, { label: string; rows: PropertyRow[] }>();
+    for (const p of filtered) {
+      if (!p.owners || p.owners.length === 0) {
+        const g = m.get("__unowned") ?? { label: "Unowned", rows: [] };
+        g.rows.push(p);
+        m.set("__unowned", g);
+        continue;
+      }
+      for (const o of p.owners) {
+        const g = m.get(o.rentalOwnerId) ?? {
+          label: o.displayName || "(unknown owner)",
+          rows: [],
+        };
+        g.rows.push(p);
+        m.set(o.rentalOwnerId, g);
+      }
+    }
+    return Array.from(m.entries())
+      .map(([key, v]) => ({ key, label: v.label, rows: v.rows }))
+      .sort((a, b) => {
+        if (a.key === "__unowned") return 1;
+        if (b.key === "__unowned") return -1;
+        return a.label.localeCompare(b.label);
+      });
+  }, [filtered, groupBy]);
+
+  const renderPropertyRow = (p: PropertyRow) => (
+    <tr
+      key={p.id}
+      className={"border-b border-border/40 " + (p.active ? "" : "opacity-50")}
+    >
+      <td className="py-2 text-fg">
+        <Link
+          href={`/properties/rentals/properties/${p.id}`}
+          className="font-medium hover:underline"
+        >
+          {p.propertyName || "(Untitled)"}
+        </Link>
+        <WarningBadge
+          entityType="Property"
+          entityId={p.id}
+          warnings={p.warnings}
+          onIgnored={load}
+          layout="inline"
+          className="ml-2"
+        />
+      </td>
+      <td className="text-fg-muted">
+        {p.propertyClass}
+        <span className="px-1 text-fg-muted/50">·</span>
+        {p.propertySubType}
+      </td>
+      <td className="text-fg-muted">
+        {p.owners && p.owners.length > 0
+          ? p.owners.map((o) => o.displayName).join(", ")
+          : p.ownerCount || "—"}
+      </td>
+      <td className="text-fg-muted">
+        {normalizeCountry(p.address?.country)}
+      </td>
+      <td className="text-fg-muted">
+        {p.address?.line1
+          ? `${p.address.line1}, ${p.address.city ?? ""} ${p.address.state ?? ""}`
+          : "—"}
+      </td>
+      <td className="text-right text-fg">
+        {(() => {
+          const mv = marketValueFor(p);
+          return mv == null ? (
+            <span className="text-fg-muted" title="Set a cap rate on the property's Financials tab">
+              —
+            </span>
+          ) : (
+            <CurrencyAmount value={mv} />
+          );
+        })()}
+      </td>
+    </tr>
+  );
 
   return (
     <div className="space-y-4">
@@ -136,6 +296,29 @@ export default function PropertiesListPage() {
                 setFilterClass((c) => (c === "Commercial" ? "" : "Commercial"))
               }
             />
+            <span className="ml-2 text-xs text-fg-muted">·</span>
+            <span className="text-xs text-fg-muted">Group by</span>
+            {(
+              [
+                ["none", "None"],
+                ["owner", "Owner"],
+                ["country", "Country"],
+              ] as Array<[PropertyGroupBy, string]>
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setGroupBy(value)}
+                className={
+                  "rounded-full border px-3 py-1 text-xs font-bold transition-colors " +
+                  (groupBy === value
+                    ? "border-primary bg-primary text-primary-fg"
+                    : "border-border bg-surface text-fg-muted hover:text-fg")
+                }
+              >
+                {label}
+              </button>
+            ))}
             <div className="ml-auto w-full max-w-xs">
               <Input
                 value={search}
@@ -151,61 +334,47 @@ export default function PropertiesListPage() {
                 <th className="py-2">Property</th>
                 <th>Class / type</th>
                 <th>Owners</th>
+                <th>Country</th>
                 <th>Address</th>
+                <th className="text-right">Market value</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={4} className="py-4 text-fg-muted">
+                  <td colSpan={6} className="py-4 text-fg-muted">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="py-4 text-fg-muted">
+                  <td colSpan={6} className="py-4 text-fg-muted">
                     No properties match.
                   </td>
                 </tr>
               )}
-              {filtered.map((p) => (
-                <tr
-                  key={p.id}
-                  className={
-                    "border-b border-border/40 " +
-                    (p.active ? "" : "opacity-50")
-                  }
-                >
-                  <td className="py-2 text-fg">
-                    <Link
-                      href={`/properties/rentals/properties/${p.id}`}
-                      className="font-medium hover:underline"
-                    >
-                      {p.propertyName || "(Untitled)"}
-                    </Link>
-                    <WarningBadge
-                      entityType="Property"
-                      entityId={p.id}
-                      warnings={p.warnings}
-                      onIgnored={load}
-                      layout="inline"
-                      className="ml-2"
-                    />
-                  </td>
-                  <td className="text-fg-muted">
-                    {p.propertyClass}
-                    <span className="px-1 text-fg-muted/50">·</span>
-                    {p.propertySubType}
-                  </td>
-                  <td className="text-fg-muted">{p.ownerCount}</td>
-                  <td className="text-fg-muted">
-                    {p.address?.line1
-                      ? `${p.address.line1}, ${p.address.city ?? ""} ${p.address.state ?? ""}`
-                      : "—"}
-                  </td>
-                </tr>
-              ))}
+              {!loading &&
+                filtered.length > 0 &&
+                groups.map((g) => (
+                  <React.Fragment key={g.key}>
+                    {groupBy !== "none" && (
+                      <tr className="bg-surface-high/40">
+                        <td
+                          colSpan={6}
+                          className="py-1.5 text-xs font-bold uppercase tracking-widest text-fg-muted"
+                        >
+                          {g.label}
+                          <span className="ml-2 font-normal normal-case tracking-normal">
+                            {g.rows.length} propert
+                            {g.rows.length === 1 ? "y" : "ies"}
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                    {g.rows.map(renderPropertyRow)}
+                  </React.Fragment>
+                ))}
             </tbody>
           </table>
           <p className="text-xs text-fg-muted">

@@ -278,6 +278,15 @@ export interface ExecuteDraftLeaseResult {
   leaseId: string;
   leaseNumber: number;
   journalEntryId: string | null;
+  /**
+   * Set when there WERE move-in funds to post but the JE was skipped because
+   * the accounting mappings aren't configured (no Operating Cash CoA, no
+   * Security Deposit Liability CoA, or the legs wouldn't balance). The lease is
+   * still created — this lets the route/UI tell the PM the ledger wasn't
+   * touched and why, instead of the entry vanishing silently. Null when a JE
+   * posted or there was genuinely nothing to post.
+   */
+  moveInJournalWarning: string | null;
   alreadyExecuted: boolean;
 }
 
@@ -313,6 +322,7 @@ export async function executeDraftLease(
       leaseId: String(draft.promotedToLeaseId),
       leaseNumber: 0,
       journalEntryId: null,
+      moveInJournalWarning: null,
       alreadyExecuted: true,
     };
   }
@@ -531,6 +541,7 @@ export async function executeDraftLease(
   // still saves, but the route surfaces the warning so a PM can post a
   // manual JE.
   let journalEntryId: Types.ObjectId | null = null;
+  let moveInJournalWarning: string | null = null;
   // Use the schedule-derived current rent (when a schedule exists) so the
   // first-month JE matches the lease's first active period.
   const rentCents = leasePrimaryRent?.amount ?? 0;
@@ -544,72 +555,87 @@ export async function executeDraftLease(
   const depositCents = draft.securityDeposit ?? 0;
   const totalIn = rentCents + splitCents + depositCents;
 
-  if (operatingCashCoaId && totalIn > 0) {
-    const lines: Array<Record<string, unknown>> = [];
-    lines.push({
-      accountId: operatingCashCoaId,
-      scopeType: 'Property',
-      scopeId: lease.propertyId,
-      unitId: lease.unitId,
-      description: `Move-in funds received (lease #${leaseNumber})`,
-      debit: totalIn,
-      credit: 0,
-    });
-    if (rentCents > 0) {
+  // Only when there are actually funds to record do we attempt the JE. When
+  // there are but a required account mapping is missing, the lease still saves
+  // — we capture WHY so the route can warn the PM (previously this branch just
+  // fell through and the entry disappeared with no signal).
+  if (totalIn > 0) {
+    if (!operatingCashCoaId) {
+      moveInJournalWarning =
+        `Lease #${leaseNumber} was created, but its move-in funds were not posted to the ledger: no Operating Cash account is mapped for this property (or as an org default). Map one, then post a manual move-in journal entry.`;
+    } else if (depositCents > 0 && !securityDepositCoaId) {
+      moveInJournalWarning =
+        `Lease #${leaseNumber} was created, but its move-in funds were not posted: a security deposit was collected and no Security Deposit Liability account is mapped. Map one, then post a manual move-in journal entry.`;
+    } else {
+      const lines: Array<Record<string, unknown>> = [];
       lines.push({
-        accountId: rentAccountId,
+        accountId: operatingCashCoaId,
         scopeType: 'Property',
         scopeId: lease.propertyId,
         unitId: lease.unitId,
-        description: 'First month rent income',
-        debit: 0,
-        credit: rentCents,
+        description: `Move-in funds received (lease #${leaseNumber})`,
+        debit: totalIn,
+        credit: 0,
       });
-    }
-    for (const c of splitCharges) {
-      lines.push({
-        accountId: c.accountId,
-        scopeType: 'Property',
-        scopeId: lease.propertyId,
-        unitId: lease.unitId,
-        description: c.memo || 'First month recovery income',
-        debit: 0,
-        credit: c.amount,
-      });
-    }
-    if (depositCents > 0 && securityDepositCoaId) {
-      lines.push({
-        accountId: securityDepositCoaId,
-        scopeType: 'Property',
-        scopeId: lease.propertyId,
-        unitId: lease.unitId,
-        description: 'Security deposit received',
-        debit: 0,
-        credit: depositCents,
-      });
-    }
+      if (rentCents > 0) {
+        lines.push({
+          accountId: rentAccountId,
+          scopeType: 'Property',
+          scopeId: lease.propertyId,
+          unitId: lease.unitId,
+          description: 'First month rent income',
+          debit: 0,
+          credit: rentCents,
+        });
+      }
+      for (const c of splitCharges) {
+        lines.push({
+          accountId: c.accountId,
+          scopeType: 'Property',
+          scopeId: lease.propertyId,
+          unitId: lease.unitId,
+          description: c.memo || 'First month recovery income',
+          debit: 0,
+          credit: c.amount,
+        });
+      }
+      if (depositCents > 0 && securityDepositCoaId) {
+        lines.push({
+          accountId: securityDepositCoaId,
+          scopeType: 'Property',
+          scopeId: lease.propertyId,
+          unitId: lease.unitId,
+          description: 'Security deposit received',
+          debit: 0,
+          credit: depositCents,
+        });
+      }
 
-    const totalDebit = lines.reduce(
-      (s, l) => s + (Number(l.debit) || 0),
-      0,
-    );
-    const totalCredit = lines.reduce(
-      (s, l) => s + (Number(l.credit) || 0),
-      0,
-    );
-    if (totalDebit === totalCredit && totalDebit > 0) {
-      const je = await JournalEntry.create({
-        organizationId: orgId,
-        date: txnDate,
-        scopeType: 'Property',
-        scopeId: lease.propertyId,
-        memo: `Move-in JE for lease #${leaseNumber} at ${property.propertyName}`,
-        lines,
-        status: 'Posted',
-        postedAt: txnDate,
-        createdByUserId: new Types.ObjectId(ctx.userId),
-      });
-      journalEntryId = je._id;
+      const totalDebit = lines.reduce(
+        (s, l) => s + (Number(l.debit) || 0),
+        0,
+      );
+      const totalCredit = lines.reduce(
+        (s, l) => s + (Number(l.credit) || 0),
+        0,
+      );
+      if (totalDebit === totalCredit && totalDebit > 0) {
+        const je = await JournalEntry.create({
+          organizationId: orgId,
+          date: txnDate,
+          scopeType: 'Property',
+          scopeId: lease.propertyId,
+          memo: `Move-in JE for lease #${leaseNumber} at ${property.propertyName}`,
+          lines,
+          status: 'Posted',
+          postedAt: txnDate,
+          createdByUserId: new Types.ObjectId(ctx.userId),
+        });
+        journalEntryId = je._id;
+      } else {
+        moveInJournalWarning =
+          `Lease #${leaseNumber} was created, but its move-in journal entry couldn't be balanced and was not posted. Review the rent/deposit accounts, then post a manual move-in journal entry.`;
+      }
     }
   }
 
@@ -738,6 +764,7 @@ export async function executeDraftLease(
     leaseId: String(lease._id),
     leaseNumber,
     journalEntryId: journalEntryId ? String(journalEntryId) : null,
+    moveInJournalWarning,
     alreadyExecuted: false,
   };
 }

@@ -29,6 +29,8 @@ import {
   DEFAULT_OPTIONAL_COLUMNS,
   COMPANY_ALL,
   COMPANY_UNASSIGNED,
+  BROKER_ALL,
+  BROKER_UNASSIGNED,
   type HoldingsFilter,
   type OptionalColumn,
   type CompanyOption,
@@ -110,6 +112,12 @@ export default function PortfolioPage() {
 
   const openAddPanel = useUiStore((s) => s.openAddPanel);
   const [filter, setFilter] = useState<HoldingsFilter>(DEFAULT_FILTER);
+  // How the equities (stocks) table is sectioned: a flat table, or one section
+  // per broker / issuing company / held-by entity. "Split by broker and by
+  // company" for stocks lives here.
+  const [equityGroupBy, setEquityGroupBy] = useState<
+    "none" | "broker" | "issuer" | "heldBy"
+  >("none");
   const [optionalColumns, setOptionalColumns] =
     useState<Record<OptionalColumn, boolean>>(DEFAULT_OPTIONAL_COLUMNS);
   const [toDelete, setToDelete] = useState<PortfolioRow | null>(null);
@@ -130,14 +138,35 @@ export default function PortfolioPage() {
 
   const hasUnassigned = useMemo(() => rows.some((r) => !r.companyId), [rows]);
 
-  // Company scope applies portfolio-wide: it filters every section AND drives
-  // the recomputed stat cards below (PDR §5.3 metrics reflect the scope).
+  // The distinct brokers that hold at least one holding (for the broker scope).
+  const brokers = useMemo<CompanyOption[]>(() => {
+    const byId = new Map<string, string>();
+    for (const r of rows) {
+      if (r.brokerId) byId.set(r.brokerId, r.brokerName ?? "Unnamed broker");
+    }
+    return Array.from(byId, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }, [rows]);
+
+  const hasUnassignedBroker = useMemo(
+    () => rows.some((r) => !r.brokerId),
+    [rows],
+  );
+
+  // Company + broker scopes both apply portfolio-wide and compose: they filter
+  // every section AND drive the recomputed stat cards below (PDR §5.3 metrics
+  // reflect the scope).
   const scopedRows = useMemo(() => {
-    if (filter.company === COMPANY_ALL) return rows;
-    if (filter.company === COMPANY_UNASSIGNED)
-      return rows.filter((r) => !r.companyId);
-    return rows.filter((r) => r.companyId === filter.company);
-  }, [rows, filter.company]);
+    let r = rows;
+    if (filter.company === COMPANY_UNASSIGNED) r = r.filter((x) => !x.companyId);
+    else if (filter.company !== COMPANY_ALL)
+      r = r.filter((x) => x.companyId === filter.company);
+    if (filter.broker === BROKER_UNASSIGNED) r = r.filter((x) => !x.brokerId);
+    else if (filter.broker !== BROKER_ALL)
+      r = r.filter((x) => x.brokerId === filter.broker);
+    return r;
+  }, [rows, filter.company, filter.broker]);
 
   const selectedCompanyName =
     filter.company === COMPANY_ALL
@@ -150,9 +179,10 @@ export default function PortfolioPage() {
   // recomputed subtotals when a company is selected.
   const scopedSummary = useMemo<StatCardSummary | null>(() => {
     if (!summary) return null;
-    if (filter.company === COMPANY_ALL) return summary;
+    if (filter.company === COMPANY_ALL && filter.broker === BROKER_ALL)
+      return summary;
     return summarizeRows(scopedRows, displayCurrency);
-  }, [summary, filter.company, scopedRows, displayCurrency]);
+  }, [summary, filter.company, filter.broker, scopedRows, displayCurrency]);
 
   // Split scoped holdings into per-type sections. Equities keep the filterable
   // table; the rest get type-appropriate section tables.
@@ -207,6 +237,49 @@ export default function PortfolioPage() {
   const distinctExchanges = (["NASDAQ", "NYSE", "TSX"] as const).filter(
     (id) => (exchangeCounts[id] ?? 0) > 0,
   ).length;
+
+  // Section the (filtered) equities by the chosen dimension. "issuer" buckets
+  // by ticker so multiple lots of the same company (e.g. AAPL held at two
+  // brokers) group together; "broker"/"heldBy" bucket by their entity, with an
+  // unassigned bucket sorted last.
+  const equityGroups = useMemo<
+    Array<{ key: string; label: string; rows: PortfolioRow[] }>
+  >(() => {
+    if (equityGroupBy === "none") {
+      return [{ key: "all", label: "", rows: filtered }];
+    }
+    const keyed = (r: PortfolioRow): { key: string; label: string } => {
+      if (equityGroupBy === "broker") {
+        return r.brokerId
+          ? { key: r.brokerId, label: r.brokerName ?? "Unnamed broker" }
+          : { key: "__none", label: "No broker" };
+      }
+      if (equityGroupBy === "heldBy") {
+        return r.companyId
+          ? { key: r.companyId, label: r.companyName ?? "Unnamed company" }
+          : { key: "__none", label: "Unassigned" };
+      }
+      // issuer
+      return {
+        key: `t:${r.ticker}`,
+        label: r.name ? `${r.ticker} · ${r.name}` : r.ticker,
+      };
+    };
+    const m = new Map<string, { label: string; rows: PortfolioRow[] }>();
+    for (const r of filtered) {
+      const { key, label } = keyed(r);
+      const g = m.get(key) ?? { label, rows: [] };
+      g.rows.push(r);
+      m.set(key, g);
+    }
+    return Array.from(m.entries())
+      .map(([key, v]) => ({ key, label: v.label, rows: v.rows }))
+      .sort((a, b) => {
+        if (a.key === "__none") return 1;
+        if (b.key === "__none") return -1;
+        return a.label.localeCompare(b.label);
+      });
+  }, [equityGroupBy, filtered]);
 
   return (
     <div className="space-y-[18px]">
@@ -265,20 +338,68 @@ export default function PortfolioPage() {
             sectors={sectors}
             companies={companies}
             hasUnassigned={hasUnassigned}
+            brokers={brokers}
+            hasUnassignedBroker={hasUnassignedBroker}
             exchangeCounts={exchangeCounts}
             optionalColumns={optionalColumns}
             onOptionalColumnsChange={setOptionalColumns}
           />
 
-          {/* Equities — the filterable/sortable table. */}
+          {/* Equities — the filterable/sortable table, optionally split into
+              sections by broker / issuing company / held-by entity. */}
           {equityRows.length > 0 && (
-            <HoldingsTable
-              rows={filtered}
-              totalRowCount={equityRows.length}
-              displayCurrency={displayCurrency}
-              optionalColumns={optionalColumns}
-              onDelete={setToDelete}
-            />
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-fg-muted">
+                  Split stocks by
+                </span>
+                {(
+                  [
+                    ["none", "None"],
+                    ["broker", "Broker"],
+                    ["issuer", "Company"],
+                    ["heldBy", "Held-by entity"],
+                  ] as Array<[typeof equityGroupBy, string]>
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setEquityGroupBy(value)}
+                    className={
+                      "rounded-full border px-3 py-1 text-xs font-bold transition-colors " +
+                      (equityGroupBy === value
+                        ? "border-primary bg-primary text-primary-fg"
+                        : "border-border bg-surface text-fg-muted hover:text-fg")
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {equityGroupBy === "none" ? (
+                <HoldingsTable
+                  rows={filtered}
+                  totalRowCount={equityRows.length}
+                  displayCurrency={displayCurrency}
+                  optionalColumns={optionalColumns}
+                  onDelete={setToDelete}
+                />
+              ) : (
+                equityGroups.map((g) => (
+                  <div key={g.key} className="space-y-2">
+                    <SectionHeading title={g.label} count={g.rows.length} />
+                    <HoldingsTable
+                      rows={g.rows}
+                      totalRowCount={g.rows.length}
+                      displayCurrency={displayCurrency}
+                      optionalColumns={optionalColumns}
+                      onDelete={setToDelete}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
           )}
 
           {/* Nothing matches the current company scope. */}

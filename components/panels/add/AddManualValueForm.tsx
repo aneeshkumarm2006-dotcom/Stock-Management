@@ -16,6 +16,7 @@ import { todayInputValue } from "@/lib/utils/dateInput";
 import { Field } from "../fields";
 import { AddHoldingShell } from "./AddHoldingShell";
 import { HeldByField } from "./HeldByField";
+import { BrokerField } from "./BrokerField";
 
 const FORM_ID = "add-manual-form";
 
@@ -32,6 +33,7 @@ const schema = z.object({
     .refine((v) => Number.isFinite(Number(v)) && Number(v) >= 0, "Value cannot be negative"),
   valueAsOf: z.string().optional(),
   companyId: z.string().optional(),
+  brokerId: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -64,6 +66,7 @@ export function AddManualValueForm({
       currentValue: "",
       valueAsOf: todayInputValue(),
       companyId: "",
+      brokerId: "",
     },
   });
 
@@ -86,6 +89,7 @@ export function AddManualValueForm({
           currentValue: Number(values.currentValue),
           valueAsOf: values.valueAsOf ? values.valueAsOf : undefined,
           companyId: values.companyId ? values.companyId : null,
+          brokerId: values.brokerId ? values.brokerId : null,
         });
       } else {
         await create.mutateAsync({
@@ -94,6 +98,7 @@ export function AddManualValueForm({
           currency: values.currency.toUpperCase(),
           currentValue: Number(values.currentValue),
           companyId: values.companyId ? values.companyId : null,
+          brokerId: values.brokerId ? values.brokerId : null,
         });
       }
       toast({
@@ -193,6 +198,12 @@ export function AddManualValueForm({
           id="mv-companyId"
           error={errors.companyId?.message}
           registerProps={register("companyId")}
+        />
+
+        <BrokerField
+          id="mv-brokerId"
+          error={errors.brokerId?.message}
+          registerProps={register("brokerId")}
         />
       </form>
     </AddHoldingShell>

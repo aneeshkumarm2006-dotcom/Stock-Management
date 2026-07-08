@@ -50,6 +50,10 @@ export async function POST(
         leaseId: result.leaseId,
         leaseNumber: result.leaseNumber,
         journalEntryId: result.journalEntryId,
+        // Non-fatal: the lease saved but the move-in ledger entry was skipped
+        // (unmapped accounts). Surfaced so the UI can toast a warning rather
+        // than the entry silently vanishing.
+        moveInJournalWarning: result.moveInJournalWarning,
         alreadyExecuted: result.alreadyExecuted,
       },
       { status: result.alreadyExecuted ? 200 : 201 },

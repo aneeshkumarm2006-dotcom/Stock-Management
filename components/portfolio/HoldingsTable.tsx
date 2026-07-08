@@ -152,7 +152,7 @@ export function HoldingsTable({
   const showLivePrice = optionalColumns.livePrice;
   const showCurrency = optionalColumns.currency;
 
-  const baseCols = 10; // ticker, name, exchange, held by, shares, cost basis, value, pnl, pnl%, weight
+  const baseCols = 11; // ticker, name, exchange, held by, broker, shares, cost basis, value, pnl, pnl%, weight
   const colSpan =
     baseCols +
     (showSector ? 1 : 0) +
@@ -201,6 +201,7 @@ export function HoldingsTable({
             <TH>Name</TH>
             <TH>Exchange</TH>
             <TH>Held By</TH>
+            <TH>Broker</TH>
             {showSector && <TH>Sector</TH>}
             <SortTH label="Shares" sortKey="quantity" className="text-right" />
             <SortTH
@@ -267,6 +268,9 @@ export function HoldingsTable({
                   </TD>
                   <TD className="max-w-[160px] truncate text-fg-muted">
                     {r.companyName ?? "—"}
+                  </TD>
+                  <TD className="max-w-[160px] truncate text-fg-muted">
+                    {r.brokerName ?? "—"}
                   </TD>
                   {showSector && (
                     <TD className="text-fg-muted">{r.sector ?? "—"}</TD>

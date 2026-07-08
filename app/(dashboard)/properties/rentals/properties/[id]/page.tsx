@@ -38,6 +38,7 @@ import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
 import { PropertyVacancyWidget } from "@/components/pm/PropertyVacancyWidget";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
+import { MarketValueCard } from "@/components/pm/MarketValueCard";
 import { AssignLeaseModal } from "@/components/pm/AssignLeaseModal";
 import {
   EntityImageGallery,
@@ -91,6 +92,9 @@ interface PropertyDetail {
   residentCenterForums: boolean;
   rentersInsuranceMinLiability3rdParty: number | null;
   rentersInsuranceMinLiabilityMSI: number | null;
+  valuationAnnualIncomeOverride: number | null;
+  valuationAnnualExpenseOverride: number | null;
+  valuationCapRatePct: number | null;
   customFields: Record<string, unknown>;
   active: boolean;
   cashBalance: number;
@@ -676,6 +680,14 @@ export default function PropertyDetailPage() {
 
         {/* ----------------------------- Financials ---------------------------- */}
         <TabsContent value="financials" className="mt-4 space-y-4">
+          <MarketValueCard
+            propertyId={doc.id}
+            incomeOverride={doc.valuationAnnualIncomeOverride}
+            expenseOverride={doc.valuationAnnualExpenseOverride}
+            capRatePct={doc.valuationCapRatePct}
+            canEdit={doc.active}
+            onSaved={load}
+          />
           <Card>
             <CardHeader>
               <CardTitle>Financials snapshot</CardTitle>

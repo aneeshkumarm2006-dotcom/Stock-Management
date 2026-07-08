@@ -8,6 +8,7 @@ import { isValidObjectId, Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Position } from '@/lib/db/models/Position';
 import { Company } from '@/lib/db/models/Company';
+import { Broker } from '@/lib/db/models/Broker';
 import {
   getCurrentUserId,
   unauthorizedResponse,
@@ -119,6 +120,25 @@ export async function PATCH(
       }
       position.companyId = data.companyId
         ? new Types.ObjectId(data.companyId)
+        : null;
+    }
+    // Broker (held-at) applies to every type too: a value reassigns (after an
+    // ownership check), null clears it.
+    if (data.brokerId !== undefined) {
+      if (data.brokerId) {
+        const owned = await Broker.countDocuments({
+          _id: data.brokerId,
+          userId,
+        });
+        if (owned === 0) {
+          return NextResponse.json(
+            { error: 'Invalid broker' },
+            { status: 400 },
+          );
+        }
+      }
+      position.brokerId = data.brokerId
+        ? new Types.ObjectId(data.brokerId)
         : null;
     }
   }

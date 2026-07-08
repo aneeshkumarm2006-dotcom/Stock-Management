@@ -187,8 +187,22 @@ export default function DraftLeaseDetailPage() {
       });
       return;
     }
-    const result = (await res.json()) as { leaseId: string };
-    toast({ title: "Lease executed" });
+    const result = (await res.json()) as {
+      leaseId: string;
+      moveInJournalWarning?: string | null;
+    };
+    // The lease saved either way. When the move-in JE was skipped (unmapped
+    // accounts), surface WHY so the PM can fix the mapping and post it manually
+    // — otherwise the ledger silently looks empty.
+    if (result.moveInJournalWarning) {
+      toast({
+        title: "Lease executed — move-in entry not posted",
+        description: result.moveInJournalWarning,
+        variant: "error",
+      });
+    } else {
+      toast({ title: "Lease executed" });
+    }
     router.push(`/properties/rentals/rent-roll/${result.leaseId}`);
   }
 

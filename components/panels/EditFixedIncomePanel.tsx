@@ -24,6 +24,7 @@ import { COMMON_CURRENCIES } from "@/lib/utils/exchangeMap";
 import { SidePanel } from "./SidePanel";
 import { Field, SelectField } from "./fields";
 import { HeldByField } from "./add/HeldByField";
+import { BrokerField } from "./add/BrokerField";
 
 const FORM_ID = "edit-fixed-income-form";
 
@@ -61,6 +62,7 @@ const schema = z
       "AT_MATURITY",
     ]),
     companyId: z.string().optional(),
+    brokerId: z.string().optional(),
   })
   .refine((d) => new Date(d.maturityDate) > new Date(d.startDate), {
     message: "Maturity date must be after the start date",
@@ -101,6 +103,7 @@ export function EditFixedIncomePanel({ rows }: { rows: PortfolioRow[] }) {
       interestRate: "",
       payoutFrequency: "AT_MATURITY",
       companyId: "",
+      brokerId: "",
     },
   });
 
@@ -126,6 +129,7 @@ export function EditFixedIncomePanel({ rows }: { rows: PortfolioRow[] }) {
       interestRate: row.interestRate != null ? String(row.interestRate) : "",
       payoutFrequency: row.payoutFrequency ?? "AT_MATURITY",
       companyId: row.companyId ?? "",
+      brokerId: row.brokerId ?? "",
     });
   }, [row, reset]);
 
@@ -175,6 +179,7 @@ export function EditFixedIncomePanel({ rows }: { rows: PortfolioRow[] }) {
           interestRate: Number(values.interestRate),
           payoutFrequency: values.payoutFrequency,
           companyId: values.companyId ? values.companyId : null,
+          brokerId: values.brokerId ? values.brokerId : null,
         },
       });
       toast({
@@ -329,6 +334,13 @@ export function EditFixedIncomePanel({ rows }: { rows: PortfolioRow[] }) {
             label="Held by"
             error={errors.companyId?.message}
             registerProps={register("companyId")}
+          />
+
+          <BrokerField
+            id="efi-brokerId"
+            label="Broker"
+            error={errors.brokerId?.message}
+            registerProps={register("brokerId")}
           />
         </form>
       )}

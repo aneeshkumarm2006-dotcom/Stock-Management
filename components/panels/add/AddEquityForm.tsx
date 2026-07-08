@@ -26,6 +26,7 @@ import {
 import { Field, FieldError } from "../fields";
 import { AddHoldingShell } from "./AddHoldingShell";
 import { HeldByField } from "./HeldByField";
+import { BrokerField } from "./BrokerField";
 
 const FORM_ID = "add-equity-form";
 
@@ -53,6 +54,7 @@ const schema = z.object({
     .regex(/^[A-Za-z]{3}$/, "Currency must be a 3-letter ISO code"),
   buyDate: z.string().optional(),
   companyId: z.string().optional(),
+  brokerId: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -89,6 +91,7 @@ export function AddEquityForm({
       currency: "USD",
       buyDate: "",
       companyId: "",
+      brokerId: "",
     },
   });
 
@@ -125,6 +128,7 @@ export function AddEquityForm({
         currency: values.currency,
         buyDate: values.buyDate ? values.buyDate : undefined,
         companyId: values.companyId ? values.companyId : null,
+        brokerId: values.brokerId ? values.brokerId : null,
       });
       toast({
         title: "Position added",
@@ -288,6 +292,12 @@ export function AddEquityForm({
           id="equity-companyId"
           error={errors.companyId?.message}
           registerProps={register("companyId")}
+        />
+
+        <BrokerField
+          id="equity-brokerId"
+          error={errors.brokerId?.message}
+          registerProps={register("brokerId")}
         />
       </form>
     </AddHoldingShell>

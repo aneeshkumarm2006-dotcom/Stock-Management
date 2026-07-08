@@ -54,6 +54,9 @@ export interface ApiPosition {
   /** Optional "held-by" company ref + its resolved name (null = unassigned). */
   companyId: string | null;
   companyName: string | null;
+  /** Optional broker (custodian) ref + its resolved name (null = unassigned). */
+  brokerId: string | null;
+  brokerName: string | null;
   // Non-equity fields (null on equities).
   label: string | null;
   institution: string | null;

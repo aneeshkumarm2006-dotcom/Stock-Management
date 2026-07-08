@@ -88,6 +88,14 @@ export interface IProperty {
   operatingAccountId?: Types.ObjectId | null;
   depositTrustAccountId?: Types.ObjectId | null;
   propertyReserve: number;
+  // Income-capitalization valuation inputs. Market value is DERIVED — never
+  // stored — as (annualIncome − annualExpense) / (capRatePct / 100). The two
+  // money overrides are in DOLLARS (matching propertyReserve, NOT ledger
+  // cents); `null` means "use the live General Ledger figure" for that input.
+  // `valuationCapRatePct` is a plain percentage (e.g. 6.5 = 6.5%).
+  valuationAnnualIncomeOverride?: number | null;
+  valuationAnnualExpenseOverride?: number | null;
+  valuationCapRatePct?: number | null;
   listingDescription?: string;
   amenities: string[];
   includedInRent: string[];
@@ -189,6 +197,11 @@ const PropertySchema = new Schema<IProperty>(
       default: null,
     },
     propertyReserve: { type: Number, default: 0, min: 0 },
+    // Valuation overrides (dollars) + cap rate (percent). Default null so the
+    // detail card falls back to the live GL income/expense until a value is set.
+    valuationAnnualIncomeOverride: { type: Number, default: null, min: 0 },
+    valuationAnnualExpenseOverride: { type: Number, default: null, min: 0 },
+    valuationCapRatePct: { type: Number, default: null, min: 0, max: 100 },
     listingDescription: { type: String, maxlength: 8000 },
     amenities: { type: [String], default: [] },
     includedInRent: { type: [String], default: [] },

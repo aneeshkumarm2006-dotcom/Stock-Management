@@ -30,6 +30,7 @@ import {
   getPmContext,
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
+import { normalizeCountry, OTHER } from '@/lib/pm/country';
 
 export const runtime = 'nodejs';
 
@@ -51,19 +52,6 @@ interface CountryGroup {
   totalCents: number;
   count: number;
   top: Row[];
-}
-
-const OTHER = 'Other';
-
-// Normalize the free-text `address.country` into a stable display bucket. The
-// data uses ISO-ish codes ("US"/"CA") but we accept common spellings too.
-function normalizeCountry(raw: string | undefined | null): string {
-  const c = (raw ?? '').trim().toUpperCase();
-  if (['US', 'USA', 'U.S.', 'U.S.A.', 'UNITED STATES'].includes(c)) {
-    return 'United States';
-  }
-  if (['CA', 'CAN', 'CANADA'].includes(c)) return 'Canada';
-  return raw && raw.trim() ? raw.trim() : OTHER;
 }
 
 const emptyPayload = { totalCents: 0, count: 0, top: [] as Row[], groups: [] as CountryGroup[] };

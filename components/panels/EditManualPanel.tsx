@@ -20,6 +20,7 @@ import { toDateInputValue } from "@/lib/utils/dateInput";
 import { SidePanel } from "./SidePanel";
 import { Field } from "./fields";
 import { HeldByField } from "./add/HeldByField";
+import { BrokerField } from "./add/BrokerField";
 
 const FORM_ID = "edit-manual-form";
 
@@ -36,6 +37,7 @@ const schema = z.object({
     .refine((v) => Number.isFinite(Number(v)) && Number(v) >= 0, "Value cannot be negative"),
   valueAsOf: z.string().optional(),
   companyId: z.string().optional(),
+  brokerId: z.string().optional(),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -67,6 +69,7 @@ export function EditManualPanel({ rows }: { rows: PortfolioRow[] }) {
       currentValue: "",
       valueAsOf: "",
       companyId: "",
+      brokerId: "",
     },
   });
 
@@ -90,6 +93,7 @@ export function EditManualPanel({ rows }: { rows: PortfolioRow[] }) {
         row.currentValueNative != null ? String(row.currentValueNative) : "",
       valueAsOf: toDateInputValue(row.valueAsOf),
       companyId: row.companyId ?? "",
+      brokerId: row.brokerId ?? "",
     });
   }, [row, reset]);
 
@@ -118,6 +122,7 @@ export function EditManualPanel({ rows }: { rows: PortfolioRow[] }) {
               }
             : {}),
           companyId: values.companyId ? values.companyId : null,
+          brokerId: values.brokerId ? values.brokerId : null,
         },
       });
       toast({
@@ -230,6 +235,13 @@ export function EditManualPanel({ rows }: { rows: PortfolioRow[] }) {
             label="Held by"
             error={errors.companyId?.message}
             registerProps={register("companyId")}
+          />
+
+          <BrokerField
+            id="em-brokerId"
+            label="Broker"
+            error={errors.brokerId?.message}
+            registerProps={register("brokerId")}
           />
         </form>
       )}

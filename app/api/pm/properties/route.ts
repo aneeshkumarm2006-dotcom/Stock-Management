@@ -22,16 +22,26 @@ interface PropertyLeanLike {
   propertyName: string;
   propertyClass: string;
   propertySubType: string;
-  address?: { line1?: string; city?: string; state?: string; zip?: string };
+  address?: {
+    line1?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    // Carried so the list can group/separate properties by country (US/CAN).
+    country?: string;
+  };
   propertyManagerUserId?: unknown;
   rentalOwners?: Array<{ rentalOwnerId: unknown; ownershipPct: number }>;
   active: boolean;
   propertyReserve?: number;
+  valuationAnnualIncomeOverride?: number | null;
+  valuationAnnualExpenseOverride?: number | null;
+  valuationCapRatePct?: number | null;
   operatingAccountId?: unknown;
   warnings?: PmWarning[];
 }
 
-function listSerialize(p: PropertyLeanLike) {
+function listSerialize(p: PropertyLeanLike, ownerNames: Map<string, string>) {
   return {
     id: String(p._id),
     propertyName: p.propertyName,
@@ -42,8 +52,19 @@ function listSerialize(p: PropertyLeanLike) {
       ? String(p.propertyManagerUserId)
       : null,
     ownerCount: p.rentalOwners?.length ?? 0,
+    // Full owner list (id + resolved name) so the list can group by owner
+    // entity. `ownerCount` retained for back-compat with existing readers.
+    owners: (p.rentalOwners ?? []).map((j) => ({
+      rentalOwnerId: String(j.rentalOwnerId),
+      ownershipPct: j.ownershipPct,
+      displayName: ownerNames.get(String(j.rentalOwnerId)) ?? '(unknown)',
+    })),
     active: p.active,
     propertyReserve: p.propertyReserve ?? 0,
+    // Valuation inputs for the list's Market value column (null = use live GL).
+    valuationAnnualIncomeOverride: p.valuationAnnualIncomeOverride ?? null,
+    valuationAnnualExpenseOverride: p.valuationAnnualExpenseOverride ?? null,
+    valuationCapRatePct: p.valuationCapRatePct ?? null,
     operatingAccountId: p.operatingAccountId ? String(p.operatingAccountId) : null,
     warnings: p.warnings ?? [],
   };
@@ -104,7 +125,33 @@ export async function GET(request: Request) {
     .sort({ propertyName: 1 })
     .lean<PropertyLeanLike[]>();
 
-  return NextResponse.json(rows.map(listSerialize));
+  // Resolve rental-owner display names across all rows in one query so the list
+  // can group by owner entity (mirrors the [id] route's owner-name inflation).
+  const ownerIdSet = new Set<string>();
+  for (const p of rows) {
+    for (const j of p.rentalOwners ?? []) {
+      if (j.rentalOwnerId) ownerIdSet.add(String(j.rentalOwnerId));
+    }
+  }
+  const ownerNames = new Map<string, string>();
+  if (ownerIdSet.size > 0) {
+    const owners = await RentalOwner.find({
+      _id: { $in: Array.from(ownerIdSet).map((s) => new Types.ObjectId(s)) },
+      organizationId: new Types.ObjectId(ctx.orgId),
+    })
+      .select({ firstName: 1, lastName: 1, isCompany: 1, companyName: 1 })
+      .lean();
+    for (const o of owners) {
+      ownerNames.set(
+        String(o._id),
+        o.isCompany && o.companyName
+          ? o.companyName
+          : `${o.firstName ?? ''} ${o.lastName ?? ''}`.trim(),
+      );
+    }
+  }
+
+  return NextResponse.json(rows.map((p) => listSerialize(p, ownerNames)));
 }
 
 export async function POST(request: Request) {
