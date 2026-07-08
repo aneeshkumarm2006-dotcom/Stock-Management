@@ -302,6 +302,7 @@ export default function PropertyDetailPage() {
                   city: doc.address.city,
                   state: doc.address.state,
                   zip: doc.address.zip,
+                  country: doc.address.country || "US",
                   listingDescription: doc.listingDescription,
                 } as Record<string, unknown>}
                 fields={[
@@ -315,6 +316,22 @@ export default function PropertyDetailPage() {
                   { key: "city", label: "City", required: true },
                   { key: "state", label: "State", required: true },
                   { key: "zip", label: "ZIP", required: true },
+                  {
+                    key: "country",
+                    label: "Country",
+                    type: "select",
+                    required: true,
+                    options: [
+                      { value: "US", label: "United States" },
+                      { value: "CA", label: "Canada" },
+                    ],
+                    display: (v) =>
+                      v === "CA"
+                        ? "Canada"
+                        : v === "US"
+                          ? "United States"
+                          : ((v as string) || "—"),
+                  },
                   {
                     key: "listingDescription",
                     label: "Listing description",
@@ -333,6 +350,7 @@ export default function PropertyDetailPage() {
                     city: p.city,
                     state: p.state,
                     zip: p.zip,
+                    country: p.country,
                   },
                 })}
               />

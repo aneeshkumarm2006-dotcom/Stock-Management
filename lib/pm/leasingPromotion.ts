@@ -332,6 +332,20 @@ export async function executeDraftLease(
     );
   }
 
+  // A lease must carry at least one tenant. The resulting Lease.tenants is built
+  // from the draft's tenant refs (those with a tenantId) plus any approved
+  // applicants promoted to Tenants below; if BOTH are empty the lease would be
+  // executed with nobody on it — an orphaned lease that shows "(tenant)"
+  // everywhere and can't be edited afterward (the Edit lease modal locks the
+  // tenant). Block it here rather than create a tenant-less Active lease + JE.
+  const hasTenantRef = (draft.tenants ?? []).some((t) => t.tenantId);
+  const hasApprovedApplicant = (draft.approvedApplicants ?? []).length > 0;
+  if (!hasTenantRef && !hasApprovedApplicant) {
+    throw new PromotionError(
+      'Cannot execute a lease with no tenants. Add a tenant (or an approved applicant) to the draft before executing.',
+    );
+  }
+
   // Posting date defaults to today, but accepts an override (route gates
   // overrideLockedPeriod by role).
   const txnDate = input.postingDate

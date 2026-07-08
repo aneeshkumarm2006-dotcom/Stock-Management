@@ -264,9 +264,25 @@ export async function PATCH(
     photo,
     images,
     customFields,
+    address,
     ...rest
   } = parsed.data;
   Object.assign(doc, rest);
+  // `address` is a nested subdocument. Assigning a partial object (the inline
+  // editor PATCHes only the fields the user changed) would replace the whole
+  // subdoc and reset every untouched field to its schema default — silently
+  // wiping line1/city/state/zip when you edit just one of them. Merge the
+  // incoming keys over the current address so only the edited fields change.
+  if (address !== undefined) {
+    const sub = doc.address as unknown as {
+      toObject?: () => Record<string, unknown>;
+    };
+    const current =
+      typeof sub?.toObject === 'function'
+        ? sub.toObject()
+        : { ...(doc.address ?? {}) };
+    doc.address = { ...current, ...address } as typeof doc.address;
+  }
   if (rentalOwners !== undefined) {
     doc.rentalOwners = rentalOwners.map((j) => ({
       rentalOwnerId: new Types.ObjectId(j.rentalOwnerId),
