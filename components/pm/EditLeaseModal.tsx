@@ -30,6 +30,7 @@ import {
   type TenantType,
 } from "@/types/pm";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
+import { TenantPicker, type TenantOption } from "@/components/pm/TenantPicker";
 import { fromCents, formatMoney } from "@/lib/pm/currency";
 import { toDateInputValueUTC } from "@/lib/utils/dateInput";
 import {
@@ -134,6 +135,15 @@ export function EditLeaseModal({
   const [unitName, setUnitName] = React.useState("");
   const [unitSqft, setUnitSqft] = React.useState<number | null>(null);
   const [tenantLabel, setTenantLabel] = React.useState("");
+  // A lease promoted from a tenant-less draft can end up Active with nobody on
+  // it (shows "(tenant)"). Tenant is normally LOCKED here, but when the lease has
+  // no tenant we surface a picker so the PM can attach one to THIS lease —
+  // instead of the "Assign tenant to property" modal, which would create a
+  // SECOND lease (and a second rent posting) on the same unit.
+  const [hasTenants, setHasTenants] = React.useState(true);
+  const [assignTenant, setAssignTenant] = React.useState<TenantOption | null>(
+    null,
+  );
   const [leaseType, setLeaseType] = React.useState<LeaseType>("Fixed");
   const [startDate, setStartDate] = React.useState("");
   const [endDate, setEndDate] = React.useState("");
@@ -214,6 +224,8 @@ export function EditLeaseModal({
       setPropertyName(prop?.propertyName ?? "(property)");
       setUnitName(uName || "(unit)");
       setUnitSqft(uSqft);
+      setHasTenants(lease.tenants.length > 0);
+      setAssignTenant(null);
       setTenantLabel(
         lease.tenants
           .map((t) => tenantDisplayName(t))
@@ -327,11 +339,33 @@ export function EditLeaseModal({
         memo: row.label,
       }));
 
+    // When the lease had no tenant and the user picked one, attach them to THIS
+    // lease (the PATCH route replaces `tenants` + syncs the tenant's
+    // currentLeaseId). Omitted otherwise so a terms-only edit never disturbs the
+    // existing tenants (the route treats `tenants === undefined` as "unchanged").
+    const tenantsPayload =
+      !hasTenants && assignTenant
+        ? {
+            tenants: [
+              {
+                tenantId: assignTenant.id,
+                tenantType: assignTenant.tenantType,
+                firstName: assignTenant.firstName,
+                lastName: assignTenant.lastName,
+                companyName: assignTenant.companyName || undefined,
+                email: assignTenant.email || undefined,
+                isCosigner: false,
+              },
+            ],
+          }
+        : {};
+
     setSaving(true);
     const res = await fetch(`/api/pm/leases/${leaseId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        ...tenantsPayload,
         leaseType,
         startDate,
         endDate: leaseType === "At-will" ? null : endDate || null,
@@ -384,12 +418,28 @@ export function EditLeaseModal({
           <p className="py-8 text-center text-sm text-fg-muted">Loading…</p>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            {/* Locked context */}
+            {/* Tenant — locked when present; assignable when the lease has none. */}
             <div>
-              <Label>Tenant</Label>
-              <div className="rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg">
-                {tenantLabel}
-              </div>
+              {hasTenants ? (
+                <>
+                  <Label>Tenant</Label>
+                  <div className="rounded border border-border bg-surface px-2 py-1.5 text-sm text-fg">
+                    {tenantLabel}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <TenantPicker
+                    value={assignTenant?.id ?? ""}
+                    onChange={setAssignTenant}
+                    label="Tenant (none — assign one)"
+                  />
+                  <p className="mt-1 text-xs text-amber-600">
+                    This lease has no tenant. Pick one to attach them to this
+                    lease.
+                  </p>
+                </>
+              )}
             </div>
             <div>
               <Label>Property / Unit</Label>

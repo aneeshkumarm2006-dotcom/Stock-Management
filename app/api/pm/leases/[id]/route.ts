@@ -459,6 +459,35 @@ export async function PATCH(
       },
       { $set: { currentLeaseId: null } },
     );
+  } else if (
+    tenants !== undefined &&
+    doc.status === 'Active' &&
+    doc.tenants.length > 0
+  ) {
+    // Tenants were (re)assigned on an ACTIVE lease — point each tenant's
+    // currentLeaseId at THIS lease so the link shows on the tenant record + rent
+    // roll. Fixes attaching a tenant to a previously tenant-less lease (the
+    // "(tenant)" placeholder case): without this the newly-attached tenant still
+    // read as "Not assigned".
+    //
+    // Two guards mirror recomputeLeaseStatuses so this can't corrupt the pointer:
+    //   • status === 'Active' only — currentLeaseId means "the Active lease the
+    //     tenant lives on", so never point it at a Future/Expired lease.
+    //   • $or filter — only claim a tenant that isn't already owned by a
+    //     DIFFERENT lease, so assigning a tenant here never silently steals them
+    //     away from another active lease they're still on.
+    await Tenant.updateMany(
+      {
+        organizationId: doc.organizationId,
+        _id: { $in: doc.tenants.map((t) => t.tenantId) },
+        $or: [
+          { currentLeaseId: null },
+          { currentLeaseId: { $exists: false } },
+          { currentLeaseId: doc._id },
+        ],
+      },
+      { $set: { currentLeaseId: doc._id } },
+    );
   }
   if (status !== undefined) {
     await recomputeLeaseStatuses(ctx.orgId);

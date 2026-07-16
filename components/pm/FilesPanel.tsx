@@ -58,20 +58,37 @@ interface Props {
   locationId: string | null;
 }
 
-// Cloudinary blocks *inline* delivery of `raw` files (PDFs, ZIPs) unless the
-// account has "Allow delivery of PDF and ZIP files" enabled — so opening a lease
-// PDF via its bare secure_url 401s on many accounts. Forcing an `fl_attachment`
-// delivery serves the file as a download attachment, which is permitted
-// regardless of that toggle, so the link works everywhere. Images/videos are
-// delivered inline unchanged. (The account setting is still the cleaner fix; this
-// keeps lease documents openable without it.)
+// Cloudinary blocks *inline* delivery of PDF/ZIP files unless the account has
+// "Allow delivery of PDF and ZIP files" enabled — so opening a lease PDF via its
+// bare secure_url 401s on many accounts (Chrome renders this as "This page is
+// not working"). This bites BOTH `raw` uploads AND PDFs that Cloudinary
+// classifies as `image`: because Cloudinary can rasterise a PDF, a file uploaded
+// via `auto` almost always comes back with resource_type=`image`, so the
+// resource-type check alone missed every real lease PDF (they are stored as
+// image/upload/…​.pdf). Forcing an `fl_attachment` delivery serves the file as a
+// download attachment, which Cloudinary permits regardless of that toggle, so
+// the link works everywhere. Genuine images/videos are delivered inline
+// unchanged. (Enabling the account setting is still the cleaner long-term fix;
+// this keeps lease documents openable without it.)
 export function fileDeliveryUrl(
   storageUrl: string,
   resourceType: FileRow["resourceType"],
+  originalFilename?: string,
 ): string {
-  if (resourceType !== "raw" || !storageUrl) return storageUrl;
-  if (storageUrl.includes("/fl_attachment/")) return storageUrl;
-  return storageUrl.replace("/upload/", "/upload/fl_attachment/");
+  if (!storageUrl) return storageUrl;
+  const isPdfOrZip = /\.(pdf|zip)(?:$|\?)/i.test(storageUrl);
+  if (resourceType !== "raw" && !isPdfOrZip) return storageUrl;
+  if (/\/fl_attachment(?::|\/)/.test(storageUrl)) return storageUrl;
+  // Name the download after the user's original filename (Cloudinary re-appends
+  // the extension from the public_id) so the saved file isn't a random public_id
+  // — matching the central Files list. Bare fl_attachment when no name is given.
+  const base = originalFilename
+    ? originalFilename.replace(/\.[^./\\]+$/, "")
+    : "";
+  const seg = base
+    ? `fl_attachment:${encodeURIComponent(base).replace(/%20/g, "_")}`
+    : "fl_attachment";
+  return storageUrl.replace("/upload/", `/upload/${seg}/`);
 }
 
 export function FilesPanel({ locationType, locationId }: Props) {
@@ -271,7 +288,7 @@ export function FilesPanel({ locationType, locationId }: Props) {
                 <td className="py-2 text-fg">
                   {f.storageUrl ? (
                     <a
-                      href={fileDeliveryUrl(f.storageUrl, f.resourceType)}
+                      href={fileDeliveryUrl(f.storageUrl, f.resourceType, f.originalFilename)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-fg underline-offset-2 hover:underline"
@@ -290,7 +307,7 @@ export function FilesPanel({ locationType, locationId }: Props) {
                   <div className="flex items-center justify-end gap-1">
                     {f.storageUrl && (
                       <a
-                        href={fileDeliveryUrl(f.storageUrl, f.resourceType)}
+                        href={fileDeliveryUrl(f.storageUrl, f.resourceType, f.originalFilename)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-fg"

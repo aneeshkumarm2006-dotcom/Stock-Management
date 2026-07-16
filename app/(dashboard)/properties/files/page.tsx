@@ -92,6 +92,21 @@ function buildDownloadUrl(storageUrl: string, originalFilename: string): string 
   return storageUrl.replace("/upload/", `/upload/fl_attachment:${safe}/`);
 }
 
+// URL to open a file from the Title link or the "View" action. Cloudinary
+// refuses inline delivery of PDF/ZIP files unless the account toggle is on, so a
+// bare secure_url 401s ("This page is not working") — which bit every lease PDF
+// (uploaded PDFs come back resource_type=`image`, so the URL is
+// image/upload/…​.pdf). Route those through `fl_attachment` (served as a download,
+// always allowed); genuine images/videos still open inline via their bare URL.
+function openableUrl(row: FileRow): string {
+  if (!row.storageUrl) return "";
+  const isPdfOrZip =
+    row.resourceType === "raw" || /\.(pdf|zip)(?:$|\?)/i.test(row.storageUrl);
+  return isPdfOrZip
+    ? buildDownloadUrl(row.storageUrl, row.originalFilename)
+    : row.storageUrl;
+}
+
 function triggerDownload(url: string, filename: string) {
   const a = document.createElement("a");
   a.href = url;
@@ -790,7 +805,7 @@ function FileRowView({
       <td className="align-top text-fg">
         {row.storageUrl ? (
           <a
-            href={row.storageUrl}
+            href={openableUrl(row)}
             target="_blank"
             rel="noopener noreferrer"
             className="font-medium text-fg hover:underline"
@@ -860,7 +875,7 @@ function FileRowView({
           {row.storageUrl ? (
             <>
               <DropdownItem
-                onClick={() => window.open(row.storageUrl, "_blank", "noopener")}
+                onClick={() => window.open(openableUrl(row), "_blank", "noopener")}
               >
                 <Eye className="h-3.5 w-3.5" /> View
               </DropdownItem>

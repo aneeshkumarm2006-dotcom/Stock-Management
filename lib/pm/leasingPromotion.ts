@@ -34,6 +34,7 @@ import { logActivity } from '@/lib/pm/activity';
 import { assertWriteAllowed } from '@/lib/pm/lockedPeriod';
 import { canOverrideLockedPeriod } from '@/lib/pm/roles';
 import { computeLeaseStatus } from '@/lib/pm/leaseStatus';
+import { advanceRentDate } from '@/lib/pm/leaseRecurringPoster';
 import { rentCentsFromRateCents } from '@/lib/pm/rent';
 import {
   deriveCurrentRentFromSchedule,
@@ -48,6 +49,12 @@ export class PromotionError extends Error {
     this.name = 'PromotionError';
     this.status = status;
   }
+}
+
+function startOfDay(d: Date): Date {
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -464,6 +471,52 @@ export async function executeDraftLease(
     leaseSplitCharges = derivedRent.splitRentCharges;
   }
 
+  // ----- Move-in JE inputs + the recurring-poster cursor -------------------
+  // The move-in JE (below) records the FIRST month's rent (base + recovery
+  // splits) as income. The recurring-rent poster reads primaryRent.nextDueDate
+  // as its cursor; because that cursor is seeded to the lease start it would
+  // ALSO post that same first month, double-counting rent for month 1 (this is
+  // the "$12,250 lease posted twice = $24,500" the client reported). Decide up
+  // front — BEFORE the lease is created — whether the move-in JE will actually
+  // post the first month's rent, and if so create the lease with the cursor
+  // already advanced one cycle so the recurring poster starts at month 2.
+  // Setting it at creation (rather than in a later second save) closes the race
+  // where the nightly poster could sweep the just-created lease and post month 1
+  // before the cursor advanced.
+  const rentCents = leasePrimaryRent?.amount ?? 0;
+  const rentAccountId = leasePrimaryRent?.accountId ?? draft.primaryRent.accountId;
+  // §4 — first month's rent also includes the OPEX/Tax recovery splits, each
+  // credited to its own income account so the recoveries report separately.
+  const splitCharges = (leaseSplitCharges ?? []).filter(
+    (c) => (c.amount ?? 0) > 0 && c.accountId,
+  );
+  const splitCents = splitCharges.reduce((s, c) => s + (c.amount ?? 0), 0);
+  const depositCents = draft.securityDeposit ?? 0;
+  const totalIn = rentCents + splitCents + depositCents;
+
+  // The move-in JE will post the first month's rent income when there are funds
+  // to record, Operating Cash resolves, a deposit (if any) has its liability
+  // account, and the rent/split portion is non-zero. (Mirrors the guards in the
+  // JE block below so the prediction can't diverge from what actually posts.)
+  const willPostMoveInRent =
+    totalIn > 0 &&
+    Boolean(operatingCashCoaId) &&
+    !(depositCents > 0 && !securityDepositCoaId) &&
+    rentCents + splitCents > 0;
+
+  const startDate = draftObj.startDate ?? new Date();
+  const seededNextDue = leasePrimaryRent?.nextDueDate ?? null;
+  const leaseNextDueDate =
+    willPostMoveInRent &&
+    seededNextDue &&
+    startOfDay(seededNextDue).getTime() <= startOfDay(startDate).getTime()
+      ? advanceRentDate(startDate, draftObj.rentCycle)
+      : seededNextDue;
+  const leasePrimaryRentForCreate = {
+    ...leasePrimaryRent,
+    nextDueDate: leaseNextDueDate,
+  };
+
   const last = await Lease.findOne({ organizationId: orgId })
     .sort({ leaseNumber: -1 })
     .select({ leaseNumber: 1 })
@@ -499,7 +552,7 @@ export async function executeDraftLease(
         isCosigner: true,
       })),
     leaseType: draftObj.leaseType,
-    startDate: draftObj.startDate ?? new Date(),
+    startDate,
     endDate: draftObj.endDate ?? null,
     status: computeLeaseStatus({
       startDate: draftObj.startDate,
@@ -508,7 +561,7 @@ export async function executeDraftLease(
     }),
     evictionPending: false,
     rentCycle: draftObj.rentCycle,
-    primaryRent: leasePrimaryRent,
+    primaryRent: leasePrimaryRentForCreate,
     splitRentCharges: leaseSplitCharges,
     rentSchedule: scheduleModel,
     proportionateSharePct: draftObj.proportionateSharePct,
@@ -542,18 +595,10 @@ export async function executeDraftLease(
   // manual JE.
   let journalEntryId: Types.ObjectId | null = null;
   let moveInJournalWarning: string | null = null;
-  // Use the schedule-derived current rent (when a schedule exists) so the
-  // first-month JE matches the lease's first active period.
-  const rentCents = leasePrimaryRent?.amount ?? 0;
-  const rentAccountId = leasePrimaryRent?.accountId ?? draft.primaryRent.accountId;
-  // §4 — first month's rent also includes the OPEX/Tax recovery splits, each
-  // credited to its own income account so the recoveries report separately.
-  const splitCharges = (leaseSplitCharges ?? []).filter(
-    (c) => (c.amount ?? 0) > 0 && c.accountId,
-  );
-  const splitCents = splitCharges.reduce((s, c) => s + (c.amount ?? 0), 0);
-  const depositCents = draft.securityDeposit ?? 0;
-  const totalIn = rentCents + splitCents + depositCents;
+  // rentCents / splitCharges / splitCents / depositCents / totalIn were resolved
+  // above (they also drive the recurring-poster cursor decision). The
+  // schedule-derived current rent (when a schedule exists) is already baked into
+  // leasePrimaryRent so the first-month JE matches the lease's first period.
 
   // Only when there are actually funds to record do we attempt the JE. When
   // there are but a required account mapping is missing, the lease still saves
@@ -638,6 +683,10 @@ export async function executeDraftLease(
       }
     }
   }
+
+  // (The recurring-poster cursor was already advanced deterministically at lease
+  // creation above — see `leaseNextDueDate` — so the move-in JE's first month is
+  // never re-posted by the recurring poster.)
 
   // Promote each approved Applicant → Tenant if not already, attach
   // currentLeaseId to existing Tenants.
