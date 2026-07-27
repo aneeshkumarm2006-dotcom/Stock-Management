@@ -630,7 +630,8 @@ export function AssignLeaseModal({
             <Label>Lease term schedule (past &amp; future) — optional</Label>
             <p className="text-xs text-fg-muted">
               Record an escalating rent across dated periods plus renewal options.
-              When set, the active term period drives rent posting.
+              Base Rent, OPEX Recovery and Tax Recovery are monthly dollar
+              amounts. When set, the active term period drives rent posting.
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>

@@ -94,19 +94,17 @@ export interface ILeaseSplitRentCharge {
 /**
  * ILeaseTermPeriod — ONE dated row of a commercial lease's rent-escalation
  * schedule (the client's "Lease Summary": Year 1‑2, Year 3‑5, … plus a
- * Renewal Option). Inputs only — every dollar figure is DERIVED from the
- * per‑sqft rates × `sizeSqft`, so the row never drifts from its own snapshot.
+ * Renewal Option).
  *
- * CONVENTION: rates are ANNUAL DOLLARS per square foot (e.g. 16.5, 17.875).
- * They are rates/multipliers, not ledger amounts, so they are stored as plain
- * numbers (a rate can carry a fractional cent like $17.875/sf) — only the
- * RESOLVED amounts are integer cents:
- *   annual cents  = round(rate × sizeSqft × 100)
- *   monthly cents = round(annual / 12)
- * This is the commercial $/sf/YEAR convention used by the sheet and is
- * INDEPENDENT of the legacy `primaryRent.rentMethod='RatePerSqft'` (which
- * treats its rate as a monthly cents rate). See `lib/pm/rentSchedule.ts` for
- * the single computation source.
+ * CONVENTION: Base Rent / OPEX Recovery / Tax Recovery are MONTHLY DOLLAR
+ * amounts in integer cents — the figure the PM enters is the figure that posts
+ * each month (these leases run a monthly rent cycle). Annual = monthly × 12.
+ * NOTHING is multiplied by `sizeSqft`; that field is an informational snapshot
+ * of the leased area (and drives the reference "$/sf/yr" hint only). See
+ * `lib/pm/rentSchedule.ts` for the single computation source.
+ *
+ * Unrelated to the legacy `primaryRent.rentMethod='RatePerSqft'`, which derives
+ * a single rent from a per-sqft rate.
  *
  * `kind='RenewalOption'` rows are recorded for reference and NEVER post to the
  * ledger. Only the active `kind='Term'` row drives GL rent posting by date.
@@ -117,15 +115,17 @@ export interface ILeaseTermPeriod {
   kind: LeaseTermKind;
   startDate: Date;
   endDate: Date;
-  /** Square footage SNAPSHOT at save time — the Unit's `sizeSqft` may change
-   *  later, but a recorded period must reproduce its own figures forever. */
+  /** Square footage SNAPSHOT at save time — informational (the Unit's
+   *  `sizeSqft` may change later). Never multiplies an amount. */
   sizeSqft: number;
-  /** Annual dollars per sq ft. 0 means the component is absent. */
-  baseRatePerSqft: number;
+  /** Monthly base rent, cents. 0 means the component is absent. */
+  baseMonthlyAmount: number;
   baseAccountId?: Types.ObjectId | null;
-  opexRatePerSqft: number;
+  /** Monthly OPEX recovery, cents. */
+  opexMonthlyAmount: number;
   opexAccountId?: Types.ObjectId | null;
-  taxRatePerSqft: number;
+  /** Monthly tax recovery, cents. */
+  taxMonthlyAmount: number;
   taxAccountId?: Types.ObjectId | null;
 }
 
@@ -249,19 +249,19 @@ const TermPeriodSchema = new Schema<ILeaseTermPeriod>(
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     sizeSqft: { type: Number, default: 0, min: 0 },
-    baseRatePerSqft: { type: Number, default: 0, min: 0 },
+    baseMonthlyAmount: { type: Number, default: 0, min: 0 },
     baseAccountId: {
       type: Schema.Types.ObjectId,
       ref: 'PmChartOfAccount',
       default: null,
     },
-    opexRatePerSqft: { type: Number, default: 0, min: 0 },
+    opexMonthlyAmount: { type: Number, default: 0, min: 0 },
     opexAccountId: {
       type: Schema.Types.ObjectId,
       ref: 'PmChartOfAccount',
       default: null,
     },
-    taxRatePerSqft: { type: Number, default: 0, min: 0 },
+    taxMonthlyAmount: { type: Number, default: 0, min: 0 },
     taxAccountId: {
       type: Schema.Types.ObjectId,
       ref: 'PmChartOfAccount',

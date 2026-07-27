@@ -1,9 +1,9 @@
 // LeaseTermScheduleEditor — repeatable editor for a commercial lease's
 // rent-escalation schedule (the client's "Lease Summary": Year 1‑2, Year 3‑5,
 // … plus Renewal Options). Mirrors the existing tenants-array add/remove
-// pattern used in the lease forms. Each row captures dates + Base/OPEX/Tax as
-// ANNUAL $/sf rates and renders the live monthly/annual/total/with-GST figures
-// exactly like the sheet (via computePeriodAmounts).
+// pattern used in the lease forms. Each row captures dates + Base Rent / OPEX
+// Recovery / Tax Recovery as MONTHLY DOLLAR amounts — what you type is what
+// posts each month — and renders the live totals (via computePeriodAmounts).
 //
 // State lives in the parent form (controlled via `rows`/`onRowsChange`); this
 // component is presentational + arithmetic only. Conversion helpers
@@ -15,8 +15,11 @@ import { Trash2, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { formatMoney } from "@/lib/pm/currency";
-import { computePeriodAmounts } from "@/lib/pm/rentSchedule";
+import { formatMoney, fromCents, toCents } from "@/lib/pm/currency";
+import {
+  annualRatePerSqft,
+  computePeriodAmounts,
+} from "@/lib/pm/rentSchedule";
 import type { LeaseTermKind } from "@/types/pm";
 import { toDateInputValueUTC } from "@/lib/utils/dateInput";
 
@@ -27,11 +30,11 @@ export interface ScheduleRow {
   startDate: string; // yyyy-mm-dd
   endDate: string; // yyyy-mm-dd
   sizeSqft: string;
-  baseRate: string; // annual $/sf
+  baseAmount: string; // dollars / month
   baseAccountId: string;
-  opexRate: string;
+  opexAmount: string; // dollars / month
   opexAccountId: string;
-  taxRate: string;
+  taxAmount: string; // dollars / month
   taxAccountId: string;
 }
 
@@ -56,18 +59,19 @@ export function emptyScheduleRow(
     endDate: "",
     sizeSqft:
       defaultSizeSqft && defaultSizeSqft > 0 ? String(defaultSizeSqft) : "",
-    baseRate: "",
+    baseAmount: "",
     baseAccountId: "",
-    opexRate: "",
+    opexAmount: "",
     opexAccountId: "",
-    taxRate: "",
+    taxAmount: "",
     taxAccountId: "",
   };
 }
 
 /** Convert editor rows to the API payload. Drops fully-blank rows; everything
  *  else is sent so the server validates incomplete rows rather than silently
- *  dropping them. Rates are annual dollars/sf; the server stores them as-is. */
+ *  dropping them. Amounts go over the wire as MONTHLY DOLLARS (the project-wide
+ *  convention); the route converts to cents. */
 export function scheduleRowsToPayload(rows: ScheduleRow[]) {
   return rows
     .filter(
@@ -75,9 +79,9 @@ export function scheduleRowsToPayload(rows: ScheduleRow[]) {
         r.label.trim() ||
         r.startDate ||
         r.endDate ||
-        Number(r.baseRate) > 0 ||
-        Number(r.opexRate) > 0 ||
-        Number(r.taxRate) > 0,
+        Number(r.baseAmount) > 0 ||
+        Number(r.opexAmount) > 0 ||
+        Number(r.taxAmount) > 0,
     )
     .map((r) => ({
       label: r.label.trim() || "(unnamed)",
@@ -85,11 +89,11 @@ export function scheduleRowsToPayload(rows: ScheduleRow[]) {
       startDate: r.startDate,
       endDate: r.endDate,
       sizeSqft: Number(r.sizeSqft) || 0,
-      baseRatePerSqft: Number(r.baseRate) || 0,
+      baseMonthlyAmount: Number(r.baseAmount) || 0,
       baseAccountId: r.baseAccountId || undefined,
-      opexRatePerSqft: Number(r.opexRate) || 0,
+      opexMonthlyAmount: Number(r.opexAmount) || 0,
       opexAccountId: r.opexAccountId || undefined,
-      taxRatePerSqft: Number(r.taxRate) || 0,
+      taxMonthlyAmount: Number(r.taxAmount) || 0,
       taxAccountId: r.taxAccountId || undefined,
     }));
 }
@@ -100,16 +104,19 @@ interface ApiPeriod {
   startDate: string | null;
   endDate: string | null;
   sizeSqft: number;
-  baseRatePerSqft: number;
+  /** cents / month */
+  baseMonthlyAmount: number;
   baseAccountId: string | null;
-  opexRatePerSqft: number;
+  opexMonthlyAmount: number;
   opexAccountId: string | null;
-  taxRatePerSqft: number;
+  taxMonthlyAmount: number;
   taxAccountId: string | null;
 }
 
-/** Pre-fill editor rows from an API `rentSchedule` payload (edit flow). */
+/** Pre-fill editor rows from an API `rentSchedule` payload (edit flow). The API
+ *  returns cents; the inputs show dollars. */
 export function scheduleApiToRows(periods: ApiPeriod[] | undefined): ScheduleRow[] {
+  const dollars = (cents: number) => (cents ? String(fromCents(cents)) : "");
   return (periods ?? []).map((p) => ({
     key: genKey(),
     label: p.label ?? "",
@@ -117,11 +124,11 @@ export function scheduleApiToRows(periods: ApiPeriod[] | undefined): ScheduleRow
     startDate: p.startDate ? toDateInputValueUTC(p.startDate) : "",
     endDate: p.endDate ? toDateInputValueUTC(p.endDate) : "",
     sizeSqft: p.sizeSqft ? String(p.sizeSqft) : "",
-    baseRate: p.baseRatePerSqft ? String(p.baseRatePerSqft) : "",
+    baseAmount: dollars(p.baseMonthlyAmount),
     baseAccountId: p.baseAccountId ?? "",
-    opexRate: p.opexRatePerSqft ? String(p.opexRatePerSqft) : "",
+    opexAmount: dollars(p.opexMonthlyAmount),
     opexAccountId: p.opexAccountId ?? "",
-    taxRate: p.taxRatePerSqft ? String(p.taxRatePerSqft) : "",
+    taxAmount: dollars(p.taxMonthlyAmount),
     taxAccountId: p.taxAccountId ?? "",
   }));
 }
@@ -151,6 +158,17 @@ export function LeaseTermScheduleEditor({
   const add = (kind: LeaseTermKind) =>
     onRowsChange([...rows, emptyScheduleRow(kind, defaultSizeSqft)]);
 
+  // Once a schedule exists it DRIVES posting: only the Term period covering the
+  // due date posts rent. A schedule whose periods all sit in the past (or leave
+  // a gap over today) silently posts nothing — warn rather than let that pass.
+  const terms = rows.filter(
+    (r) => r.kind === "Term" && r.startDate && r.endDate,
+  );
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const noCurrentTerm =
+    terms.length > 0 &&
+    !terms.some((r) => r.startDate <= todayKey && todayKey <= r.endDate);
+
   return (
     <div className="space-y-3">
       {rows.length === 0 && (
@@ -160,16 +178,27 @@ export function LeaseTermScheduleEditor({
         </p>
       )}
 
+      {noCurrentTerm && (
+        <p className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-fg">
+          <span className="font-medium">No term period covers today.</span> Rent
+          posts only from the term period active on the due date, so nothing will
+          post until a period covers the current date. Add or extend a term
+          period, or remove the schedule to go back to the revenue rows above.
+        </p>
+      )}
+
       {rows.map((r) => {
+        const sqft = Number(r.sizeSqft) || 0;
         const amounts = computePeriodAmounts(
           {
-            sizeSqft: Number(r.sizeSqft) || 0,
-            baseRatePerSqft: Number(r.baseRate) || 0,
-            opexRatePerSqft: Number(r.opexRate) || 0,
-            taxRatePerSqft: Number(r.taxRate) || 0,
+            sizeSqft: sqft,
+            baseMonthlyAmount: toCents(Number(r.baseAmount) || 0),
+            opexMonthlyAmount: toCents(Number(r.opexAmount) || 0),
+            taxMonthlyAmount: toCents(Number(r.taxAmount) || 0),
           },
           salesTaxRatePct ?? null,
         );
+        const perSqft = annualRatePerSqft(amounts.totalBeforeTaxMonthly, sqft);
         const isOption = r.kind === "RenewalOption";
         return (
           <div
@@ -239,24 +268,28 @@ export function LeaseTermScheduleEditor({
               </div>
             </div>
 
-            {/* Base / OPEX / Tax — annual $/sf + income account. */}
+            {/* Base Rent / OPEX Recovery / Tax Recovery — MONTHLY dollars
+                (what you type is what posts) + income account. */}
             {(
               [
-                ["base", "Base Rent", r.baseRate, r.baseAccountId] as const,
-                ["opex", "OPEX", r.opexRate, r.opexAccountId] as const,
-                ["tax", "Taxes", r.taxRate, r.taxAccountId] as const,
+                ["base", "Base Rent", r.baseAmount, r.baseAccountId] as const,
+                ["opex", "OPEX Recovery", r.opexAmount, r.opexAccountId] as const,
+                ["tax", "Tax Recovery", r.taxAmount, r.taxAccountId] as const,
               ]
-            ).map(([k, label, rate, acct]) => (
-              <div key={k} className="grid grid-cols-[7rem_1fr] items-center gap-2">
+            ).map(([k, label, amount, acct]) => (
+              <div key={k} className="grid grid-cols-[9rem_1fr] items-center gap-2">
                 <div>
-                  <Label>{label} $/sf/yr</Label>
+                  <Label>
+                    {label}{" "}
+                    <span className="font-normal text-fg-muted">$ / mo</span>
+                  </Label>
                   <Input
                     type="number"
-                    step="0.001"
-                    value={rate}
+                    step="0.01"
+                    value={amount}
                     onChange={(e) =>
                       update(r.key, {
-                        [`${k}Rate`]: e.target.value,
+                        [`${k}Amount`]: e.target.value,
                       } as Partial<ScheduleRow>)
                     }
                   />
@@ -304,6 +337,16 @@ export function LeaseTermScheduleEditor({
                   <span className="font-medium text-fg">
                     {formatMoney(amounts.totalWithGstMonthly)}
                   </span>
+                </>
+              ) : null}
+              {perSqft ? (
+                <>
+                  {" "}
+                  · ≈{" "}
+                  <span className="font-medium text-fg">
+                    ${perSqft.toFixed(2)}
+                  </span>
+                  /sf/yr
                 </>
               ) : null}
               <span className="ml-2">

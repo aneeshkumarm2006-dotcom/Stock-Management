@@ -78,18 +78,18 @@ export interface IDraftLeaseSplitRentCharge {
 }
 
 /** Identical shape to the active lease's `ILeaseTermPeriod` so promotion is a
- *  straight copy. See Lease.ts for the rate convention (annual dollars per sf). */
+ *  straight copy. See Lease.ts for the amount convention (monthly cents). */
 export interface IDraftLeaseTermPeriod {
   label: string;
   kind: LeaseTermKind;
   startDate: Date;
   endDate: Date;
   sizeSqft: number;
-  baseRatePerSqft: number;
+  baseMonthlyAmount: number; // cents / month
   baseAccountId?: Types.ObjectId | null;
-  opexRatePerSqft: number;
+  opexMonthlyAmount: number; // cents / month
   opexAccountId?: Types.ObjectId | null;
-  taxRatePerSqft: number;
+  taxMonthlyAmount: number; // cents / month
   taxAccountId?: Types.ObjectId | null;
 }
 
@@ -235,19 +235,19 @@ const TermPeriodSchema = new Schema<IDraftLeaseTermPeriod>(
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     sizeSqft: { type: Number, default: 0, min: 0 },
-    baseRatePerSqft: { type: Number, default: 0, min: 0 },
+    baseMonthlyAmount: { type: Number, default: 0, min: 0 },
     baseAccountId: {
       type: Schema.Types.ObjectId,
       ref: 'PmChartOfAccount',
       default: null,
     },
-    opexRatePerSqft: { type: Number, default: 0, min: 0 },
+    opexMonthlyAmount: { type: Number, default: 0, min: 0 },
     opexAccountId: {
       type: Schema.Types.ObjectId,
       ref: 'PmChartOfAccount',
       default: null,
     },
-    taxRatePerSqft: { type: Number, default: 0, min: 0 },
+    taxMonthlyAmount: { type: Number, default: 0, min: 0 },
     taxAccountId: {
       type: Schema.Types.ObjectId,
       ref: 'PmChartOfAccount',

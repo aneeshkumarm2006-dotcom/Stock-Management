@@ -105,11 +105,12 @@ interface LeaseGet {
     startDate: string | null;
     endDate: string | null;
     sizeSqft: number;
-    baseRatePerSqft: number;
+    /** cents / month */
+    baseMonthlyAmount: number;
     baseAccountId: string | null;
-    opexRatePerSqft: number;
+    opexMonthlyAmount: number;
     opexAccountId: string | null;
-    taxRatePerSqft: number;
+    taxMonthlyAmount: number;
     taxAccountId: string | null;
   }>;
   securityDeposit: { received: number };
@@ -615,8 +616,10 @@ export function EditLeaseModal({
               <Label>Lease term schedule (past &amp; future) — optional</Label>
               <p className="text-xs text-fg-muted">
                 Record an escalating rent across dated periods plus renewal
-                options. When set, the active term period drives rent posting and
-                the revenue rows above are kept in sync to the current period.
+                options. Base Rent, OPEX Recovery and Tax Recovery are monthly
+                dollar amounts — what you enter is what posts each month. When
+                set, the active term period drives rent posting and the revenue
+                rows above are kept in sync to the current period.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>

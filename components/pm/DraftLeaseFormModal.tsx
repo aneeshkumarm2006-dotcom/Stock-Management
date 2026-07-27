@@ -554,6 +554,7 @@ export function DraftLeaseFormModal({
           </h3>
           <p className="text-xs text-muted-foreground">
             Record an escalating rent across dated periods plus renewal options.
+            Base Rent, OPEX Recovery and Tax Recovery are monthly dollar amounts.
             When set, the active term period drives rent posting.
           </p>
           <div className="grid grid-cols-2 gap-3">

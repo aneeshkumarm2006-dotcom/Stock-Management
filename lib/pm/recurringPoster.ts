@@ -6,16 +6,23 @@
 // Edits to a recurring rule are non-retroactive (DECISIONS.md Phase 4) — the
 // worker only consults current state for *future* postings.
 //
-// For Phase 4 the worker creates a draft Bill (for type=Bill) or a placeholder
+// The worker creates a Bill (for type=Bill/Check) or a placeholder
 // JournalEntry (for type='Journal entry'). Type='Check' falls back to the
 // Bill path with `queueForPrinting=true` so the BillPayment surface can
 // surface the check queue later (full Print queue ships Phase 9).
+//
+// Generated Bills are recorded as **Due** and posted straight to the ledger,
+// exactly like a manually recorded bill. They used to be created as `Draft`,
+// which meant they never reached Financials AND were hidden behind the Bills
+// page's non-default "Drafts" tab — so a correctly-firing rule looked to the
+// user like it had generated nothing at all.
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { RecurringTransaction } from '@/lib/db/models/pm/RecurringTransaction';
 import { Bill } from '@/lib/db/models/pm/Bill';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
 import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
+import { postBillToLedger } from '@/lib/pm/postBillToLedger';
 import type { IRecurringTransaction } from '@/lib/db/models/pm/RecurringTransaction';
 import type { PmContext } from '@/lib/auth/getCurrentUser';
 import type { RecurringFrequency } from '@/types/pm';
@@ -52,28 +59,56 @@ interface PostOneResult {
 
 async function postArtifact(
   rule: IRecurringTransaction,
+  ctx: PmContext,
 ): Promise<{ kind: 'Bill' | 'JournalEntry'; id: Types.ObjectId } | null> {
   const total = rule.amounts.reduce((s, a) => s + a.amount, 0);
   if (rule.type === 'Bill' || rule.type === 'Check') {
+    const scopePropertyId =
+      rule.amounts[0]?.scopeType === 'Property' && rule.amounts[0]?.scopeId
+        ? rule.amounts[0].scopeId
+        : null;
     const bill = await Bill.create({
       organizationId: rule.organizationId,
       vendorId:
         rule.payee?.type === 'Vendor' ? rule.payee.id : null,
       invoiceDate: rule.nextDate,
-      status: 'Draft',
+      status: 'Due',
       memo: rule.memo,
       lines: rule.amounts.map((a) => ({
         accountId: a.accountId,
         description: a.description,
         amount: a.amount,
       })),
-      scope:
-        rule.amounts[0]?.scopeType === 'Property' && rule.amounts[0]?.scopeId
-          ? { type: 'Property', id: rule.amounts[0].scopeId }
-          : { type: 'Company', id: null },
+      scope: scopePropertyId
+        ? { type: 'Property', id: scopePropertyId }
+        : { type: 'Company', id: null },
       createdBy: rule.type === 'Check' ? 'Recurring check' : 'Recurring bill',
       createdByUserId: rule.createdByUserId,
     });
+
+    // Record the accrual JE so the bill reaches Financials. If this fails the
+    // bill must not survive as a posted-but-unledgered row — drop it and let
+    // the caller roll the claim back so the rule retries on the next run.
+    try {
+      const { journalEntryId } = await postBillToLedger({
+        orgId: String(rule.organizationId),
+        ctx,
+        bill: {
+          _id: bill._id,
+          invoiceDate: bill.invoiceDate,
+          memo: bill.memo,
+          vendorId: bill.vendorId,
+          scopePropertyId,
+          lines: bill.lines,
+          attachmentFileId: bill.attachmentFileId,
+        },
+      });
+      bill.journalEntryId = journalEntryId;
+      await bill.save();
+    } catch (err) {
+      await Bill.deleteOne({ _id: bill._id });
+      throw err;
+    }
     return { kind: 'Bill', id: bill._id };
   }
   if (rule.type === 'Journal entry') {
@@ -254,8 +289,13 @@ export async function runRecurringPoster(
 
     try {
       // Post using the CLAIMED state (the pre-update snapshot in `claim` still
-      // carries the nextDate we are posting against).
-      const artifact = await postArtifact(claim);
+      // carries the nextDate we are posting against). The JE is attributed to
+      // the rule's author, but `roles` stays empty so an automated posting can
+      // still never override a locked period.
+      const artifact = await postArtifact(claim, {
+        ...systemCtx,
+        userId: String(claim.createdByUserId ?? orgObjectId),
+      });
       if (!artifact) {
         // Unsupported type / missing accounts — release the claim so a later
         // run can retry once the rule is fixed.

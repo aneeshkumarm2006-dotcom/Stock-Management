@@ -110,7 +110,22 @@ export async function PATCH(
       ? new Types.ObjectId(bankAccountId)
       : null;
   }
-  if (nextDate !== undefined) doc.nextDate = nextDate ? new Date(nextDate) : (null as unknown as Date);
+  if (nextDate !== undefined) {
+    doc.nextDate = nextDate ? new Date(nextDate) : (null as unknown as Date);
+    // The poster skips any rule whose `lastPostedDate >= nextDate` ("already
+    // posted for this date"). Moving the next date back to or before the last
+    // posting would therefore freeze the rule permanently — it would stay
+    // "Active" in the UI while silently generating nothing, forever. Clearing
+    // the stamp lets the rescheduled date fire. Past postings are untouched,
+    // so this stays non-retroactive (BR-AC-8).
+    if (
+      doc.nextDate &&
+      doc.lastPostedDate &&
+      new Date(doc.lastPostedDate) >= new Date(doc.nextDate)
+    ) {
+      doc.lastPostedDate = null;
+    }
+  }
   if (amounts !== undefined) {
     doc.amounts = amounts.map((a) => ({
       scopeType: a.scopeType,

@@ -2,16 +2,18 @@
 // lease's rent-escalation schedule (the client's "Lease Summary": Year 1‑2,
 // Year 3‑5, … plus a Renewal Option).
 //
-// RATE CONVENTION (matches the sheet): every per‑sqft rate is ANNUAL DOLLARS
-// per square foot (e.g. 16.5, 17.875). Rates are multipliers, not ledger
-// amounts, so a fractional cent like $17.875/sf is fine — only the RESOLVED
-// amounts are integer cents:
-//   annual cents  = round(rateDollars × sizeSqft × 100)
-//   monthly cents = round(annual / 12)
-// This is the commercial $/sf/YEAR convention and is INTENTIONALLY independent
-// of the legacy `primaryRent.rentMethod='RatePerSqft'`, which treats its rate
-// as a MONTHLY cents rate. Keeping them separate means existing leases are
-// untouched.
+// AMOUNT CONVENTION: every period stores Base Rent / OPEX Recovery / Tax
+// Recovery as a MONTHLY DOLLAR AMOUNT in integer cents — exactly the figure the
+// PM types into the editor and exactly what posts to the GL each month. There is
+// NO per-square-foot derivation: the leases here run a monthly rent cycle, so a
+// typed $3,719.25 means $3,719.25/month, full stop.
+//   monthly cents = what was entered × 100
+//   annual cents  = monthly × 12
+// `sizeSqft` is kept as an informational snapshot of the leased area (and to
+// render the equivalent $/sf/yr for reference) but never multiplies an amount.
+//
+// This is unrelated to the legacy `primaryRent.rentMethod='RatePerSqft'`, which
+// derives a single rent from a per-sqft rate. Those leases are untouched.
 //
 // All money is integer cents (the project-wide convention — see currency.ts).
 //
@@ -22,18 +24,19 @@ import type { Types } from 'mongoose';
 import type { LeaseTermKind } from '@/types/pm';
 import type { RentChargeSource } from '@/lib/pm/rentCharge';
 
-/** Minimal rate inputs for the pure display math — structural so the client
+/** Minimal amount inputs for the pure display math — structural so the client
  *  editor can call `computePeriodAmounts` without importing the Mongoose model.
- *  Rates are ANNUAL DOLLARS per sq ft. */
-export interface PeriodRateInput {
+ *  Every amount is MONTHLY, in integer cents. */
+export interface PeriodAmountInput {
+  /** Leased area snapshot. Informational only — never multiplies an amount. */
   sizeSqft: number;
-  baseRatePerSqft: number;
-  opexRatePerSqft: number;
-  taxRatePerSqft: number;
+  baseMonthlyAmount: number;
+  opexMonthlyAmount: number;
+  taxMonthlyAmount: number;
 }
 
 /** A stored schedule period (mirrors `ILeaseTermPeriod` structurally). */
-export interface SchedulePeriod extends PeriodRateInput {
+export interface SchedulePeriod extends PeriodAmountInput {
   label: string;
   kind: LeaseTermKind;
   startDate: Date;
@@ -59,40 +62,41 @@ export interface PeriodAmounts {
   totalWithGstAnnual: number;
 }
 
-/** Annual rent (cents) from an annual $/sf rate (dollars) × square footage. */
-export function annualCentsForRate(
-  rateDollarsPerSqft: number,
-  sizeSqft: number,
-): number {
-  return Math.round((rateDollarsPerSqft || 0) * (sizeSqft || 0) * 100);
-}
-
-/** Monthly rent (cents) = annual / 12, rounded to whole cents. */
-export function monthlyCentsForRate(
-  rateDollarsPerSqft: number,
-  sizeSqft: number,
-): number {
-  return Math.round(annualCentsForRate(rateDollarsPerSqft, sizeSqft) / 12);
+/** Annual rent (cents) for a monthly amount (cents). */
+export function annualCentsForMonthly(monthlyCents: number): number {
+  return Math.round(monthlyCents || 0) * 12;
 }
 
 /**
- * Compute every dollar figure for one period from its rates × sizeSqft.
- * Component annuals/monthlies are rounded independently and summed (so the
- * table rows add up to the totals exactly). `salesTaxRatePct` (e.g. 14.975)
- * is applied only to the "Total With GST/QST" lines — a display gross-up, never
+ * The equivalent commercial $/sf/YEAR rate for a monthly amount — REFERENCE
+ * ONLY (shown as a hint next to the amount). Returns null when the period has
+ * no square footage recorded. Dollars, not cents.
+ */
+export function annualRatePerSqft(
+  monthlyCents: number,
+  sizeSqft: number,
+): number | null {
+  if (!sizeSqft || sizeSqft <= 0) return null;
+  return annualCentsForMonthly(monthlyCents) / 100 / sizeSqft;
+}
+
+/**
+ * Compute every dollar figure for one period from its MONTHLY amounts. The
+ * monthly figures are the entered amounts verbatim; annuals are × 12, so the
+ * table rows add up to the totals exactly. `salesTaxRatePct` (e.g. 14.975) is
+ * applied only to the "Total With GST/QST" lines — a display gross-up, never
  * posted to the ledger.
  */
 export function computePeriodAmounts(
-  input: PeriodRateInput,
+  input: PeriodAmountInput,
   salesTaxRatePct?: number | null,
 ): PeriodAmounts {
-  const sf = input.sizeSqft || 0;
-  const baseAnnual = annualCentsForRate(input.baseRatePerSqft, sf);
-  const opexAnnual = annualCentsForRate(input.opexRatePerSqft, sf);
-  const taxAnnual = annualCentsForRate(input.taxRatePerSqft, sf);
-  const baseMonthly = Math.round(baseAnnual / 12);
-  const opexMonthly = Math.round(opexAnnual / 12);
-  const taxMonthly = Math.round(taxAnnual / 12);
+  const baseMonthly = Math.round(input.baseMonthlyAmount || 0);
+  const opexMonthly = Math.round(input.opexMonthlyAmount || 0);
+  const taxMonthly = Math.round(input.taxMonthlyAmount || 0);
+  const baseAnnual = baseMonthly * 12;
+  const opexAnnual = opexMonthly * 12;
+  const taxAnnual = taxMonthly * 12;
   const totalBeforeTaxAnnual = baseAnnual + opexAnnual + taxAnnual;
   const totalBeforeTaxMonthly = baseMonthly + opexMonthly + taxMonthly;
   const gross = 1 + (salesTaxRatePct ?? 0) / 100;
@@ -163,7 +167,7 @@ export interface ScheduledLeaseLike {
  * Resolve the `RentChargeSource` to post for a lease on `date`:
  *   - NO schedule           → the legacy `primaryRent` + `splitRentCharges`
  *                             (existing single-rent behavior, unchanged).
- *   - schedule, active Term → base+OPEX+tax built from that Term's rates × sf.
+ *   - schedule, active Term → that Term's base+OPEX+tax monthly amounts.
  *   - schedule, no active   → `null` (nothing to post; e.g. a RenewalOption
  *     Term window            window that hasn't been exercised, or a gap).
  *
@@ -188,10 +192,9 @@ export function resolveScheduledRentForDate(
   const period = activeTermPeriodForDate(schedule, date);
   if (!period) return null; // schedule present but nothing active to post
 
-  const sf = period.sizeSqft || 0;
-  const baseMonthly = monthlyCentsForRate(period.baseRatePerSqft, sf);
-  const opexMonthly = monthlyCentsForRate(period.opexRatePerSqft, sf);
-  const taxMonthly = monthlyCentsForRate(period.taxRatePerSqft, sf);
+  const baseMonthly = Math.round(period.baseMonthlyAmount || 0);
+  const opexMonthly = Math.round(period.opexMonthlyAmount || 0);
+  const taxMonthly = Math.round(period.taxMonthlyAmount || 0);
 
   // A Term row without a base income account can't post — treat as nothing.
   if (!period.baseAccountId) return null;
@@ -245,8 +248,8 @@ export function findScheduleErrors(periods: readonly SchedulePeriod[]): string[]
     } else if (end <= start) {
       errors.push(`Period "${p.label || '(unnamed)'}" end date must be after its start date.`);
     }
-    if (p.kind === 'Term' && !(p.baseRatePerSqft > 0)) {
-      errors.push(`Term period "${p.label || '(unnamed)'}" needs a base rent rate greater than 0.`);
+    if (p.kind === 'Term' && !(p.baseMonthlyAmount > 0)) {
+      errors.push(`Term period "${p.label || '(unnamed)'}" needs a base rent greater than 0.`);
     }
   }
   // Overlap check among Term periods (sorted by start).

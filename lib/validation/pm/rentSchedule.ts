@@ -1,16 +1,16 @@
 // Shared Zod validation for a lease's rent-escalation schedule (the "Lease
 // Summary"). Used by both the active-lease and draft-lease validators so the
-// create, update, and draft paths agree. Client sends rates as ANNUAL DOLLARS
-// per sq ft (e.g. 16.5, 17.875) and dates as ISO strings; the route maps them
-// straight onto the model (rates are stored as-is, amounts are derived at post
-// time — see lib/pm/rentSchedule.ts).
+// create, update, and draft paths agree. Client sends Base Rent / OPEX Recovery
+// / Tax Recovery as MONTHLY DOLLARS (the project-wide wire convention — see
+// currency.ts) and dates as ISO strings; `mapRentScheduleToModel` converts the
+// dollars to integer cents for storage. See lib/pm/rentSchedule.ts.
 import { z } from 'zod';
 import { Types } from 'mongoose';
 import { LEASE_TERM_KINDS, type LeaseTermKind } from '@/types/pm';
+import { toCents } from '@/lib/pm/currency';
 import {
   findScheduleErrors,
   displayTermForDate,
-  monthlyCentsForRate,
   type SchedulePeriod,
 } from '@/lib/pm/rentSchedule';
 
@@ -24,11 +24,12 @@ export const rentSchedulePeriodSchema = z.object({
   startDate: z.string().min(8),
   endDate: z.string().min(8),
   sizeSqft: z.number().nonnegative().optional(),
-  baseRatePerSqft: z.number().nonnegative().optional(),
+  /** Monthly dollars (not cents, not per sq ft). */
+  baseMonthlyAmount: z.number().nonnegative().optional(),
   baseAccountId: objectIdString.nullable().optional(),
-  opexRatePerSqft: z.number().nonnegative().optional(),
+  opexMonthlyAmount: z.number().nonnegative().optional(),
   opexAccountId: objectIdString.nullable().optional(),
-  taxRatePerSqft: z.number().nonnegative().optional(),
+  taxMonthlyAmount: z.number().nonnegative().optional(),
   taxAccountId: objectIdString.nullable().optional(),
 });
 
@@ -50,7 +51,7 @@ export function refineRentSchedule(
 ): void {
   if (!periods || periods.length === 0) return;
 
-  // Structural errors (dates, ordering, overlap, ≥1 Term, base rate present).
+  // Structural errors (dates, ordering, overlap, ≥1 Term, base rent present).
   const structural = findScheduleErrors(
     periods.map((p) => ({
       label: p.label,
@@ -58,34 +59,34 @@ export function refineRentSchedule(
       startDate: new Date(p.startDate),
       endDate: new Date(p.endDate),
       sizeSqft: p.sizeSqft ?? 0,
-      baseRatePerSqft: p.baseRatePerSqft ?? 0,
-      opexRatePerSqft: p.opexRatePerSqft ?? 0,
-      taxRatePerSqft: p.taxRatePerSqft ?? 0,
+      baseMonthlyAmount: toCents(p.baseMonthlyAmount ?? 0),
+      opexMonthlyAmount: toCents(p.opexMonthlyAmount ?? 0),
+      taxMonthlyAmount: toCents(p.taxMonthlyAmount ?? 0),
     })),
   );
   for (const message of structural) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
   }
 
-  // Posting-readiness: a Term row with a rate > 0 must carry the matching
+  // Posting-readiness: a Term row with an amount > 0 must carry the matching
   // income account (RenewalOption rows are never posted, so accounts optional).
   periods.forEach((p, i) => {
     if ((p.kind ?? 'Term') !== 'Term') return;
-    if ((p.baseRatePerSqft ?? 0) > 0 && !p.baseAccountId) {
+    if ((p.baseMonthlyAmount ?? 0) > 0 && !p.baseAccountId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: [...path, i, 'baseAccountId'],
         message: `Term "${p.label}" needs a base rent income account.`,
       });
     }
-    if ((p.opexRatePerSqft ?? 0) > 0 && !p.opexAccountId) {
+    if ((p.opexMonthlyAmount ?? 0) > 0 && !p.opexAccountId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: [...path, i, 'opexAccountId'],
         message: `Term "${p.label}" needs an OPEX recovery income account.`,
       });
     }
-    if ((p.taxRatePerSqft ?? 0) > 0 && !p.taxAccountId) {
+    if ((p.taxMonthlyAmount ?? 0) > 0 && !p.taxAccountId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: [...path, i, 'taxAccountId'],
@@ -95,24 +96,25 @@ export function refineRentSchedule(
   });
 }
 
-/** Model-shaped period: ISO/string inputs converted to Date + ObjectId, ready
- *  to assign to a Lease/DraftLease `rentSchedule`. */
+/** Model-shaped period: ISO/string inputs converted to Date + ObjectId and
+ *  dollars converted to integer cents, ready to assign to a Lease/DraftLease
+ *  `rentSchedule`. */
 export interface RentSchedulePeriodModel {
   label: string;
   kind: LeaseTermKind;
   startDate: Date;
   endDate: Date;
   sizeSqft: number;
-  baseRatePerSqft: number;
+  baseMonthlyAmount: number; // cents / month
   baseAccountId: Types.ObjectId | null;
-  opexRatePerSqft: number;
+  opexMonthlyAmount: number; // cents / month
   opexAccountId: Types.ObjectId | null;
-  taxRatePerSqft: number;
+  taxMonthlyAmount: number; // cents / month
   taxAccountId: Types.ObjectId | null;
 }
 
-/** Convert validated period inputs (dollars, ISO dates, id strings) into the
- *  model shape persisted on the lease. */
+/** Convert validated period inputs (monthly dollars, ISO dates, id strings)
+ *  into the model shape persisted on the lease (monthly cents). */
 export function mapRentScheduleToModel(
   periods?: RentSchedulePeriodInput[] | null,
 ): RentSchedulePeriodModel[] {
@@ -122,11 +124,11 @@ export function mapRentScheduleToModel(
     startDate: new Date(p.startDate),
     endDate: new Date(p.endDate),
     sizeSqft: p.sizeSqft ?? 0,
-    baseRatePerSqft: p.baseRatePerSqft ?? 0,
+    baseMonthlyAmount: toCents(p.baseMonthlyAmount ?? 0),
     baseAccountId: p.baseAccountId ? new Types.ObjectId(p.baseAccountId) : null,
-    opexRatePerSqft: p.opexRatePerSqft ?? 0,
+    opexMonthlyAmount: toCents(p.opexMonthlyAmount ?? 0),
     opexAccountId: p.opexAccountId ? new Types.ObjectId(p.opexAccountId) : null,
-    taxRatePerSqft: p.taxRatePerSqft ?? 0,
+    taxMonthlyAmount: toCents(p.taxMonthlyAmount ?? 0),
     taxAccountId: p.taxAccountId ? new Types.ObjectId(p.taxAccountId) : null,
   }));
 }
@@ -152,9 +154,9 @@ export function deriveCurrentRentFromSchedule(
   const term = displayTermForDate(modelPeriods as SchedulePeriod[], today);
   if (!term || !term.baseAccountId) return null;
 
-  const baseMonthly = monthlyCentsForRate(term.baseRatePerSqft, term.sizeSqft);
-  const opexMonthly = monthlyCentsForRate(term.opexRatePerSqft, term.sizeSqft);
-  const taxMonthly = monthlyCentsForRate(term.taxRatePerSqft, term.sizeSqft);
+  const baseMonthly = Math.round(term.baseMonthlyAmount || 0);
+  const opexMonthly = Math.round(term.opexMonthlyAmount || 0);
+  const taxMonthly = Math.round(term.taxMonthlyAmount || 0);
 
   const splitRentCharges: {
     accountId: Types.ObjectId;

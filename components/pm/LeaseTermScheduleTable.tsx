@@ -19,9 +19,10 @@ export interface SchedulePeriodView {
   startDate: string | null;
   endDate: string | null;
   sizeSqft: number;
-  baseRatePerSqft: number;
-  opexRatePerSqft: number;
-  taxRatePerSqft: number;
+  /** cents / month */
+  baseMonthlyAmount: number;
+  opexMonthlyAmount: number;
+  taxMonthlyAmount: number;
   amounts: PeriodAmounts;
 }
 
@@ -73,9 +74,9 @@ export function LeaseTermScheduleTable({
               <th className="py-2 pr-3">Period</th>
               <th className="pr-3">Term</th>
               <th className="pr-3 text-right">Sq ft</th>
-              <th className="pr-3 text-right">Base ($/sf · /mo)</th>
-              <th className="pr-3 text-right">OPEX ($/sf · /mo)</th>
-              <th className="pr-3 text-right">Taxes ($/sf · /mo)</th>
+              <th className="pr-3 text-right">Base Rent /mo</th>
+              <th className="pr-3 text-right">OPEX Recovery /mo</th>
+              <th className="pr-3 text-right">Tax Recovery /mo</th>
               <th className="pr-3 text-right">Total /mo</th>
               <th className="pr-3 text-right">Total /yr</th>
               {showGst && <th className="text-right">With GST/QST /mo</th>}
@@ -114,17 +115,13 @@ export function LeaseTermScheduleTable({
                   </td>
                   <td className="pr-3 text-right">{p.sizeSqft || "—"}</td>
                   <td className="pr-3 text-right">
-                    ${p.baseRatePerSqft} · {formatMoney(a.baseMonthly)}
+                    {formatMoney(a.baseMonthly)}
                   </td>
                   <td className="pr-3 text-right">
-                    {p.opexRatePerSqft
-                      ? `$${p.opexRatePerSqft} · ${formatMoney(a.opexMonthly)}`
-                      : "—"}
+                    {a.opexMonthly ? formatMoney(a.opexMonthly) : "—"}
                   </td>
                   <td className="pr-3 text-right">
-                    {p.taxRatePerSqft
-                      ? `$${p.taxRatePerSqft} · ${formatMoney(a.taxMonthly)}`
-                      : "—"}
+                    {a.taxMonthly ? formatMoney(a.taxMonthly) : "—"}
                   </td>
                   <td className="pr-3 text-right font-medium">
                     {formatMoney(a.totalBeforeTaxMonthly)}
