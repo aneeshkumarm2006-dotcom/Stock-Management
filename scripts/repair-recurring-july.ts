@@ -24,6 +24,7 @@ import { RecurringTransaction } from '../lib/db/models/pm/RecurringTransaction';
 import { Bill } from '../lib/db/models/pm/Bill';
 import { advanceNextDate } from '../lib/pm/recurringPoster';
 import { postBillToLedger } from '../lib/pm/postBillToLedger';
+import type { PmContext } from '../lib/auth/getCurrentUser';
 
 function loadEnvLocal() {
   try {
@@ -104,10 +105,11 @@ async function main() {
       promoted++;
       continue;
     }
-    const ctx = {
+    // roles stays empty so this repair can never override a locked period.
+    const ctx: PmContext = {
       userId: String(b.createdByUserId ?? orgObjectId),
       orgId: ORG_ID,
-      roles: [] as string[],
+      roles: [],
       impersonatedBy: null,
     };
     try {
