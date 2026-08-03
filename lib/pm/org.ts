@@ -2,19 +2,19 @@
 // on first PM access; seeds default taxonomies. Idempotent and safe under
 // concurrent invocations.
 // Refs: PROPERTY_TODO.md Phase 0 §Org settings.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { User } from '@/lib/db/models/User';
-import { Organization } from '@/lib/db/models/pm/Organization';
-import { OrgMembership } from '@/lib/db/models/pm/OrgMembership';
-import { seedDefaults } from '@/lib/pm/seed';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { User } from "@/lib/db/models/User";
+import { Organization } from "@/lib/db/models/pm/Organization";
+import { OrgMembership } from "@/lib/db/models/pm/OrgMembership";
+import { seedDefaults } from "@/lib/pm/seed";
 
 function slugFromEmail(email: string, fallback: string): string {
-  const local = email.split('@')[0] ?? fallback;
+  const local = email.split("@")[0] ?? fallback;
   const base = local
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
   return base || fallback;
 }
 
@@ -73,13 +73,13 @@ export async function getOrCreateOrgForUser(userId: string): Promise<{
   await OrgMembership.create({
     organizationId: org._id,
     userId: uid,
-    roles: ['Admin', 'PropertyManager'],
+    roles: ["Admin", "PropertyManager"],
     joinedAt: new Date(),
   });
 
   await seedDefaults(org._id);
 
-  return { orgId: String(org._id), roles: ['Admin', 'PropertyManager'] };
+  return { orgId: String(org._id), roles: ["Admin", "PropertyManager"] };
 }
 
 export default getOrCreateOrgForUser;

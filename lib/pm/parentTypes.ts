@@ -77,10 +77,7 @@ export const PARENT_TYPES = [
  * uploads (no parent). Phase 2 adds JournalEntry + Deposit so attachments land
  * on the right entity.
  */
-export const FILE_LOCATION_TYPES = [
-  ...PARENT_TYPES,
-  "Account",
-] as const;
+export const FILE_LOCATION_TYPES = [...PARENT_TYPES, "Account"] as const;
 
 export const parentTypeSchema = z.enum(PARENT_TYPES);
 export const fileLocationTypeSchema = z.enum(FILE_LOCATION_TYPES);
@@ -93,47 +90,47 @@ export const fileLocationTypeSchema = z.enum(FILE_LOCATION_TYPES);
  */
 export const FK_VALIDATED_LOCATION_TYPES = new Set<string>([
   // Phase 1
-  'Property',
-  'Unit',
-  'Tenant',
-  'RentalOwner',
+  "Property",
+  "Unit",
+  "Tenant",
+  "RentalOwner",
   // Phase 2
-  'BankAccount',
-  'ChartOfAccount',
-  'JournalEntry',
-  'Deposit',
-  'LockedPeriodPolicy',
-  'CompanyAccount',
+  "BankAccount",
+  "ChartOfAccount",
+  "JournalEntry",
+  "Deposit",
+  "LockedPeriodPolicy",
+  "CompanyAccount",
   // Phase 3 — leasing-lifecycle entities
-  'Listing',
-  'Prospect',
-  'Applicant',
-  'DraftLease',
-  'Lease',
-  'RentersInsurancePolicy',
-  'Pet',
+  "Listing",
+  "Prospect",
+  "Applicant",
+  "DraftLease",
+  "Lease",
+  "RentersInsurancePolicy",
+  "Pet",
   // Phase 4 — Maintenance + A/P entities
-  'Vendor',
-  'Task',
-  'WorkOrder',
-  'Bill',
-  'BillPayment',
-  'RecurringTransaction',
-  'EftRequest',
-  'CalendarEvent',
+  "Vendor",
+  "Task",
+  "WorkOrder",
+  "Bill",
+  "BillPayment",
+  "RecurringTransaction",
+  "EftRequest",
+  "CalendarEvent",
   // Phase 5 — Tasks + Projects
-  'Project',
-  'RecurringTask',
-  'OwnerContributionRequest',
+  "Project",
+  "RecurringTask",
+  "OwnerContributionRequest",
   // Phase 6 — Communications
-  'EmailMessage',
-  'EmailTemplate',
-  'EmailThread',
+  "EmailMessage",
+  "EmailTemplate",
+  "EmailThread",
   // Phase 9 — Accounting reports + ancillary
-  'Budget',
-  'Reconciliation',
-  'BankFeedTransaction',
-  'ApprovalRule',
+  "Budget",
+  "Reconciliation",
+  "BankFeedTransaction",
+  "ApprovalRule",
 ]);
 
 /**
@@ -141,56 +138,59 @@ export const FK_VALIDATED_LOCATION_TYPES = new Set<string>([
  * existence check. Keep this in sync with FK_VALIDATED_LOCATION_TYPES.
  */
 export const COLLECTION_BY_LOCATION_TYPE: Record<string, string> = {
-  Property: 'pm_properties',
-  Unit: 'pm_units',
-  Tenant: 'pm_tenants',
-  RentalOwner: 'pm_rental_owners',
-  BankAccount: 'pm_bank_accounts',
-  ChartOfAccount: 'pm_chart_of_accounts',
-  JournalEntry: 'pm_journal_entries',
-  Deposit: 'pm_deposits',
-  LockedPeriodPolicy: 'pm_locked_period_policies',
-  CompanyAccount: 'pm_company_accounts',
-  Listing: 'pm_listings',
-  Prospect: 'pm_prospects',
-  Applicant: 'pm_applicants',
-  DraftLease: 'pm_draft_leases',
-  Lease: 'pm_leases',
-  RentersInsurancePolicy: 'pm_renters_insurance_policies',
-  Pet: 'pm_pets',
+  Property: "pm_properties",
+  Unit: "pm_units",
+  Tenant: "pm_tenants",
+  RentalOwner: "pm_rental_owners",
+  BankAccount: "pm_bank_accounts",
+  ChartOfAccount: "pm_chart_of_accounts",
+  JournalEntry: "pm_journal_entries",
+  Deposit: "pm_deposits",
+  LockedPeriodPolicy: "pm_locked_period_policies",
+  CompanyAccount: "pm_company_accounts",
+  Listing: "pm_listings",
+  Prospect: "pm_prospects",
+  Applicant: "pm_applicants",
+  DraftLease: "pm_draft_leases",
+  Lease: "pm_leases",
+  RentersInsurancePolicy: "pm_renters_insurance_policies",
+  Pet: "pm_pets",
   // Phase 4 — Maintenance + A/P entities
-  Vendor: 'pm_vendors',
-  Task: 'pm_tasks',
-  WorkOrder: 'pm_work_orders',
-  Bill: 'pm_bills',
-  BillPayment: 'pm_bill_payments',
-  RecurringTransaction: 'pm_recurring_transactions',
-  EftRequest: 'pm_eft_requests',
-  CalendarEvent: 'pm_calendar_events',
+  Vendor: "pm_vendors",
+  Task: "pm_tasks",
+  WorkOrder: "pm_work_orders",
+  Bill: "pm_bills",
+  BillPayment: "pm_bill_payments",
+  RecurringTransaction: "pm_recurring_transactions",
+  EftRequest: "pm_eft_requests",
+  CalendarEvent: "pm_calendar_events",
   // Phase 5
-  Project: 'pm_projects',
-  RecurringTask: 'pm_recurring_tasks',
-  OwnerContributionRequest: 'pm_owner_contribution_requests',
+  Project: "pm_projects",
+  RecurringTask: "pm_recurring_tasks",
+  OwnerContributionRequest: "pm_owner_contribution_requests",
   // Phase 6
-  EmailMessage: 'pm_email_messages',
-  EmailTemplate: 'pm_email_templates',
-  EmailThread: 'pm_email_threads',
+  EmailMessage: "pm_email_messages",
+  EmailTemplate: "pm_email_templates",
+  EmailThread: "pm_email_threads",
   // Phase 9
-  Budget: 'pm_budgets',
-  Reconciliation: 'pm_reconciliations',
-  BankFeedTransaction: 'pm_bank_feed_transactions',
-  ApprovalRule: 'pm_approval_rules',
+  Budget: "pm_budgets",
+  Reconciliation: "pm_reconciliations",
+  BankFeedTransaction: "pm_bank_feed_transactions",
+  ApprovalRule: "pm_approval_rules",
 };
 
 /** Type guard for runtime checks. */
 export function isParentType(v: unknown): v is (typeof PARENT_TYPES)[number] {
-  return typeof v === "string" && (PARENT_TYPES as readonly string[]).includes(v);
+  return (
+    typeof v === "string" && (PARENT_TYPES as readonly string[]).includes(v)
+  );
 }
 
 export function isFileLocationType(
   v: unknown,
 ): v is (typeof FILE_LOCATION_TYPES)[number] {
   return (
-    typeof v === "string" && (FILE_LOCATION_TYPES as readonly string[]).includes(v)
+    typeof v === "string" &&
+    (FILE_LOCATION_TYPES as readonly string[]).includes(v)
   );
 }

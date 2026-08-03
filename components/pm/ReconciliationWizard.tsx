@@ -121,9 +121,7 @@ export function ReconciliationWizard({
       setEndingBalance(String(fromCents(d.statementEndingBalance).toFixed(2)));
     }
     setClearedKeys(
-      new Set(
-        d.clearedLines.map((c) => `${c.journalEntryId}:${c.lineId}`),
-      ),
+      new Set(d.clearedLines.map((c) => `${c.journalEntryId}:${c.lineId}`)),
     );
   }, [recId]);
 
@@ -271,9 +269,7 @@ export function ReconciliationWizard({
   }, [rec, clearedKeys]);
 
   const adjustedBookCents =
-    (rec?.bookEndingBalance ?? 0) -
-    toCents(serviceCharge) +
-    toCents(interest);
+    (rec?.bookEndingBalance ?? 0) - toCents(serviceCharge) + toCents(interest);
   const liveDifference = toCents(endingBalance) - adjustedBookCents;
 
   return (
@@ -350,13 +346,11 @@ export function ReconciliationWizard({
           <div className="space-y-3">
             <div className="flex items-center gap-3 text-sm">
               <span>
-                Statement:{" "}
-                <CurrencyAmount cents={toCents(endingBalance)} />
+                Statement: <CurrencyAmount cents={toCents(endingBalance)} />
               </span>
               <span className="text-fg-muted">−</span>
               <span>
-                Book + adj:{" "}
-                <CurrencyAmount cents={adjustedBookCents} />
+                Book + adj: <CurrencyAmount cents={adjustedBookCents} />
               </span>
               <span className="text-fg-muted">=</span>
               <span
@@ -376,7 +370,7 @@ export function ReconciliationWizard({
               <table className="w-full text-sm">
                 <thead className="sticky top-0 border-b border-border bg-bg-elevated text-left text-xs uppercase tracking-widest text-fg-muted">
                   <tr>
-                    <th className="py-2 w-10" />
+                    <th className="w-10 py-2" />
                     <th>Date</th>
                     <th>Memo</th>
                     <th className="text-right">Debit</th>
@@ -386,7 +380,10 @@ export function ReconciliationWizard({
                 <tbody>
                   {rec.unclearedLines.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-3 text-center text-fg-muted">
+                      <td
+                        colSpan={5}
+                        className="py-3 text-center text-fg-muted"
+                      >
                         No uncleared lines in this window.
                       </td>
                     </tr>
@@ -468,8 +465,8 @@ export function ReconciliationWizard({
               On commit, cleared lines are stamped read-only and a global
               locked-period policy through{" "}
               {new Date(rec.endDate).toISOString().slice(0, 10)} is issued
-              (BR-AC-17). Service charge and interest post a balanced
-              adjustment JE.
+              (BR-AC-17). Service charge and interest post a balanced adjustment
+              JE.
             </p>
           </div>
         )}

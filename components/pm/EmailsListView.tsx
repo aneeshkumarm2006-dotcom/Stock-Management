@@ -91,7 +91,11 @@ function ToColumn({ rows }: { rows: EmailRow["to"] }) {
     <span>
       To ({rows.length}){" "}
       <span className="text-fg-muted">
-        {rows.slice(0, PREVIEW).map((r) => r.name || r.email).join(", ")} …
+        {rows
+          .slice(0, PREVIEW)
+          .map((r) => r.name || r.email)
+          .join(", ")}{" "}
+        …
       </span>{" "}
       <button
         type="button"
@@ -131,7 +135,8 @@ export function EmailsListView({ mode }: { mode: ListMode }) {
     const controller = new AbortController();
     setLoading(true);
     const qs = new URLSearchParams({ view: mode });
-    if (mode === "sent" && showSystemGenerated) qs.set("showSystemGenerated", "1");
+    if (mode === "sent" && showSystemGenerated)
+      qs.set("showSystemGenerated", "1");
     if (debouncedQ.trim()) qs.set("q", debouncedQ.trim());
     fetch(`/api/pm/emails?${qs.toString()}`, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : null))
@@ -219,8 +224,8 @@ export function EmailsListView({ mode }: { mode: ListMode }) {
                     )}
                   </div>
                   <div className="mt-1 text-xs text-fg-muted">
-                    From <span className="text-fg">{row.fromMailbox}</span>{" "}
-                    · {row.senderDisplayName}
+                    From <span className="text-fg">{row.fromMailbox}</span> ·{" "}
+                    {row.senderDisplayName}
                   </div>
                   <div className="mt-1 text-xs">
                     <ToColumn rows={row.to} />
@@ -230,8 +235,8 @@ export function EmailsListView({ mode }: { mode: ListMode }) {
                   {mode === "scheduled"
                     ? fmtDate(row.scheduledSendTime)
                     : mode === "drafts"
-                    ? fmtDate(row.updatedAt)
-                    : fmtDate(row.sentAt)}
+                      ? fmtDate(row.updatedAt)
+                      : fmtDate(row.sentAt)}
                 </div>
               </div>
               {mode === "scheduled" && (

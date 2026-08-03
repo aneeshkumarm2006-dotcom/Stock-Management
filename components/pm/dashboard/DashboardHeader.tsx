@@ -16,7 +16,10 @@ function timeOfDay(): "morning" | "afternoon" | "evening" {
   return "evening";
 }
 
-function firstName(name: string | null | undefined, email: string | null | undefined): string {
+function firstName(
+  name: string | null | undefined,
+  email: string | null | undefined,
+): string {
   if (name && name.trim().length > 0) {
     return name.trim().split(/\s+/)[0] ?? "";
   }

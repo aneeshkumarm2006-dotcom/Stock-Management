@@ -146,3 +146,30 @@ export function useCashValue(): number {
     }, 0);
   }, [data, displayCurrency, rates]);
 }
+
+/**
+ * Per-company cash, each converted into the display currency — the same math
+ * useCashValue totals, keyed by company id. Lets the companies table render
+ * each balance in the currency its footer total is already in, instead of
+ * mixing native rows with a converted total.
+ */
+export function useCashByCompany(): Map<string, number> {
+  const displayCurrency = useSettingsStore((s) => s.displayCurrency);
+  const rates = useSettingsStore((s) => s.fxRates);
+  const { data } = useCompanies();
+
+  return useMemo(() => {
+    const companies = data?.companies ?? [];
+    return new Map(
+      companies.map((c) => {
+        const v = convertCurrency(
+          c.cashBalance ?? 0,
+          c.cashCurrency ?? "USD",
+          displayCurrency,
+          rates,
+        );
+        return [c.id, Number.isFinite(v) ? v : 0] as const;
+      }),
+    );
+  }, [data, displayCurrency, rates]);
+}

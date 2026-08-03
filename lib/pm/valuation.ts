@@ -29,9 +29,9 @@ export function glIncomeExpenseCentsByProperty(
   const out = new Map<string, { incomeCents: number; expenseCents: number }>();
   for (const c of matrix.cells) {
     const t = typeById.get(c.accountId);
-    if (t !== 'Income' && t !== 'Operating Expense') continue;
+    if (t !== "Income" && t !== "Operating Expense") continue;
     const cur = out.get(c.propertyId) ?? { incomeCents: 0, expenseCents: 0 };
-    if (t === 'Income') cur.incomeCents += c.amount;
+    if (t === "Income") cur.incomeCents += c.amount;
     else cur.expenseCents += c.amount;
     out.set(c.propertyId, cur);
   }

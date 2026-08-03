@@ -14,15 +14,13 @@
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, Clock, AlertTriangle, Mail } from "lucide-react";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { ComposeEmailModal } from "@/components/pm/ComposeEmailModal";
-import type { EmailRelatedEntityType, EmailReadReceiptStatus } from "@/types/pm";
+import type {
+  EmailRelatedEntityType,
+  EmailReadReceiptStatus,
+} from "@/types/pm";
 
 interface EmailRow {
   id: string;
@@ -129,8 +127,8 @@ function RecipientPreview({
         {rows
           .slice(0, PREVIEW)
           .map((r) => r.name || r.email)
-          .join(", ")}
-        {" "}…
+          .join(", ")}{" "}
+        …
       </span>{" "}
       <button
         type="button"
@@ -217,7 +215,12 @@ function useCount(params: {
     return () => {
       cancelled = true;
     };
-  }, [params.view, params.relatedEntityType, params.relatedEntityId, reloadKey]);
+  }, [
+    params.view,
+    params.relatedEntityType,
+    params.relatedEntityId,
+    reloadKey,
+  ]);
   return { count, reload };
 }
 
@@ -272,8 +275,8 @@ function EmailList({
               {view === "scheduled"
                 ? fmtDate(row.scheduledSendTime)
                 : view === "drafts"
-                ? fmtDate(row.updatedAt)
-                : fmtDate(row.sentAt)}
+                  ? fmtDate(row.updatedAt)
+                  : fmtDate(row.sentAt)}
             </div>
           </div>
           {view === "scheduled" && (

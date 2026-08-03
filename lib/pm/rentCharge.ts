@@ -14,19 +14,23 @@
 //   DR Accounts Receivable   total
 //     CR base rent income          primaryRent.amount
 //     CR recovery income           splitRentCharges[i].amount …
-import { Types } from 'mongoose';
+import { Types } from "mongoose";
 
 /** Minimal shape needed to build a rent charge from a lease's rent TERMS. */
 export interface RentChargeSource {
   primaryRent: { amount: number; accountId: Types.ObjectId; memo?: string };
-  splitRentCharges: { amount: number; accountId: Types.ObjectId; memo?: string }[];
+  splitRentCharges: {
+    amount: number;
+    accountId: Types.ObjectId;
+    memo?: string;
+  }[];
   propertyId: Types.ObjectId;
   unitId: Types.ObjectId;
 }
 
 export interface RentChargeLine {
   accountId: Types.ObjectId;
-  scopeType: 'Property';
+  scopeType: "Property";
   scopeId: Types.ObjectId;
   unitId: Types.ObjectId;
   description: string;
@@ -56,10 +60,10 @@ export function buildRentChargeLines(
   if (base > 0) {
     credits.push({
       accountId: source.primaryRent.accountId,
-      scopeType: 'Property',
+      scopeType: "Property",
       scopeId: source.propertyId,
       unitId: source.unitId,
-      description: source.primaryRent.memo?.trim() || 'Base rent income',
+      description: source.primaryRent.memo?.trim() || "Base rent income",
       debit: 0,
       credit: base,
     });
@@ -67,10 +71,10 @@ export function buildRentChargeLines(
   for (const c of splits) {
     credits.push({
       accountId: c.accountId,
-      scopeType: 'Property',
+      scopeType: "Property",
       scopeId: source.propertyId,
       unitId: source.unitId,
-      description: c.memo?.trim() || 'Recovery charge income',
+      description: c.memo?.trim() || "Recovery charge income",
       debit: 0,
       credit: c.amount,
     });
@@ -79,10 +83,10 @@ export function buildRentChargeLines(
   const lines: RentChargeLine[] = [
     {
       accountId: accountsReceivableCoaId,
-      scopeType: 'Property',
+      scopeType: "Property",
       scopeId: source.propertyId,
       unitId: source.unitId,
-      description: 'Rent receivable',
+      description: "Rent receivable",
       debit: total,
       credit: 0,
     },

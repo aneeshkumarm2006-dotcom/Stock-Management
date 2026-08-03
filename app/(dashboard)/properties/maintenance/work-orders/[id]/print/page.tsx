@@ -6,6 +6,7 @@
 import * as React from "react";
 import { useParams, notFound } from "next/navigation";
 import { formatDateOnly } from "@/lib/utils/dateInput";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 
 interface PartsRow {
   qty: number;
@@ -118,8 +119,8 @@ export default function WorkOrderPrintPage() {
                 <tr key={i} className="border-b border-border/40">
                   <td>{p.qty}</td>
                   <td>{p.description}</td>
-                  <td>${(p.price / 100).toFixed(2)}</td>
-                  <td>${(p.total / 100).toFixed(2)}</td>
+                  <td><CurrencyAmount cents={p.price} /></td>
+                  <td><CurrencyAmount cents={p.total} /></td>
                 </tr>
               ))}
             </tbody>
@@ -129,7 +130,7 @@ export default function WorkOrderPrintPage() {
                   Total
                 </td>
                 <td className="font-bold">
-                  ${(doc.billTotal / 100).toFixed(2)}
+                  <CurrencyAmount cents={doc.billTotal} />
                 </td>
               </tr>
             </tfoot>

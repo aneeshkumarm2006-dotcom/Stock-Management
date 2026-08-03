@@ -102,7 +102,11 @@ export function NameCategoryList({ title, endpoint, placeholder }: Props) {
     setSavingEdit(false);
     if (!res.ok) {
       const err = (await res.json().catch(() => ({}))) as { error?: string };
-      toast({ title: "Rename failed", description: err.error, variant: "error" });
+      toast({
+        title: "Rename failed",
+        description: err.error,
+        variant: "error",
+      });
       return;
     }
     toast({ title: "Renamed", variant: "success" });

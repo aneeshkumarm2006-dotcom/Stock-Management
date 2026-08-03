@@ -9,14 +9,8 @@
 import * as React from "react";
 import { DashboardHeader } from "./DashboardHeader";
 import { WidgetSkeleton } from "./WidgetSkeleton";
-import {
-  WIDGET_COMPONENTS,
-  WIDGET_WIDE_ON_XL,
-} from "./widgets/registry";
-import {
-  DASHBOARD_WIDGETS,
-  reconcileLayout,
-} from "@/lib/pm/dashboardWidgets";
+import { WIDGET_COMPONENTS, WIDGET_WIDE_ON_XL } from "./widgets/registry";
+import { DASHBOARD_WIDGETS, reconcileLayout } from "@/lib/pm/dashboardWidgets";
 import { cn } from "@/lib/utils/cn";
 
 export interface LayoutItem {
@@ -78,10 +72,7 @@ export function DashboardGrid() {
           if (!Comp) return null;
           const wide = WIDGET_WIDE_ON_XL.has(item.widgetId);
           return (
-            <div
-              key={item.widgetId}
-              className={cn(wide && "xl:col-span-2")}
-            >
+            <div key={item.widgetId} className={cn(wide && "xl:col-span-2")}>
               <Comp />
             </div>
           );

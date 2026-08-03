@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { AddWorkOrderModal } from "@/components/pm/AddWorkOrderModal";
 import { formatDateOnly } from "@/lib/utils/dateInput";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 
 interface WoRow {
   id: string;
@@ -173,7 +174,7 @@ export default function WorkOrdersPage() {
                   </td>
                   <td className="text-fg-muted">{w.billStatus}</td>
                   <td className="tabular-nums text-fg">
-                    ${(w.billTotal / 100).toFixed(2)}
+                    <CurrencyAmount cents={w.billTotal} />
                   </td>
                 </tr>
               ))}

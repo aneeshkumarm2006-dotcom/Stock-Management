@@ -104,7 +104,9 @@ export function AddTaskModal({
     fetch("/api/pm/projects?status=in-progress").then(async (r) => {
       if (r.ok) {
         const rows = (await r.json()) as Array<{ id: string; name?: string }>;
-        setProjects(rows.map((p) => ({ id: p.id, name: p.name || "Untitled" })));
+        setProjects(
+          rows.map((p) => ({ id: p.id, name: p.name || "Untitled" })),
+        );
       }
     });
   }, [open]);
@@ -280,9 +282,7 @@ export function AddTaskModal({
                 id="task-priority"
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
                 value={priority}
-                onChange={(e) =>
-                  setPriority(e.target.value as WorkPriority)
-                }
+                onChange={(e) => setPriority(e.target.value as WorkPriority)}
               >
                 {WORK_PRIORITIES.map((p) => (
                   <option key={p} value={p}>

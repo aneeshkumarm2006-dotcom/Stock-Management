@@ -41,11 +41,7 @@ export function CollectManagementFeesModal({
   const { toast } = useToast();
   const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const lastOfMonth = new Date(
-    today.getFullYear(),
-    today.getMonth() + 1,
-    0,
-  );
+  const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
   const [periodStart, setPeriodStart] = React.useState(
     firstOfMonth.toISOString().slice(0, 10),
@@ -87,10 +83,8 @@ export function CollectManagementFeesModal({
     await onPosted();
   }
 
-  const totalPostedCents = result?.posted.reduce(
-    (s, p) => s + p.feeCents,
-    0,
-  ) ?? 0;
+  const totalPostedCents =
+    result?.posted.reduce((s, p) => s + p.feeCents, 0) ?? 0;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -125,8 +119,8 @@ export function CollectManagementFeesModal({
               Posts a cross-property journal entry per active
               ManagementFeeAgreement: debit per-property{" "}
               <em>Management Fee Expense</em>, credit company{" "}
-              <em>Management Fee Income</em>. Already-collected properties
-              are skipped automatically.
+              <em>Management Fee Income</em>. Already-collected properties are
+              skipped automatically.
             </p>
           )}
 
@@ -164,9 +158,7 @@ export function CollectManagementFeesModal({
               )}
               {result.skipped.length > 0 && (
                 <details className="text-xs text-fg-muted">
-                  <summary>
-                    Skipped {result.skipped.length} properties
-                  </summary>
+                  <summary>Skipped {result.skipped.length} properties</summary>
                   <ul className="mt-1 list-disc pl-4">
                     {result.skipped.map((s) => (
                       <li key={s.propertyId}>

@@ -85,7 +85,10 @@ export function JournalEntryModal({
   );
   const [scopeId, setScopeId] = React.useState<string>(defaultScopeId);
   const [memo, setMemo] = React.useState<string>("");
-  const [lines, setLines] = React.useState<LineDraft[]>(() => [newLine(), newLine()]);
+  const [lines, setLines] = React.useState<LineDraft[]>(() => [
+    newLine(),
+    newLine(),
+  ]);
   const [saving, setSaving] = React.useState(false);
 
   // Load reference data on open.
@@ -102,9 +105,7 @@ export function JournalEntryModal({
       fetch("/api/pm/properties").then((r) => (r.ok ? r.json() : [])),
     ]).then(([a, p]) => {
       if (cancelled) return;
-      setAccounts(
-        (a as AccountOption[]).filter((row) => row.active !== false),
-      );
+      setAccounts((a as AccountOption[]).filter((row) => row.active !== false));
       setProperties(
         (p as { id: string; propertyName: string }[]).map((row) => ({
           id: row.id,
@@ -129,12 +130,15 @@ export function JournalEntryModal({
     return {
       debit,
       credit,
-      balanced: Math.round(debit * 100) === Math.round(credit * 100) && debit > 0,
+      balanced:
+        Math.round(debit * 100) === Math.round(credit * 100) && debit > 0,
     };
   }, [lines]);
 
   function updateLine(idx: number, patch: Partial<LineDraft>) {
-    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+    setLines((prev) =>
+      prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)),
+    );
   }
 
   function addLine() {
@@ -142,7 +146,9 @@ export function JournalEntryModal({
   }
 
   function removeLine(idx: number) {
-    setLines((prev) => (prev.length <= 2 ? prev : prev.filter((_, i) => i !== idx)));
+    setLines((prev) =>
+      prev.length <= 2 ? prev : prev.filter((_, i) => i !== idx),
+    );
   }
 
   async function save() {
@@ -215,7 +221,9 @@ export function JournalEntryModal({
         scopeId: l.scopeType === "Property" ? l.scopeId : null,
         description: l.description.trim() || undefined,
         debit: Number.isFinite(Number(l.debit || 0)) ? Number(l.debit || 0) : 0,
-        credit: Number.isFinite(Number(l.credit || 0)) ? Number(l.credit || 0) : 0,
+        credit: Number.isFinite(Number(l.credit || 0))
+          ? Number(l.credit || 0)
+          : 0,
       })),
       status: "Posted",
     };
@@ -232,7 +240,7 @@ export function JournalEntryModal({
       };
       const issueMsg = err.issues
         ? Object.values(err.issues).flat().join("; ")
-        : err.error ?? "Failed to post";
+        : (err.error ?? "Failed to post");
       toast({ title: "Post failed", description: issueMsg, variant: "error" });
       return;
     }
@@ -338,7 +346,9 @@ export function JournalEntryModal({
                           value={l.scopeType}
                           onChange={(e) =>
                             updateLine(idx, {
-                              scopeType: e.target.value as "Property" | "Company",
+                              scopeType: e.target.value as
+                                | "Property"
+                                | "Company",
                             })
                           }
                           className="h-9 rounded border border-border bg-surface-highest px-1 text-xs text-fg"
@@ -410,7 +420,10 @@ export function JournalEntryModal({
                   </tr>
                 ))}
                 <tr className="bg-surface">
-                  <td colSpan={3} className="px-2 py-2 text-right text-xs font-bold uppercase tracking-widest text-fg-muted">
+                  <td
+                    colSpan={3}
+                    className="px-2 py-2 text-right text-xs font-bold uppercase tracking-widest text-fg-muted"
+                  >
                     Totals
                   </td>
                   <td className="px-2 py-2 text-right">

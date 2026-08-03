@@ -22,7 +22,7 @@
 // Reply-To is always set to the PM-side `fromMailbox` snapshot so replies
 // route back to whichever per-property mailbox the message was composed
 // against, even when SMTP_FROM funnels every send through a single sender.
-import nodemailer, { type Transporter } from 'nodemailer';
+import nodemailer, { type Transporter } from "nodemailer";
 
 export interface SendEmailInput {
   /** Snapshot from `EmailMessage.fromMailbox`. Used as Reply-To. */
@@ -55,7 +55,7 @@ function getTransport(): Transporter | null {
   if (cachedTransport) return cachedTransport;
   const port = Number(process.env.SMTP_PORT || 587);
   cachedTransport = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
     port,
     secure: port === 465,
     auth: { user, pass },
@@ -65,12 +65,14 @@ function getTransport(): Transporter | null {
 
 function formatFrom(addr: string, name?: string): string {
   if (!name) return addr;
-  const safe = name.replace(/[<>"]/g, '').trim();
+  const safe = name.replace(/[<>"]/g, "").trim();
   if (!safe) return addr;
   return `${safe} <${addr}>`;
 }
 
-export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
+export async function sendEmail(
+  input: SendEmailInput,
+): Promise<SendEmailResult> {
   const transport = getTransport();
   if (!transport) return { delivered: false, skipped: true };
 
@@ -85,7 +87,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
       bcc: input.bcc && input.bcc.length > 0 ? input.bcc : undefined,
       replyTo: input.fromMailbox,
       subject: input.subject,
-      html: input.html || ' ',
+      html: input.html || " ",
     });
     return { delivered: true, providerMessageId: info.messageId };
   } catch (err) {

@@ -8,6 +8,7 @@ import { Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 
 interface EftRow {
   id: string;
@@ -184,7 +185,7 @@ export default function EftApprovalsPage() {
                     <td className="text-fg">{e.paidToName}</td>
                     <td className="text-fg-muted">{e.payee.type}</td>
                     <td className="tabular-nums font-bold text-fg">
-                      ${(e.amount / 100).toFixed(2)}
+                      <CurrencyAmount cents={e.amount} />
                     </td>
                     <td>
                       <StatusChip status={e.status} />

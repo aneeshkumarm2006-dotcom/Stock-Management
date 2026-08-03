@@ -17,13 +17,13 @@
 //                                              posted to this Property in
 //                                              the window. Computed from
 //                                              the GL.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { Property } from '@/lib/db/models/pm/Property';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
-import type { PmContext } from '@/lib/auth/getCurrentUser';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { Property } from "@/lib/db/models/pm/Property";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { assertWriteAllowed, LockedPeriodError } from "@/lib/pm/lockedPeriod";
+import type { PmContext } from "@/lib/auth/getCurrentUser";
 
 export interface CollectManagementFeesInput {
   orgId: string;
@@ -55,7 +55,7 @@ async function computePeriodIncomeCents(opts: {
   periodEnd: Date;
 }): Promise<number> {
   const incomeAccounts = await ChartOfAccount.find(
-    { organizationId: opts.orgId, type: 'Income' },
+    { organizationId: opts.orgId, type: "Income" },
     { _id: 1 },
   ).lean<{ _id: Types.ObjectId }[]>();
   const incomeIds = incomeAccounts.map((a) => a._id);
@@ -63,26 +63,28 @@ async function computePeriodIncomeCents(opts: {
 
   const jes = await JournalEntry.find({
     organizationId: opts.orgId,
-    status: 'Posted',
+    status: "Posted",
     date: { $gte: opts.periodStart, $lte: opts.periodEnd },
-    'lines.scopeId': opts.propertyId,
+    "lines.scopeId": opts.propertyId,
   })
-    .select('lines')
-    .lean<{
-      lines: Array<{
-        accountId: Types.ObjectId;
-        scopeType: string;
-        scopeId: Types.ObjectId | null;
-        debit: number;
-        credit: number;
-      }>;
-    }[]>();
+    .select("lines")
+    .lean<
+      {
+        lines: Array<{
+          accountId: Types.ObjectId;
+          scopeType: string;
+          scopeId: Types.ObjectId | null;
+          debit: number;
+          credit: number;
+        }>;
+      }[]
+    >();
 
   const incomeIdSet = new Set(incomeIds.map((i) => String(i)));
   let total = 0;
   for (const je of jes) {
     for (const line of je.lines) {
-      if (line.scopeType !== 'Property') continue;
+      if (line.scopeType !== "Property") continue;
       if (String(line.scopeId) !== String(opts.propertyId)) continue;
       if (!incomeIdSet.has(String(line.accountId))) continue;
       // Income accounts: credit increases income.
@@ -101,23 +103,23 @@ export async function collectManagementFees(
   const [feeExpenseCoA, feeIncomeCoA] = await Promise.all([
     ChartOfAccount.findOne({
       organizationId: orgObjectId,
-      defaultFor: 'Management Fee Expense',
+      defaultFor: "Management Fee Expense",
     }).lean<{ _id: Types.ObjectId } | null>(),
     ChartOfAccount.findOne({
       organizationId: orgObjectId,
-      defaultFor: 'Management Fee Income',
+      defaultFor: "Management Fee Income",
     }).lean<{ _id: Types.ObjectId } | null>(),
   ]);
   if (!feeExpenseCoA || !feeIncomeCoA) {
     throw new Error(
-      'Management Fee Expense / Income CoAs missing. Run the system seeder before collecting fees.',
+      "Management Fee Expense / Income CoAs missing. Run the system seeder before collecting fees.",
     );
   }
 
   const propertyFilter: Record<string, unknown> = {
     organizationId: orgObjectId,
     active: true,
-    'managementFeeAgreement.active': true,
+    "managementFeeAgreement.active": true,
   };
   if (input.propertyIds && input.propertyIds.length > 0) {
     propertyFilter._id = {
@@ -138,8 +140,8 @@ export async function collectManagementFees(
     }>
   >();
 
-  const posted: CollectManagementFeesResult['posted'] = [];
-  const skipped: CollectManagementFeesResult['skipped'] = [];
+  const posted: CollectManagementFeesResult["posted"] = [];
+  const skipped: CollectManagementFeesResult["skipped"] = [];
 
   for (const prop of properties) {
     const mfa = prop.managementFeeAgreement;
@@ -149,24 +151,21 @@ export async function collectManagementFees(
     if (mfa.startDate && mfa.startDate > input.periodEnd) {
       skipped.push({
         propertyId: String(prop._id),
-        reason: 'Agreement not yet active in this period.',
+        reason: "Agreement not yet active in this period.",
       });
       continue;
     }
     if (mfa.endDate && mfa.endDate < input.periodStart) {
       skipped.push({
         propertyId: String(prop._id),
-        reason: 'Agreement ended before this period.',
+        reason: "Agreement ended before this period.",
       });
       continue;
     }
-    if (
-      mfa.lastCollectedDate &&
-      mfa.lastCollectedDate >= input.periodEnd
-    ) {
+    if (mfa.lastCollectedDate && mfa.lastCollectedDate >= input.periodEnd) {
       skipped.push({
         propertyId: String(prop._id),
-        reason: 'Already collected through period end.',
+        reason: "Already collected through period end.",
       });
       continue;
     }
@@ -186,7 +185,7 @@ export async function collectManagementFees(
     if (feeCents <= 0) {
       skipped.push({
         propertyId: String(prop._id),
-        reason: 'Computed fee is zero (no income or fee rate).',
+        reason: "Computed fee is zero (no income or fee rate).",
       });
       continue;
     }
@@ -212,7 +211,7 @@ export async function collectManagementFees(
     const je = await JournalEntry.create({
       organizationId: orgObjectId,
       date: input.periodEnd,
-      scopeType: 'Property',
+      scopeType: "Property",
       scopeId: prop._id,
       memo: `Management fee — ${prop.propertyName} ${input.periodStart
         .toISOString()
@@ -220,16 +219,16 @@ export async function collectManagementFees(
       lines: [
         {
           accountId: feeExpenseCoA._id,
-          scopeType: 'Property',
+          scopeType: "Property",
           scopeId: prop._id,
           unitId: null,
-          description: 'Management fee',
+          description: "Management fee",
           debit: feeCents,
           credit: 0,
         },
         {
           accountId: feeIncomeCoA._id,
-          scopeType: 'Company',
+          scopeType: "Company",
           scopeId: null,
           unitId: null,
           description: `Mgmt fee from ${prop.propertyName}`,
@@ -237,7 +236,7 @@ export async function collectManagementFees(
           credit: feeCents,
         },
       ],
-      status: 'Posted',
+      status: "Posted",
       createdByUserId: new Types.ObjectId(input.ctx.userId),
     });
 
@@ -245,7 +244,7 @@ export async function collectManagementFees(
       { _id: prop._id, organizationId: orgObjectId },
       {
         $set: {
-          'managementFeeAgreement.lastCollectedDate': input.periodEnd,
+          "managementFeeAgreement.lastCollectedDate": input.periodEnd,
         },
       },
     );

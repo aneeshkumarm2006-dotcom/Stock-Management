@@ -80,7 +80,9 @@ export function ExpiringRentersInsuranceWidget() {
           ? data.expiring.days31_60
           : data.expiring.days61_90
     : 0;
-  const rows = (data?.expiringPolicies ?? []).filter((p) => bucketMatch(p, tab));
+  const rows = (data?.expiringPolicies ?? []).filter((p) =>
+    bucketMatch(p, tab),
+  );
 
   return (
     <WidgetCard
@@ -109,7 +111,10 @@ export function ExpiringRentersInsuranceWidget() {
       ) : (
         <ul className="flex flex-1 flex-col divide-y divide-border/60 text-sm">
           {rows.slice(0, 4).map((p) => (
-            <li key={p.id} className="flex items-start justify-between gap-3 py-2">
+            <li
+              key={p.id}
+              className="flex items-start justify-between gap-3 py-2"
+            >
               <Link
                 href={`/properties/rentals/rent-roll/${p.leaseId}`}
                 className="truncate font-semibold text-fg hover:text-primary"

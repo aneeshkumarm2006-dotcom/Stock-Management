@@ -20,9 +20,9 @@
 // This module has NO runtime dependencies (mongoose types are imported
 // type-only and erased at compile), so the pure display helpers are safe to
 // import from client components (the schedule editor computes amounts live).
-import type { Types } from 'mongoose';
-import type { LeaseTermKind } from '@/types/pm';
-import type { RentChargeSource } from '@/lib/pm/rentCharge';
+import type { Types } from "mongoose";
+import type { LeaseTermKind } from "@/types/pm";
+import type { RentChargeSource } from "@/lib/pm/rentCharge";
 
 /** Minimal amount inputs for the pure display math — structural so the client
  *  editor can call `computePeriodAmounts` without importing the Mongoose model.
@@ -124,7 +124,7 @@ export function activeTermPeriodForDate<T extends SchedulePeriod>(
   if (!periods || periods.length === 0) return null;
   const t = date.getTime();
   for (const p of periods) {
-    if (p.kind !== 'Term') continue;
+    if (p.kind !== "Term") continue;
     const start = p.startDate ? new Date(p.startDate).getTime() : null;
     const end = p.endDate ? new Date(p.endDate).getTime() : null;
     if (start !== null && t < start) continue;
@@ -144,11 +144,12 @@ export function displayTermForDate<T extends SchedulePeriod>(
 ): T | null {
   const active = activeTermPeriodForDate(periods, date);
   if (active) return active;
-  const terms = (periods ?? []).filter((p) => p.kind === 'Term');
+  const terms = (periods ?? []).filter((p) => p.kind === "Term");
   if (terms.length === 0) return null;
   return (
     [...terms].sort(
-      (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+      (a, b) =>
+        new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
     )[0] ?? null
   );
 }
@@ -158,7 +159,11 @@ export function displayTermForDate<T extends SchedulePeriod>(
 export interface ScheduledLeaseLike {
   rentSchedule?: SchedulePeriod[] | null;
   primaryRent: { amount: number; accountId: Types.ObjectId; memo?: string };
-  splitRentCharges: { amount: number; accountId: Types.ObjectId; memo?: string }[];
+  splitRentCharges: {
+    amount: number;
+    accountId: Types.ObjectId;
+    memo?: string;
+  }[];
   propertyId: Types.ObjectId;
   unitId: Types.ObjectId;
 }
@@ -199,7 +204,7 @@ export function resolveScheduledRentForDate(
   // A Term row without a base income account can't post — treat as nothing.
   if (!period.baseAccountId) return null;
 
-  const splits: RentChargeSource['splitRentCharges'] = [];
+  const splits: RentChargeSource["splitRentCharges"] = [];
   if (opexMonthly > 0 && period.opexAccountId) {
     splits.push({
       accountId: period.opexAccountId,
@@ -233,23 +238,31 @@ export function resolveScheduledRentForDate(
  * "no Term period" are hard errors; gaps are NOT flagged here (a lease may
  * legitimately have a vacancy gap) — the editor surfaces gaps as a soft hint.
  */
-export function findScheduleErrors(periods: readonly SchedulePeriod[]): string[] {
+export function findScheduleErrors(
+  periods: readonly SchedulePeriod[],
+): string[] {
   const errors: string[] = [];
   if (periods.length === 0) return errors; // empty schedule is allowed
-  const terms = periods.filter((p) => p.kind === 'Term');
+  const terms = periods.filter((p) => p.kind === "Term");
   if (terms.length === 0) {
-    errors.push('A rent schedule must contain at least one Term period.');
+    errors.push("A rent schedule must contain at least one Term period.");
   }
   for (const p of periods) {
     const start = p.startDate ? new Date(p.startDate).getTime() : NaN;
     const end = p.endDate ? new Date(p.endDate).getTime() : NaN;
     if (Number.isNaN(start) || Number.isNaN(end)) {
-      errors.push(`Period "${p.label || '(unnamed)'}" needs a start and end date.`);
+      errors.push(
+        `Period "${p.label || "(unnamed)"}" needs a start and end date.`,
+      );
     } else if (end <= start) {
-      errors.push(`Period "${p.label || '(unnamed)'}" end date must be after its start date.`);
+      errors.push(
+        `Period "${p.label || "(unnamed)"}" end date must be after its start date.`,
+      );
     }
-    if (p.kind === 'Term' && !(p.baseMonthlyAmount > 0)) {
-      errors.push(`Term period "${p.label || '(unnamed)'}" needs a base rent greater than 0.`);
+    if (p.kind === "Term" && !(p.baseMonthlyAmount > 0)) {
+      errors.push(
+        `Term period "${p.label || "(unnamed)"}" needs a base rent greater than 0.`,
+      );
     }
   }
   // Overlap check among Term periods (sorted by start).
@@ -262,7 +275,7 @@ export function findScheduleErrors(periods: readonly SchedulePeriod[]): string[]
     if (!prev || !cur) continue;
     if (new Date(cur.startDate).getTime() <= new Date(prev.endDate).getTime()) {
       errors.push(
-        `Term periods "${prev.label || '(unnamed)'}" and "${cur.label || '(unnamed)'}" overlap.`,
+        `Term periods "${prev.label || "(unnamed)"}" and "${cur.label || "(unnamed)"}" overlap.`,
       );
     }
   }

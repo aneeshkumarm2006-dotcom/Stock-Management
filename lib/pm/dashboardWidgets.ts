@@ -15,16 +15,56 @@ export interface DashboardWidgetMeta {
 }
 
 export const DASHBOARD_WIDGETS: readonly DashboardWidgetMeta[] = [
-  { id: 'outstandingBalances',     title: 'Outstanding Balances',       defaultEnabled: true, defaultOrder: 0 },
-  { id: 'tasks',                   title: 'Tasks',                      defaultEnabled: true, defaultOrder: 1 },
-  { id: 'rentersInsurance',        title: 'Renters Insurance',          defaultEnabled: true, defaultOrder: 2 },
-  { id: 'overdueTasks',            title: 'Overdue Tasks',              defaultEnabled: true, defaultOrder: 3 },
-  { id: 'expiringLeases',          title: 'Expiring Leases',            defaultEnabled: true, defaultOrder: 4 },
-  { id: 'expiringRentersInsurance', title: 'Expiring Renters Insurance', defaultEnabled: true, defaultOrder: 5 },
-  { id: 'rentalListings',          title: 'Rental Listings',            defaultEnabled: true, defaultOrder: 6 },
-  { id: 'rentalApplications',      title: 'Rental Applications',        defaultEnabled: true, defaultOrder: 7 },
-  { id: 'recentActivity',          title: 'Recent Activity',            defaultEnabled: true, defaultOrder: 8 },
-  { id: 'bankFeed',                title: 'Bank Feed',                  defaultEnabled: true, defaultOrder: 9 },
+  {
+    id: "outstandingBalances",
+    title: "Outstanding Balances",
+    defaultEnabled: true,
+    defaultOrder: 0,
+  },
+  { id: "tasks", title: "Tasks", defaultEnabled: true, defaultOrder: 1 },
+  {
+    id: "rentersInsurance",
+    title: "Renters Insurance",
+    defaultEnabled: true,
+    defaultOrder: 2,
+  },
+  {
+    id: "overdueTasks",
+    title: "Overdue Tasks",
+    defaultEnabled: true,
+    defaultOrder: 3,
+  },
+  {
+    id: "expiringLeases",
+    title: "Expiring Leases",
+    defaultEnabled: true,
+    defaultOrder: 4,
+  },
+  {
+    id: "expiringRentersInsurance",
+    title: "Expiring Renters Insurance",
+    defaultEnabled: true,
+    defaultOrder: 5,
+  },
+  {
+    id: "rentalListings",
+    title: "Rental Listings",
+    defaultEnabled: true,
+    defaultOrder: 6,
+  },
+  {
+    id: "rentalApplications",
+    title: "Rental Applications",
+    defaultEnabled: true,
+    defaultOrder: 7,
+  },
+  {
+    id: "recentActivity",
+    title: "Recent Activity",
+    defaultEnabled: true,
+    defaultOrder: 8,
+  },
+  { id: "bankFeed", title: "Bank Feed", defaultEnabled: true, defaultOrder: 9 },
 ] as const;
 
 export const DASHBOARD_WIDGET_IDS: ReadonlySet<string> = new Set(
@@ -52,7 +92,8 @@ export function reconcileLayout(
   stored: Array<{ widgetId: string; enabled: boolean; order: number }>,
 ): Array<{ widgetId: string; enabled: boolean; order: number }> {
   const byId = new Map(stored.map((s) => [s.widgetId, s]));
-  const known: Array<{ widgetId: string; enabled: boolean; order: number }> = [];
+  const known: Array<{ widgetId: string; enabled: boolean; order: number }> =
+    [];
   const seen = new Set<string>();
 
   // Known IDs in stored order (sorted by `order`, dropping unknowns).

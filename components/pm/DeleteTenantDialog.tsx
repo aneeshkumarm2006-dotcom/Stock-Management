@@ -114,8 +114,8 @@ export function DeleteTenantDialog({
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-error" />
             <span>
               <strong className="text-fg">Inactivate</strong> this tenant first
-              (it&apos;s reversible and keeps all history), then come back here to
-              permanently delete them.
+              (it&apos;s reversible and keeps all history), then come back here
+              to permanently delete them.
             </span>
           </div>
         ) : (
@@ -125,8 +125,8 @@ export function DeleteTenantDialog({
               <p>
                 This removes the tenant for good. Past leases keep the saved
                 name, but the tenant record, contact details and notes/files on
-                this page are gone. Prefer{" "}
-                <strong>Inactivate</strong> if you might need them again.
+                this page are gone. Prefer <strong>Inactivate</strong> if you
+                might need them again.
               </p>
             </div>
             <div className="space-y-1.5">

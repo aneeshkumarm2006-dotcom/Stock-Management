@@ -6,15 +6,15 @@
 // every write path (POST /leases, PATCH /leases/:id, draft create + execute)
 // calls to turn a client-supplied (method, amount, rate, sizeSqft) into the
 // integer-cents amount actually written.
-import { toCents } from './currency';
-import type { RentMethod } from '@/types/pm';
+import { toCents } from "./currency";
+import type { RentMethod } from "@/types/pm";
 
 /** Thrown when a `RatePerSqft` lease cannot be resolved (rate ≤ 0 or the unit
  *  has no square footage). Route handlers map this to a 400. */
 export class RentResolutionError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'RentResolutionError';
+    this.name = "RentResolutionError";
   }
 }
 
@@ -59,13 +59,13 @@ export function rentCentsFromRateCents(
  */
 export function resolveRent(input: ResolveRentInput): ResolvedRent {
   const method: RentMethod =
-    input.rentMethod === 'RatePerSqft' ? 'RatePerSqft' : 'Fixed';
+    input.rentMethod === "RatePerSqft" ? "RatePerSqft" : "Fixed";
 
-  if (method === 'RatePerSqft') {
+  if (method === "RatePerSqft") {
     const rate = input.ratePerSqft ?? 0;
     if (!(rate > 0)) {
       throw new RentResolutionError(
-        'Rent per square foot requires a rate greater than 0.',
+        "Rent per square foot requires a rate greater than 0.",
       );
     }
     const sqft = input.sizeSqft ?? 0;
@@ -76,14 +76,14 @@ export function resolveRent(input: ResolveRentInput): ResolvedRent {
     }
     const ratePerSqftCents = toCents(rate);
     return {
-      rentMethod: 'RatePerSqft',
+      rentMethod: "RatePerSqft",
       amountCents: rentCentsFromRateCents(ratePerSqftCents, sqft),
       ratePerSqftCents,
     };
   }
 
   return {
-    rentMethod: 'Fixed',
+    rentMethod: "Fixed",
     amountCents: toCents(input.amount ?? 0),
     ratePerSqftCents: 0,
   };

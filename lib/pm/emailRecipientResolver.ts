@@ -8,14 +8,14 @@
 //
 // We keep this server-side: clients never see another tenant's email address
 // before resolution (impersonation + multi-tenant isolation per Phase 0).
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { Tenant } from '@/lib/db/models/pm/Tenant';
-import { RentalOwner } from '@/lib/db/models/pm/RentalOwner';
-import { Vendor } from '@/lib/db/models/pm/Vendor';
-import { Applicant } from '@/lib/db/models/pm/Applicant';
-import { Lease } from '@/lib/db/models/pm/Lease';
-import type { EmailRecipientType } from '@/types/pm';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { Tenant } from "@/lib/db/models/pm/Tenant";
+import { RentalOwner } from "@/lib/db/models/pm/RentalOwner";
+import { Vendor } from "@/lib/db/models/pm/Vendor";
+import { Applicant } from "@/lib/db/models/pm/Applicant";
+import { Lease } from "@/lib/db/models/pm/Lease";
+import type { EmailRecipientType } from "@/types/pm";
 
 export interface ResolvedRecipient {
   type: EmailRecipientType;
@@ -33,7 +33,7 @@ export interface RecipientInput {
 
 function toName(first?: string, last?: string, company?: string): string {
   if (company) return company;
-  return [first, last].filter(Boolean).join(' ').trim();
+  return [first, last].filter(Boolean).join(" ").trim();
 }
 
 /**
@@ -49,52 +49,52 @@ export async function resolveRecipient(
   const org = new Types.ObjectId(orgId);
 
   switch (input.type) {
-    case 'Custom': {
+    case "Custom": {
       if (!input.email) return [];
       return [
         {
-          type: 'Custom',
+          type: "Custom",
           id: null,
           email: input.email.trim().toLowerCase(),
           name: input.name?.trim(),
         },
       ];
     }
-    case 'Tenant': {
+    case "Tenant": {
       if (!input.id || !Types.ObjectId.isValid(input.id)) return [];
       const doc = await Tenant.findOne({
         _id: new Types.ObjectId(input.id),
         organizationId: org,
       })
-        .select('email firstName lastName tenantType companyName')
+        .select("email firstName lastName tenantType companyName")
         .lean();
       if (!doc?.email) return [];
       return [
         {
-          type: 'Tenant',
+          type: "Tenant",
           id: doc._id,
           email: doc.email,
           name: toName(
             doc.firstName,
             doc.lastName,
-            doc.tenantType === 'Company' ? doc.companyName : undefined,
+            doc.tenantType === "Company" ? doc.companyName : undefined,
           ),
         },
       ];
     }
-    case 'RentalOwner': {
+    case "RentalOwner": {
       if (!input.id || !Types.ObjectId.isValid(input.id)) return [];
       const doc = await RentalOwner.findOne({
         _id: new Types.ObjectId(input.id),
         organizationId: org,
       })
-        .select('primaryEmail firstName lastName isCompany companyName')
+        .select("primaryEmail firstName lastName isCompany companyName")
         .lean();
       const email = doc?.primaryEmail;
       if (!doc || !email) return [];
       return [
         {
-          type: 'RentalOwner',
+          type: "RentalOwner",
           id: doc._id,
           email,
           name: toName(
@@ -105,19 +105,19 @@ export async function resolveRecipient(
         },
       ];
     }
-    case 'Vendor': {
+    case "Vendor": {
       if (!input.id || !Types.ObjectId.isValid(input.id)) return [];
       const doc = await Vendor.findOne({
         _id: new Types.ObjectId(input.id),
         organizationId: org,
       })
-        .select('primaryEmail firstName lastName isCompany companyName')
+        .select("primaryEmail firstName lastName isCompany companyName")
         .lean();
       const email = doc?.primaryEmail;
       if (!doc || !email) return [];
       return [
         {
-          type: 'Vendor',
+          type: "Vendor",
           id: doc._id,
           email,
           name: toName(
@@ -128,25 +128,25 @@ export async function resolveRecipient(
         },
       ];
     }
-    case 'Applicant': {
+    case "Applicant": {
       if (!input.id || !Types.ObjectId.isValid(input.id)) return [];
       const doc = await Applicant.findOne({
         _id: new Types.ObjectId(input.id),
         organizationId: org,
       })
-        .select('email firstName lastName')
+        .select("email firstName lastName")
         .lean();
       if (!doc?.email) return [];
       return [
         {
-          type: 'Applicant',
+          type: "Applicant",
           id: doc._id,
           email: doc.email,
           name: toName(doc.firstName, doc.lastName),
         },
       ];
     }
-    case 'Property': {
+    case "Property": {
       if (!input.id || !Types.ObjectId.isValid(input.id)) return [];
       const propertyId = new Types.ObjectId(input.id);
       // Tenants don't carry a direct propertyId; resolve via Active leases on
@@ -155,71 +155,77 @@ export async function resolveRecipient(
       const activeLeases = await Lease.find({
         organizationId: org,
         propertyId,
-        status: { $in: ['Active', 'Future'] },
+        status: { $in: ["Active", "Future"] },
       })
-        .select('tenants')
+        .select("tenants")
         .lean();
       const tenantIdSet = new Set<string>();
       for (const lease of activeLeases) {
-        for (const t of (lease.tenants ?? []) as Array<{ tenantId: Types.ObjectId }>) {
+        for (const t of (lease.tenants ?? []) as Array<{
+          tenantId: Types.ObjectId;
+        }>) {
           if (t.tenantId) tenantIdSet.add(String(t.tenantId));
         }
       }
       if (tenantIdSet.size === 0) return [];
       const tenants = await Tenant.find({
         organizationId: org,
-        _id: { $in: Array.from(tenantIdSet).map((id) => new Types.ObjectId(id)) },
+        _id: {
+          $in: Array.from(tenantIdSet).map((id) => new Types.ObjectId(id)),
+        },
         active: true,
-        email: { $exists: true, $ne: '' },
+        email: { $exists: true, $ne: "" },
       })
-        .select('_id email firstName lastName tenantType companyName')
+        .select("_id email firstName lastName tenantType companyName")
         .lean();
       return tenants
         .filter((t) => !!t.email)
         .map((t) => ({
-          type: 'Tenant' as const,
+          type: "Tenant" as const,
           id: t._id,
           email: t.email as string,
           name: toName(
             t.firstName,
             t.lastName,
-            t.tenantType === 'Company' ? t.companyName : undefined,
+            t.tenantType === "Company" ? t.companyName : undefined,
           ),
         }));
     }
-    case 'Lease': {
+    case "Lease": {
       if (!input.id || !Types.ObjectId.isValid(input.id)) return [];
       const leaseId = new Types.ObjectId(input.id);
       const lease = await Lease.findOne({
         _id: leaseId,
         organizationId: org,
       })
-        .select('tenants')
+        .select("tenants")
         .lean();
       if (!lease) return [];
-      const tenantIds = ((lease.tenants ?? []) as Array<{
-        tenantId: Types.ObjectId;
-      }>)
+      const tenantIds = (
+        (lease.tenants ?? []) as Array<{
+          tenantId: Types.ObjectId;
+        }>
+      )
         .map((t) => t.tenantId)
         .filter(Boolean);
       if (tenantIds.length === 0) return [];
       const tenants = await Tenant.find({
         organizationId: org,
         _id: { $in: tenantIds },
-        email: { $exists: true, $ne: '' },
+        email: { $exists: true, $ne: "" },
       })
-        .select('_id email firstName lastName tenantType companyName')
+        .select("_id email firstName lastName tenantType companyName")
         .lean();
       return tenants
         .filter((t) => !!t.email)
         .map((t) => ({
-          type: 'Tenant' as const,
+          type: "Tenant" as const,
           id: t._id,
           email: t.email as string,
           name: toName(
             t.firstName,
             t.lastName,
-            t.tenantType === 'Company' ? t.companyName : undefined,
+            t.tenantType === "Company" ? t.companyName : undefined,
           ),
         }));
     }

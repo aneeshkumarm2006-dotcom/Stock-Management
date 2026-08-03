@@ -13,13 +13,13 @@
 // here so a caller can check BOTH an old date (this reversal) and a new date
 // (a subsequent re-post) up front and bail before any write. This matches the
 // deposit DELETE, which lock-checks before invoking the reversal.
-import { Types, type HydratedDocument } from 'mongoose';
+import { Types, type HydratedDocument } from "mongoose";
 import {
   JournalEntry,
   JOURNAL_ENTRY_MEMO_MAX,
   type IJournalEntry,
-} from '@/lib/db/models/pm/JournalEntry';
-import type { PmContext } from '@/lib/auth/getCurrentUser';
+} from "@/lib/db/models/pm/JournalEntry";
+import type { PmContext } from "@/lib/auth/getCurrentUser";
 
 export interface ReverseJournalEntryInput {
   /** A hydrated, Posted JournalEntry document (already loaded + org-scoped). */
@@ -38,10 +38,10 @@ export async function reverseJournalEntry({
   ctx,
   memo,
 }: ReverseJournalEntryInput): Promise<ReverseJournalEntryResult> {
-  if (je.status !== 'Posted') {
+  if (je.status !== "Posted") {
     // Drafts never hit the ledger; Voided is already reversed. Callers handle
     // those cases explicitly (the void route keeps its own Draft→flip shortcut).
-    throw new Error('Only a Posted journal entry can be reversed.');
+    throw new Error("Only a Posted journal entry can be reversed.");
   }
 
   const reversingLines = je.lines.map((line) => ({
@@ -50,7 +50,9 @@ export async function reverseJournalEntry({
     scopeId: line.scopeId,
     unitId: line.unitId,
     name: line.name,
-    description: line.description ? `Reversal: ${line.description}` : 'Reversal',
+    description: line.description
+      ? `Reversal: ${line.description}`
+      : "Reversal",
     debit: line.credit, // swap
     credit: line.debit,
   })) as typeof je.lines;
@@ -62,16 +64,16 @@ export async function reverseJournalEntry({
     scopeId: je.scopeId,
     memo: (
       memo ??
-      `Reversal of JE ${String(je._id)}${je.memo ? ` — ${je.memo}` : ''}`
+      `Reversal of JE ${String(je._id)}${je.memo ? ` — ${je.memo}` : ""}`
     ).slice(0, JOURNAL_ENTRY_MEMO_MAX),
     attachmentFileId: null,
     lines: reversingLines,
-    status: 'Posted',
+    status: "Posted",
     reversesJournalEntryId: je._id,
     createdByUserId: new Types.ObjectId(ctx.userId),
   });
 
-  je.status = 'Voided';
+  je.status = "Voided";
   je.voidedAt = new Date();
   je.voidedByUserId = new Types.ObjectId(ctx.userId);
   je.reversedByJournalEntryId = reversal._id;

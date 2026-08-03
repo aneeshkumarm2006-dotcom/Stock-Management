@@ -74,7 +74,10 @@ export function OverdueTasksWidget() {
       ) : (
         <ul className="flex flex-1 flex-col divide-y divide-border/60 text-sm">
           {visible.map((t) => (
-            <li key={t.id} className="flex items-start justify-between gap-3 py-2">
+            <li
+              key={t.id}
+              className="flex items-start justify-between gap-3 py-2"
+            >
               <Link
                 href={`/properties/tasks/${t.id}`}
                 className="truncate font-semibold text-fg hover:text-primary"

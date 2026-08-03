@@ -6,7 +6,7 @@
 //
 // API secret never leaves the server. The cloud name is public (it's part of
 // the Cloudinary URL).
-import { v2 as cloudinary } from 'cloudinary';
+import { v2 as cloudinary } from "cloudinary";
 
 const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const apiKey = process.env.CLOUDINARY_API_KEY;
@@ -40,7 +40,7 @@ export interface SignedUploadParams {
  */
 export function signUpload(folder: string): SignedUploadParams {
   if (!isCloudinaryConfigured()) {
-    throw new Error('Cloudinary is not configured');
+    throw new Error("Cloudinary is not configured");
   }
   const timestamp = Math.floor(Date.now() / 1000);
   const signature = cloudinary.utils.api_sign_request(
@@ -62,7 +62,7 @@ export function signUpload(folder: string): SignedUploadParams {
  */
 export async function destroyAsset(
   publicId: string,
-  resourceType: 'image' | 'video' | 'raw',
+  resourceType: "image" | "video" | "raw",
 ): Promise<void> {
   if (!isCloudinaryConfigured()) return;
   try {
@@ -73,6 +73,10 @@ export async function destroyAsset(
   } catch (err) {
     // Swallow — we still want the Mongo row to be deleted even if the
     // remote asset is already gone. Log so we can audit orphaned assets.
-    console.error('[cloudinary] destroy failed', { publicId, resourceType, err });
+    console.error("[cloudinary] destroy failed", {
+      publicId,
+      resourceType,
+      err,
+    });
   }
 }

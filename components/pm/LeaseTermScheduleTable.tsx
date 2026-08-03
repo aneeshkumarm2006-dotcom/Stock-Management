@@ -8,7 +8,7 @@
 
 import * as React from "react";
 import { Badge } from "@/components/ui/badge";
-import { formatMoney } from "@/lib/pm/currency";
+import { usePmMoneyFormatter } from "@/components/pm/PmCurrencyProvider";
 import { formatDateOnly } from "@/lib/utils/dateInput";
 import type { PeriodAmounts } from "@/lib/pm/rentSchedule";
 import type { LeaseTermKind } from "@/types/pm";
@@ -36,7 +36,8 @@ function isActive(p: SchedulePeriodView): boolean {
   if (p.kind !== "Term" || !p.startDate || !p.endDate) return false;
   const now = Date.now();
   return (
-    now >= new Date(p.startDate).getTime() && now <= new Date(p.endDate).getTime()
+    now >= new Date(p.startDate).getTime() &&
+    now <= new Date(p.endDate).getTime()
   );
 }
 
@@ -45,6 +46,8 @@ export function LeaseTermScheduleTable({
   proportionateSharePct,
   salesTaxRatePct,
 }: Props) {
+  // Must precede the early return below — rules of hooks.
+  const fmt = usePmMoneyFormatter();
   if (!periods || periods.length === 0) {
     return <p className="text-sm text-fg-muted">No rent schedule recorded.</p>;
   }
@@ -56,7 +59,9 @@ export function LeaseTermScheduleTable({
           {proportionateSharePct != null && (
             <span>
               Proportionate share:{" "}
-              <span className="font-medium text-fg">{proportionateSharePct}%</span>
+              <span className="font-medium text-fg">
+                {proportionateSharePct}%
+              </span>
             </span>
           )}
           {showGst && (
@@ -114,24 +119,22 @@ export function LeaseTermScheduleTable({
                     {p.endDate ? formatDateOnly(p.endDate) : "—"}
                   </td>
                   <td className="pr-3 text-right">{p.sizeSqft || "—"}</td>
+                  <td className="pr-3 text-right">{fmt(a.baseMonthly)}</td>
                   <td className="pr-3 text-right">
-                    {formatMoney(a.baseMonthly)}
+                    {a.opexMonthly ? fmt(a.opexMonthly) : "—"}
                   </td>
                   <td className="pr-3 text-right">
-                    {a.opexMonthly ? formatMoney(a.opexMonthly) : "—"}
-                  </td>
-                  <td className="pr-3 text-right">
-                    {a.taxMonthly ? formatMoney(a.taxMonthly) : "—"}
+                    {a.taxMonthly ? fmt(a.taxMonthly) : "—"}
                   </td>
                   <td className="pr-3 text-right font-medium">
-                    {formatMoney(a.totalBeforeTaxMonthly)}
+                    {fmt(a.totalBeforeTaxMonthly)}
                   </td>
                   <td className="pr-3 text-right">
-                    {formatMoney(a.totalBeforeTaxAnnual)}
+                    {fmt(a.totalBeforeTaxAnnual)}
                   </td>
                   {showGst && (
                     <td className="text-right">
-                      {option ? "—" : formatMoney(a.totalWithGstMonthly)}
+                      {option ? "—" : fmt(a.totalWithGstMonthly)}
                     </td>
                   )}
                 </tr>
@@ -141,8 +144,8 @@ export function LeaseTermScheduleTable({
         </table>
       </div>
       <p className="text-xs text-fg-muted">
-        Proportionate share &amp; GST/QST are summary figures and are not posted to
-        the ledger. Only the active term period drives rent posting.
+        Proportionate share &amp; GST/QST are summary figures and are not posted
+        to the ledger. Only the active term period drives rent posting.
       </p>
     </div>
   );

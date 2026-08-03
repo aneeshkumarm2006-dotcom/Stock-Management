@@ -10,17 +10,14 @@
 //
 // Threshold = $600 (TAX_1099_THRESHOLD_DOLLARS). E-file integration is
 // deferred; the page surfaces an "E-file — Coming soon" toast.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { BillPayment } from '@/lib/db/models/pm/BillPayment';
-import { Bill } from '@/lib/db/models/pm/Bill';
-import { Vendor } from '@/lib/db/models/pm/Vendor';
-import { Organization } from '@/lib/db/models/pm/Organization';
-import { formatUsd } from '@/lib/pm/currency';
-import {
-  TAX_1099_THRESHOLD_DOLLARS,
-  type Tax1099FormType,
-} from '@/types/pm';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { BillPayment } from "@/lib/db/models/pm/BillPayment";
+import { Bill } from "@/lib/db/models/pm/Bill";
+import { Vendor } from "@/lib/db/models/pm/Vendor";
+import { Organization } from "@/lib/db/models/pm/Organization";
+import { formatUsd } from "@/lib/pm/currency";
+import { TAX_1099_THRESHOLD_DOLLARS, type Tax1099FormType } from "@/types/pm";
 
 export const TAX_1099_THRESHOLD_CENTS = TAX_1099_THRESHOLD_DOLLARS * 100;
 
@@ -65,7 +62,7 @@ export async function aggregateVendorPayments(opts: {
     organizationId: opts.orgId,
     paidDate: { $gte: yearStart, $lte: yearEnd },
   })
-    .select('amount billId')
+    .select("amount billId")
     .lean<Array<{ amount: number; billId: Types.ObjectId }>>();
 
   if (payments.length === 0) return [];
@@ -78,10 +75,9 @@ export async function aggregateVendorPayments(opts: {
     { vendorId: 1 },
   ).lean<Array<{ _id: Types.ObjectId; vendorId?: Types.ObjectId | null }>>();
   const vendorByBill = new Map(
-    bills.map((b) => [
-      String(b._id),
-      b.vendorId ? String(b.vendorId) : null,
-    ] as const),
+    bills.map(
+      (b) => [String(b._id), b.vendorId ? String(b.vendorId) : null] as const,
+    ),
   );
 
   // Tally by vendor.
@@ -143,7 +139,7 @@ export async function aggregateVendorPayments(opts: {
   return vendors
     .map((v) => {
       const displayName = v.isCompany
-        ? v.companyName ?? `${v.firstName} ${v.lastName}`
+        ? (v.companyName ?? `${v.firstName} ${v.lastName}`)
         : `${v.firstName} ${v.lastName}`;
       const printableName =
         v.use1099AlternateName && v.alternativeName1099
@@ -163,7 +159,7 @@ export async function aggregateVendorPayments(opts: {
         taxpayerIdLast4: v.taxpayerIdLast4 ?? null,
         hasFullTin: Boolean(v.taxpayerIdFull && v.taxpayerIdFull.length > 0),
         totalPaidCents: totalCents,
-        formType: '1099-NEC' as Tax1099FormType,
+        formType: "1099-NEC" as Tax1099FormType,
         meetsThreshold: totalCents >= TAX_1099_THRESHOLD_CENTS,
       };
     })
@@ -194,9 +190,13 @@ export async function render1099Html(opts: {
 
   const addr = row.printableAddress ?? {};
   const addrLine =
-    [addr.line1, addr.line2, [addr.city, addr.state, addr.zip].filter(Boolean).join(', ')]
+    [
+      addr.line1,
+      addr.line2,
+      [addr.city, addr.state, addr.zip].filter(Boolean).join(", "),
+    ]
       .filter(Boolean)
-      .join('<br>') || '—';
+      .join("<br>") || "—";
 
   return `<!doctype html>
 <html lang="en">
@@ -218,25 +218,25 @@ export async function render1099Html(opts: {
 </head>
 <body>
   <h1>${formType} — Tax year ${opts.taxYear}</h1>
-  <p class="meta">Issued by ${org?.name ?? 'Property Management'}</p>
+  <p class="meta">Issued by ${org?.name ?? "Property Management"}</p>
 
   <div class="box">
     <p class="label">Recipient</p>
     <p style="font-weight:600;font-size:16px;margin:2px 0;">${row.printableName}</p>
     <p style="margin:2px 0;">${addrLine}</p>
     <p style="margin:6px 0 0;font-size:12px;color:#555;">
-      ${row.taxIdentityType ?? 'TIN'} ending in ${row.taxpayerIdLast4 ?? '—'}
+      ${row.taxIdentityType ?? "TIN"} ending in ${row.taxpayerIdLast4 ?? "—"}
     </p>
   </div>
 
   ${
     row.hasFullTin
-      ? ''
+      ? ""
       : `<p class="warn">⚠ Full taxpayer ID is not on file for this vendor. Add it on the vendor's detail page before filing.</p>`
   }
 
   <div class="box">
-    <p class="label">${formType === '1099-NEC' ? 'Box 1 — Non-employee compensation' : 'Box 1 — Rents'}</p>
+    <p class="label">${formType === "1099-NEC" ? "Box 1 — Non-employee compensation" : "Box 1 — Rents"}</p>
     <p class="amount">${formatUsd(row.totalPaidCents)}</p>
   </div>
 
@@ -248,7 +248,7 @@ export async function render1099Html(opts: {
       <tr><td>Form type</td><td>${formType}</td></tr>
       <tr><td>Tax year</td><td>${opts.taxYear}</td></tr>
       <tr><td>Threshold</td><td>${formatUsd(TAX_1099_THRESHOLD_CENTS)}</td></tr>
-      <tr><td>Meets threshold?</td><td>${row.meetsThreshold ? 'Yes' : 'No'}</td></tr>
+      <tr><td>Meets threshold?</td><td>${row.meetsThreshold ? "Yes" : "No"}</td></tr>
     </tbody>
   </table>
 

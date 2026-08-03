@@ -10,11 +10,7 @@
 // aggregation via computePortfolio (PDR §9); rows still carry their native
 // currency so the table can show the listing-currency flag.
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchJson } from "@/lib/utils/apiFetch";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import {
@@ -25,7 +21,7 @@ import {
   type Exchange,
   type Country,
 } from "@/lib/utils/portfolioMath";
-import type { Currency } from "@/lib/utils/convertCurrency";
+import { toDisplayCurrency, type Currency } from "@/lib/utils/convertCurrency";
 import { toPositionInput } from "@/lib/utils/buildPositionInput";
 import { valuateHolding } from "@/lib/utils/assetValuation";
 import {
@@ -103,8 +99,14 @@ export interface PortfolioRow {
   payoutFrequency: PayoutFrequency | null;
   startDate: string | null;
   maturityDate: string | null;
-  /** Maturity value (GIC/Bond), native currency. */
+  /** Maturity value (GIC/Bond), native currency. Feeds the edit panels. */
   maturityValue: number | null;
+  /**
+   * Maturity value (GIC/Bond) converted into the display currency — what the
+   * table renders. `metrics` covers invested/current value but has no maturity
+   * equivalent, so this is converted here rather than in the component.
+   */
+  maturityValueDisplay: number | null;
   costBasis: number | null;
   /** Manually-entered current value (fund/cash), native currency. */
   currentValueNative: number | null;
@@ -265,7 +267,7 @@ export function usePortfolio(): PortfolioData {
           buyDate: p.buyDate,
           quantity: p.quantity ?? 0,
           avgBuyPrice: p.avgBuyPrice ?? 0,
-          price: isEquity ? q?.price ?? null : null,
+          price: isEquity ? (q?.price ?? null) : null,
           companyId: p.companyId,
           companyName: p.companyName ?? null,
           brokerId: p.brokerId,
@@ -280,6 +282,14 @@ export function usePortfolio(): PortfolioData {
           startDate: p.startDate ?? null,
           maturityDate: p.maturityDate ?? null,
           maturityValue: valuation ? valuation.maturityValue : null,
+          maturityValueDisplay: valuation
+            ? toDisplayCurrency(
+                valuation.maturityValue,
+                p.currency,
+                displayCurrency,
+                rates,
+              )
+            : null,
           costBasis: p.costBasis ?? null,
           currentValueNative: valuation ? valuation.currentValue : null,
           valueAsOf: p.valueAsOf ?? null,
@@ -296,7 +306,7 @@ export function usePortfolio(): PortfolioData {
       list: PortfolioRow[],
       cmp: (a: PortfolioRow, b: PortfolioRow) => number,
     ): PortfolioRow | null =>
-      list.length === 0 ? null : list.slice().sort(cmp)[0] ?? null;
+      list.length === 0 ? null : (list.slice().sort(cmp)[0] ?? null);
 
     const best = pick(quoted, (a, b) => b.metrics.pnlPct - a.metrics.pnlPct);
     const worst = pick(quoted, (a, b) => a.metrics.pnlPct - b.metrics.pnlPct);
@@ -325,7 +335,12 @@ export function usePortfolio(): PortfolioData {
       new Set(built.map((r) => r.sector?.trim()).filter(Boolean) as string[]),
     ).sort();
 
-    return { rows: built, stats: statsValue, sectors: sectorList, summary: computed };
+    return {
+      rows: built,
+      stats: statsValue,
+      sectors: sectorList,
+      summary: computed,
+    };
   }, [positions, quoteByKey, displayCurrency, rates]);
 
   return {
@@ -475,10 +490,7 @@ export function useCreatePosition() {
 export function useUpdatePosition() {
   const invalidate = useInvalidatePortfolio();
   return useMutation({
-    mutationFn: async (args: {
-      id: string;
-      input: UpdatePositionInput;
-    }) => {
+    mutationFn: async (args: { id: string; input: UpdatePositionInput }) => {
       const res = await fetch(`/api/positions/${args.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },

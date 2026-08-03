@@ -127,7 +127,10 @@ export function RecordBillModal({
       return;
     }
     if (lines.filter((l) => l.accountId).length === 0) {
-      toast({ title: "Add at least one line with an account", variant: "error" });
+      toast({
+        title: "Add at least one line with an account",
+        variant: "error",
+      });
       return;
     }
     setSaving(true);
@@ -292,7 +295,7 @@ export function RecordBillModal({
               <tbody>
                 {lines.map((l, i) => (
                   <tr key={i} className="border-b border-border/40">
-                    <td className="py-1 w-56">
+                    <td className="w-56 py-1">
                       <select
                         className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
                         value={l.accountId}
@@ -340,10 +343,13 @@ export function RecordBillModal({
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={2} className="py-2 text-right text-xs uppercase tracking-widest text-fg-muted">
+                  <td
+                    colSpan={2}
+                    className="py-2 text-right text-xs uppercase tracking-widest text-fg-muted"
+                  >
                     Total
                   </td>
-                  <td className="tabular-nums font-bold text-fg">
+                  <td className="font-bold tabular-nums text-fg">
                     ${total.toFixed(2)}
                   </td>
                 </tr>
@@ -356,7 +362,11 @@ export function RecordBillModal({
             Cancel
           </Button>
           <Button onClick={save} disabled={saving}>
-            {saving ? "Saving…" : statusOnSave === "Draft" ? "Save draft" : "Post bill"}
+            {saving
+              ? "Saving…"
+              : statusOnSave === "Draft"
+                ? "Save draft"
+                : "Post bill"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -61,7 +61,9 @@ interface Props<T extends Record<string, unknown>> {
   extraPayload?: Record<string, unknown>;
   /** Reshape the flat payload (one key per field) before sending. Useful when
    *  the API expects nested objects (e.g., property `address.line1`). */
-  payloadTransform?: (payload: Record<string, unknown>) => Record<string, unknown>;
+  payloadTransform?: (
+    payload: Record<string, unknown>,
+  ) => Record<string, unknown>;
 }
 
 function defaultToInput(v: unknown): string {
@@ -201,11 +203,18 @@ export function InlineFieldEditor<T extends Record<string, unknown>>({
   // plain objects so a transform that maps absent flat keys to
   // `{ sub: undefined, ... }` collapses to nothing rather than overwriting the
   // server's value with an empty object (protects property `address.*`).
-  function pruneUndefined(obj: Record<string, unknown>): Record<string, unknown> {
+  function pruneUndefined(
+    obj: Record<string, unknown>,
+  ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
       if (v === undefined) continue;
-      if (v && typeof v === "object" && !Array.isArray(v) && !(v instanceof Date)) {
+      if (
+        v &&
+        typeof v === "object" &&
+        !Array.isArray(v) &&
+        !(v instanceof Date)
+      ) {
         const nested = pruneUndefined(v as Record<string, unknown>);
         if (Object.keys(nested).length === 0) continue;
         out[k] = nested;
@@ -236,7 +245,10 @@ export function InlineFieldEditor<T extends Record<string, unknown>>({
       flat[f.key] = fieldToPayloadValue(f, input);
     }
 
-    const merged: Record<string, unknown> = { ...(extraPayload ?? {}), ...flat };
+    const merged: Record<string, unknown> = {
+      ...(extraPayload ?? {}),
+      ...flat,
+    };
     const transformed = payloadTransform ? payloadTransform(merged) : merged;
     const finalPayload = pruneUndefined(transformed);
 
@@ -264,7 +276,10 @@ export function InlineFieldEditor<T extends Record<string, unknown>>({
       toast({ title: "Save failed", description: err.error, variant: "error" });
       return;
     }
-    toast({ title: title ? `${title} updated` : "Updated", variant: "success" });
+    toast({
+      title: title ? `${title} updated` : "Updated",
+      variant: "success",
+    });
     setEditing(false);
     await onSaved();
   }
@@ -328,12 +343,7 @@ export function InlineFieldEditor<T extends Record<string, unknown>>({
         ))}
       </div>
       <div className="flex justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={cancel}
-          disabled={saving}
-        >
+        <Button variant="outline" size="sm" onClick={cancel} disabled={saving}>
           Cancel
         </Button>
         <Button size="sm" onClick={save} disabled={saving}>
@@ -404,7 +414,7 @@ function renderInput(
   return (
     <Input
       id={`fe-${f.key}`}
-      type={f.type === "number" ? "number" : f.type ?? "text"}
+      type={f.type === "number" ? "number" : (f.type ?? "text")}
       value={value}
       placeholder={f.placeholder}
       onChange={(e) => onChange(e.target.value)}

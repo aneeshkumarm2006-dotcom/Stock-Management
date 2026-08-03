@@ -1,8 +1,11 @@
 // Task helper utilities shared by API routes + UI (Phase 4 skeleton; Phase 5
 // extends with the kanban/list surface). Encapsulates derivations so the
 // status-roll-up rule for multi-WO Tasks ([G-B-33]) lives in one place.
-import { TASK_TERMINAL_STATUSES, WORK_ORDER_TERMINAL_STATUSES } from '@/types/pm';
-import type { TaskStatus, WorkOrderStatus } from '@/types/pm';
+import {
+  TASK_TERMINAL_STATUSES,
+  WORK_ORDER_TERMINAL_STATUSES,
+} from "@/types/pm";
+import type { TaskStatus, WorkOrderStatus } from "@/types/pm";
 
 /** BR-TP-6 — a dueDate is past-due when it lies before today AND the task
  *  hasn't reached a terminal status. Used by the list view to colour-code
@@ -15,7 +18,7 @@ export function isPastDue(
   if ((TASK_TERMINAL_STATUSES as readonly string[]).includes(status)) {
     return false;
   }
-  const d = typeof dueDate === 'string' ? new Date(dueDate) : dueDate;
+  const d = typeof dueDate === "string" ? new Date(dueDate) : dueDate;
   if (Number.isNaN(d.getTime())) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -28,7 +31,7 @@ export function daysUntilDue(
   dueDate: Date | string | null | undefined,
 ): number | null {
   if (!dueDate) return null;
-  const d = typeof dueDate === 'string' ? new Date(dueDate) : dueDate;
+  const d = typeof dueDate === "string" ? new Date(dueDate) : dueDate;
   if (Number.isNaN(d.getTime())) return null;
   const ms = d.getTime() - Date.now();
   return Math.ceil(ms / (1000 * 60 * 60 * 24));

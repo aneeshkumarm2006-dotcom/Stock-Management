@@ -16,20 +16,20 @@
 //
 // Callers must have already run `connectToDatabase()` (mirrors the
 // caller-connects convention used by `postBillToLedger`).
-import { Types } from 'mongoose';
-import { Bill } from '@/lib/db/models/pm/Bill';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
+import { Types } from "mongoose";
+import { Bill } from "@/lib/db/models/pm/Bill";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
 
 export type BillReflectionReason =
   /** Draft, or no `journalEntryId` — never posted to the ledger. */
-  | 'UNPOSTED'
+  | "UNPOSTED"
   /** `journalEntryId` set but the JE is absent or not `Posted` (e.g. voided). */
-  | 'JE_MISSING'
+  | "JE_MISSING"
   /** Posted, but no line hits an active Income/Operating-Expense account. */
-  | 'NON_PL_ACCOUNT'
+  | "NON_PL_ACCOUNT"
   /** Reflected structurally, but the JE date falls outside the given window. */
-  | 'OUTSIDE_DATE_RANGE';
+  | "OUTSIDE_DATE_RANGE";
 
 export interface BillReflection {
   billId: string;
@@ -65,10 +65,10 @@ export interface ClassifyBillsResult {
 }
 
 const REASONS: BillReflectionReason[] = [
-  'UNPOSTED',
-  'JE_MISSING',
-  'NON_PL_ACCOUNT',
-  'OUTSIDE_DATE_RANGE',
+  "UNPOSTED",
+  "JE_MISSING",
+  "NON_PL_ACCOUNT",
+  "OUTSIDE_DATE_RANGE",
 ];
 
 interface BillLean {
@@ -112,13 +112,13 @@ export async function classifyBills(
   // Same account source the matrix route uses (active Income/Operating-Expense
   // accounts), so "reflected" here means exactly "would show in the matrix".
   const [bills, plAccounts] = await Promise.all([
-    Bill.find({ organizationId: orgObjectId, status: { $ne: 'Voided' } })
+    Bill.find({ organizationId: orgObjectId, status: { $ne: "Voided" } })
       .sort({ invoiceDate: -1 })
       .lean<BillLean[]>(),
     ChartOfAccount.find({
       organizationId: orgObjectId,
       active: true,
-      type: { $in: ['Income', 'Operating Expense'] },
+      type: { $in: ["Income", "Operating Expense"] },
     })
       .select({ _id: 1 })
       .lean<{ _id: Types.ObjectId }[]>(),
@@ -134,7 +134,7 @@ export async function classifyBills(
         _id: { $in: jeIds },
         organizationId: orgObjectId,
       })
-        .select({ _id: 1, status: 1, date: 1, 'lines.accountId': 1 })
+        .select({ _id: 1, status: 1, date: 1, "lines.accountId": 1 })
         .lean<JeLean[]>()
     : [];
   const jeById = new Map(jes.map((j) => [String(j._id), j]));
@@ -150,26 +150,26 @@ export async function classifyBills(
   const reflections: BillReflection[] = bills.map((b) => {
     const base = {
       billId: String(b._id),
-      refNo: b.refNo ?? '',
+      refNo: b.refNo ?? "",
       vendorId: b.vendorId ? String(b.vendorId) : null,
       amount: b.amount ?? 0,
       status: b.status,
-      invoiceDate: b.invoiceDate ? new Date(b.invoiceDate).toISOString() : '',
+      invoiceDate: b.invoiceDate ? new Date(b.invoiceDate).toISOString() : "",
       scope: {
-        type: b.scope?.type ?? 'Company',
+        type: b.scope?.type ?? "Company",
         id: b.scope?.id ? String(b.scope.id) : null,
       },
     };
 
     // A. Draft / no JE link — never reaches the ledger.
-    if (b.status === 'Draft' || !b.journalEntryId) {
-      return { ...base, reflected: false, reason: 'UNPOSTED' as const };
+    if (b.status === "Draft" || !b.journalEntryId) {
+      return { ...base, reflected: false, reason: "UNPOSTED" as const };
     }
 
     // B. JE link present but the JE is gone or not Posted (e.g. voided).
     const je = jeById.get(String(b.journalEntryId));
-    if (!je || je.status !== 'Posted') {
-      return { ...base, reflected: false, reason: 'JE_MISSING' as const };
+    if (!je || je.status !== "Posted") {
+      return { ...base, reflected: false, reason: "JE_MISSING" as const };
     }
 
     // C. Posted but no line hits a P&L account (e.g. a capital/asset bill).
@@ -177,7 +177,7 @@ export async function classifyBills(
       plSet.has(String(l.accountId)),
     );
     if (!hasPlLine) {
-      return { ...base, reflected: false, reason: 'NON_PL_ACCOUNT' as const };
+      return { ...base, reflected: false, reason: "NON_PL_ACCOUNT" as const };
     }
 
     // D. Structurally reflected, but the JE date is outside the asked window.
@@ -185,7 +185,7 @@ export async function classifyBills(
       return {
         ...base,
         reflected: false,
-        reason: 'OUTSIDE_DATE_RANGE' as const,
+        reason: "OUTSIDE_DATE_RANGE" as const,
       };
     }
 

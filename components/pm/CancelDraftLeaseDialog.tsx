@@ -61,7 +61,7 @@ export function CancelDraftLeaseDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader title="Cancel draft lease?" />
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           This draft can be re-opened later ([G-B-1] — cancelled drafts revert
           to Draft on a subsequent edit).
         </p>

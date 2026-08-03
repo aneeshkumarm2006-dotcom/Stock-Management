@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useUiStore } from "@/store/useUiStore";
 import { useToast } from "@/components/ui/toast";
+import { usePmMoneyFormatter } from "@/components/pm/PmCurrencyProvider";
 
 export interface DeleteBillTarget {
   id: string;
@@ -38,12 +39,12 @@ export function DeleteBillDialog({
 }) {
   const isOffline = useUiStore((s) => s.isOffline);
   const { toast } = useToast();
+  const fmt = usePmMoneyFormatter();
   const [saving, setSaving] = React.useState<null | "hard" | "void">(null);
 
   // Payments block deletion; the API 409 is the source of truth, but reflect the
   // known statuses up front so the destructive actions aren't even offered.
-  const blocked =
-    bill?.status === "Partially paid" || bill?.status === "Paid";
+  const blocked = bill?.status === "Partially paid" || bill?.status === "Paid";
   // Voiding only applies to a posted bill — a Draft has no journal entry, so the
   // only sensible action there is a permanent delete.
   const canVoid = Boolean(bill) && bill?.status !== "Draft";
@@ -93,7 +94,9 @@ export function DeleteBillDialog({
     }
   }
 
-  const amount = bill ? `$${(bill.amount / 100).toFixed(2)}` : "";
+  // String context (dialog copy), so the formatter hook rather than
+  // <CurrencyAmount>. Converts into the user's display currency.
+  const amount = bill ? fmt(bill.amount) : "";
 
   return (
     <Dialog open={Boolean(bill)} onOpenChange={(o) => !o && onClose()}>
@@ -120,15 +123,16 @@ export function DeleteBillDialog({
         ) : (
           <div className="space-y-2 text-[12px] text-fg-muted">
             <p>
-              <strong className="text-fg">Delete permanently</strong> removes the
-              bill{canVoid ? " and its journal entry" : ""} entirely — nothing
-              remains in the general ledger or Financials. This cannot be undone.
+              <strong className="text-fg">Delete permanently</strong> removes
+              the bill{canVoid ? " and its journal entry" : ""} entirely —
+              nothing remains in the general ledger or Financials. This cannot
+              be undone.
             </p>
             {canVoid && (
               <p>
-                <strong className="text-fg">Void</strong> keeps the bill for audit
-                and writes a reversing journal entry (a reversal row stays in the
-                general ledger).
+                <strong className="text-fg">Void</strong> keeps the bill for
+                audit and writes a reversing journal entry (a reversal row stays
+                in the general ledger).
               </p>
             )}
           </div>

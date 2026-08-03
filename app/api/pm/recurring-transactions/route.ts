@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { RecurringTransaction } from '@/lib/db/models/pm/RecurringTransaction';
+import { Property } from '@/lib/db/models/pm/Property';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -29,6 +30,40 @@ interface RtLeanLike {
   memo?: string;
   queueForPrinting?: boolean;
   lastPostedDate?: Date | null;
+  amounts?: Array<{
+    scopeType?: string | null;
+    scopeId?: unknown;
+    amount?: number;
+  }>;
+}
+
+/**
+ * Collapse a rule's per-line scopes into one label for the list.
+ *
+ * Mirrors the poster's grouping key exactly (a row counts as Property only
+ * when it names a real property), so what the list says can never disagree
+ * with what actually posts.
+ */
+function summariseScope(
+  amounts: RtLeanLike['amounts'],
+  propertyNames: Map<string, string>,
+):
+  | { type: 'Company' }
+  | { type: 'Property'; propertyId: string; propertyName: string }
+  | { type: 'Multiple'; count: number } {
+  const keys = new Set(
+    (amounts ?? []).map((a) =>
+      a.scopeType === 'Property' && a.scopeId ? String(a.scopeId) : 'company',
+    ),
+  );
+  if (keys.size > 1) return { type: 'Multiple', count: keys.size };
+  const only = Array.from(keys)[0];
+  if (!only || only === 'company') return { type: 'Company' };
+  return {
+    type: 'Property',
+    propertyId: only,
+    propertyName: propertyNames.get(only) ?? 'Unknown property',
+  };
 }
 
 export async function GET(request: Request) {
@@ -48,10 +83,33 @@ export async function GET(request: Request) {
     .sort({ nextDate: 1 })
     .lean<RtLeanLike[]>();
 
+  // Resolve every referenced property name in one query rather than per row.
+  const propertyIds = Array.from(
+    new Set(
+      rows.flatMap((r) =>
+        (r.amounts ?? [])
+          .filter((a) => a.scopeType === 'Property' && a.scopeId)
+          .map((a) => String(a.scopeId)),
+      ),
+    ),
+  );
+  const propertyNames = new Map<string, string>();
+  if (propertyIds.length > 0) {
+    const props = await Property.find({
+      _id: { $in: propertyIds.map((id) => new Types.ObjectId(id)) },
+      organizationId: new Types.ObjectId(ctx.orgId),
+    })
+      .select({ propertyName: 1 })
+      .lean<{ _id: Types.ObjectId; propertyName: string }[]>();
+    for (const p of props) propertyNames.set(String(p._id), p.propertyName);
+  }
+
   return NextResponse.json(
     rows.map((r) => ({
       id: String(r._id),
       type: r.type,
+      scope: summariseScope(r.amounts, propertyNames),
+      amount: (r.amounts ?? []).reduce((s, a) => s + (a.amount ?? 0), 0),
       payee: r.payee
         ? { type: r.payee.type, id: String(r.payee.id) }
         : null,

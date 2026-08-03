@@ -37,7 +37,13 @@ function Donut({
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
   return (
-    <svg width={120} height={120} viewBox="0 0 120 120" role="img" aria-label="Renters insurance breakdown">
+    <svg
+      width={120}
+      height={120}
+      viewBox="0 0 120 120"
+      role="img"
+      aria-label="Renters insurance breakdown"
+    >
       <circle
         cx={60}
         cy={60}
@@ -134,7 +140,11 @@ export function RentersInsuranceWidget() {
             centerSub="Total"
           />
           <ul className="flex-1 space-y-1 text-xs">
-            <Legend color={COLORS.msi} label="MSI policy" value={counts?.msi ?? 0} />
+            <Legend
+              color={COLORS.msi}
+              label="MSI policy"
+              value={counts?.msi ?? 0}
+            />
             <Legend
               color={COLORS.thirdParty}
               label="Third Party"

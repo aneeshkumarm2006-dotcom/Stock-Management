@@ -95,7 +95,13 @@ export function ExpiringLeasesWidget() {
   const windowCount = data?.expiringByWindow[tab] ?? 0;
   const stages = data?.leaseStages;
   const max = stages
-    ? Math.max(stages.notStarted, stages.offers, stages.renewals, stages.moveOuts, 1)
+    ? Math.max(
+        stages.notStarted,
+        stages.offers,
+        stages.renewals,
+        stages.moveOuts,
+        1,
+      )
     : 1;
 
   return (

@@ -105,7 +105,9 @@ export function EntityImageGallery({
     // 1. Get signed Cloudinary payload.
     const signRes = await fetch("/api/pm/files/sign", { method: "POST" });
     if (!signRes.ok) {
-      const err = (await signRes.json().catch(() => ({}))) as { error?: string };
+      const err = (await signRes.json().catch(() => ({}))) as {
+        error?: string;
+      };
       toast({
         title: "Storage not ready",
         description: err.error ?? "Could not get upload signature.",
@@ -163,7 +165,9 @@ export function EntityImageGallery({
       }),
     });
     if (!metaRes.ok) {
-      const err = (await metaRes.json().catch(() => ({}))) as { error?: string };
+      const err = (await metaRes.json().catch(() => ({}))) as {
+        error?: string;
+      };
       toast({ title: "Save failed", description: err.error, variant: "error" });
       return null;
     }
@@ -188,7 +192,9 @@ export function EntityImageGallery({
         body: JSON.stringify({ images: nextIds }),
       });
       if (!patchRes.ok) {
-        const err = (await patchRes.json().catch(() => ({}))) as { error?: string };
+        const err = (await patchRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
         toast({
           title: "Attach failed",
           description: err.error,
@@ -264,7 +270,9 @@ export function EntityImageGallery({
             ? "No images yet."
             : `${images.length} image${images.length === 1 ? "" : "s"}.`}
           {entityType === "Property" && images.length > 0 && (
-            <span className="ml-1">The starred image is used as the cover.</span>
+            <span className="ml-1">
+              The starred image is used as the cover.
+            </span>
           )}
         </p>
         <div>
@@ -314,7 +322,7 @@ export function EntityImageGallery({
                   />
                 </a>
                 {isCover && (
-                  <span className="absolute left-1 top-1 flex items-center gap-1 rounded bg-primary/90 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-primary-foreground">
+                  <span className="text-primary-foreground absolute left-1 top-1 flex items-center gap-1 rounded bg-primary/90 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-widest">
                     <Star className="h-3 w-3" /> Cover
                   </span>
                 )}

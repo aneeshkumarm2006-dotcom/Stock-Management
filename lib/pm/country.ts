@@ -10,18 +10,18 @@
 // outstanding-balances aggregator; it was lifted here when the rent roll and
 // properties list needed the same US/CAN separation.
 
-export const OTHER = 'Other';
+export const OTHER = "Other";
 
 // Normalize the free-text `address.country` into a stable display bucket. The
 // data uses ISO-ish codes ("US"/"CA") but we accept common spellings too.
 // Unknown-but-present values pass through verbatim (so an org operating in a
 // third country still gets its own named group); blank falls back to `Other`.
 export function normalizeCountry(raw: string | undefined | null): string {
-  const c = (raw ?? '').trim().toUpperCase();
-  if (['US', 'USA', 'U.S.', 'U.S.A.', 'UNITED STATES'].includes(c)) {
-    return 'United States';
+  const c = (raw ?? "").trim().toUpperCase();
+  if (["US", "USA", "U.S.", "U.S.A.", "UNITED STATES"].includes(c)) {
+    return "United States";
   }
-  if (['CA', 'CAN', 'CANADA'].includes(c)) return 'Canada';
+  if (["CA", "CAN", "CANADA"].includes(c)) return "Canada";
   return raw && raw.trim() ? raw.trim() : OTHER;
 }
 
@@ -32,7 +32,7 @@ export function normalizeCountry(raw: string | undefined | null): string {
 // balances widget — keep their value-based sort and only borrow the
 // `Other`-last rule.)
 const COUNTRY_PRIORITY: Record<string, number> = {
-  'United States': 0,
+  "United States": 0,
   Canada: 1,
 };
 

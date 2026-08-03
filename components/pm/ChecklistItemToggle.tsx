@@ -63,7 +63,7 @@ export function ChecklistItemToggle({
 
   return (
     <div className="flex items-center justify-between gap-3 rounded border px-3 py-2">
-      <label className="flex items-center gap-3 cursor-pointer flex-1">
+      <label className="flex flex-1 cursor-pointer items-center gap-3">
         <input
           type="checkbox"
           checked={item.checked}
@@ -72,12 +72,12 @@ export function ChecklistItemToggle({
         />
         <div className="flex flex-col">
           <span
-            className={`text-sm ${item.checked ? "line-through text-muted-foreground" : ""}`}
+            className={`text-sm ${item.checked ? "text-muted-foreground line-through" : ""}`}
           >
             {item.label}
           </span>
           {item.checkedAt && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-muted-foreground text-xs">
               {item.systemChecked
                 ? `Auto-checked by System on ${new Date(item.checkedAt).toLocaleDateString()}`
                 : `Checked on ${new Date(item.checkedAt).toLocaleDateString()}`}

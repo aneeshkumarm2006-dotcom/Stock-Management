@@ -8,8 +8,8 @@
 //
 // Falls back to `"{locationType} #{id-prefix}"` when an FK is dangling
 // (BR-FI keeps the row even if the parent was archived).
-import mongoose, { Types } from 'mongoose';
-import { COLLECTION_BY_LOCATION_TYPE } from '@/lib/pm/parentTypes';
+import mongoose, { Types } from "mongoose";
+import { COLLECTION_BY_LOCATION_TYPE } from "@/lib/pm/parentTypes";
 
 export interface LocationKey {
   locationType: string;
@@ -109,96 +109,99 @@ const HREF_BY_LOCATION_TYPE: Record<
 function formatPerson(d: IdRow): string {
   const isCompany = d.isCompany;
   const companyName = d.companyName;
-  if (isCompany && typeof companyName === 'string' && companyName.trim()) {
+  if (isCompany && typeof companyName === "string" && companyName.trim()) {
     return companyName;
   }
-  const first = typeof d.firstName === 'string' ? d.firstName : '';
-  const last = typeof d.lastName === 'string' ? d.lastName : '';
+  const first = typeof d.firstName === "string" ? d.firstName : "";
+  const last = typeof d.lastName === "string" ? d.lastName : "";
   const joined = `${first} ${last}`.trim();
-  return joined || '(unnamed)';
+  return joined || "(unnamed)";
 }
 
-function formatRowForCollection(
-  collection: string,
-  row: IdRow,
-): string {
+function formatRowForCollection(collection: string, row: IdRow): string {
   switch (collection) {
-    case 'pm_properties':
-      return String(row.propertyName ?? 'Property');
-    case 'pm_units':
-      return `Unit ${String(row.unitId ?? '')}`.trim();
-    case 'pm_tenants':
-    case 'pm_prospects':
-    case 'pm_applicants':
+    case "pm_properties":
+      return String(row.propertyName ?? "Property");
+    case "pm_units":
+      return `Unit ${String(row.unitId ?? "")}`.trim();
+    case "pm_tenants":
+    case "pm_prospects":
+    case "pm_applicants":
       return formatPerson(row);
-    case 'pm_rental_owners':
-    case 'pm_vendors':
+    case "pm_rental_owners":
+    case "pm_vendors":
       return formatPerson(row);
-    case 'pm_bank_accounts':
-    case 'pm_company_accounts':
-    case 'pm_locked_period_policies':
-    case 'pm_email_templates':
-      return String(row.name ?? '(unnamed)');
-    case 'pm_chart_of_accounts': {
-      const num = row.accountNumber ? `${String(row.accountNumber)} ` : '';
-      return `${num}${String(row.accountName ?? '')}`.trim() || 'Account';
+    case "pm_bank_accounts":
+    case "pm_company_accounts":
+    case "pm_locked_period_policies":
+    case "pm_email_templates":
+      return String(row.name ?? "(unnamed)");
+    case "pm_chart_of_accounts": {
+      const num = row.accountNumber ? `${String(row.accountNumber)} ` : "";
+      return `${num}${String(row.accountName ?? "")}`.trim() || "Account";
     }
-    case 'pm_journal_entries':
-      return `JE #${String(row.entryNumber ?? '')}`.trim();
-    case 'pm_deposits':
-      return `Deposit #${String(row.depositNumber ?? '')}`.trim();
-    case 'pm_listings':
-      return String(row.headline ?? 'Listing');
-    case 'pm_draft_leases': {
-      const names = Array.isArray(row.tenantNames) ? row.tenantNames.join(', ') : '';
-      return names || 'Draft lease';
+    case "pm_journal_entries":
+      return `JE #${String(row.entryNumber ?? "")}`.trim();
+    case "pm_deposits":
+      return `Deposit #${String(row.depositNumber ?? "")}`.trim();
+    case "pm_listings":
+      return String(row.headline ?? "Listing");
+    case "pm_draft_leases": {
+      const names = Array.isArray(row.tenantNames)
+        ? row.tenantNames.join(", ")
+        : "";
+      return names || "Draft lease";
     }
-    case 'pm_leases': {
-      const names = Array.isArray(row.tenantNames) ? row.tenantNames.join(', ') : '';
-      return names || 'Lease';
+    case "pm_leases": {
+      const names = Array.isArray(row.tenantNames)
+        ? row.tenantNames.join(", ")
+        : "";
+      return names || "Lease";
     }
-    case 'pm_renters_insurance_policies': {
-      const provider = row.providerName ? String(row.providerName) : '';
-      const policyNumber = row.policyNumber ? String(row.policyNumber) : '';
-      return [provider, policyNumber].filter(Boolean).join(' ') || 'Policy';
+    case "pm_renters_insurance_policies": {
+      const provider = row.providerName ? String(row.providerName) : "";
+      const policyNumber = row.policyNumber ? String(row.policyNumber) : "";
+      return [provider, policyNumber].filter(Boolean).join(" ") || "Policy";
     }
-    case 'pm_pets':
-      return [row.name, row.species].filter(Boolean).join(' • ') || 'Pet';
-    case 'pm_tasks':
-      return `#${String(row.taskId ?? '')} ${String(row.title ?? '')}`.trim();
-    case 'pm_work_orders': {
-      const num = row.workOrderNumber ? `WO #${String(row.workOrderNumber)}` : 'Work order';
-      const subj = row.subject ? ` — ${String(row.subject)}` : '';
+    case "pm_pets":
+      return [row.name, row.species].filter(Boolean).join(" • ") || "Pet";
+    case "pm_tasks":
+      return `#${String(row.taskId ?? "")} ${String(row.title ?? "")}`.trim();
+    case "pm_work_orders": {
+      const num = row.workOrderNumber
+        ? `WO #${String(row.workOrderNumber)}`
+        : "Work order";
+      const subj = row.subject ? ` — ${String(row.subject)}` : "";
       return `${num}${subj}`;
     }
-    case 'pm_bills':
-      return `Bill #${String(row.billNumber ?? '')}`.trim();
-    case 'pm_bill_payments':
-      return `Payment #${String(row.paymentNumber ?? '')}`.trim();
-    case 'pm_recurring_transactions':
-      return String(row.memo ?? 'Recurring');
-    case 'pm_eft_requests':
-      return `EFT batch #${String(row.batchNumber ?? '')}`.trim();
-    case 'pm_calendar_events':
-      return String(row.title ?? 'Event');
-    case 'pm_projects':
-      return `#${String(row.projectId ?? '')} ${String(row.name ?? '')}`.trim();
-    case 'pm_recurring_tasks':
-      return String(row.title ?? 'Recurring task');
-    case 'pm_owner_contribution_requests':
-      return `Owner contribution${row.amount ? ` $${String(row.amount)}` : ''}`;
-    case 'pm_email_messages':
-      return String(row.subject ?? 'Email');
-    case 'pm_email_threads':
-      return String(row.subject ?? 'Thread');
+    case "pm_bills":
+      return `Bill #${String(row.billNumber ?? "")}`.trim();
+    case "pm_bill_payments":
+      return `Payment #${String(row.paymentNumber ?? "")}`.trim();
+    case "pm_recurring_transactions":
+      return String(row.memo ?? "Recurring");
+    case "pm_eft_requests":
+      return `EFT batch #${String(row.batchNumber ?? "")}`.trim();
+    case "pm_calendar_events":
+      return String(row.title ?? "Event");
+    case "pm_projects":
+      return `#${String(row.projectId ?? "")} ${String(row.name ?? "")}`.trim();
+    case "pm_recurring_tasks":
+      return String(row.title ?? "Recurring task");
+    case "pm_owner_contribution_requests":
+      return `Owner contribution${row.amount ? ` $${String(row.amount)}` : ""}`;
+    case "pm_email_messages":
+      return String(row.subject ?? "Email");
+    case "pm_email_threads":
+      return String(row.subject ?? "Thread");
     default:
       return collection;
   }
 }
 
 const ACCOUNT_DISPLAY: LocationDisplay = {
-  label: '(Account file)',
-  subLabel: 'Account',
+  label: "(Account file)",
+  subLabel: "Account",
   href: null,
 };
 
@@ -216,12 +219,12 @@ export async function resolveLocationDisplays(
 ): Promise<Record<string, LocationDisplay>> {
   const out: Record<string, LocationDisplay> = {};
   const orgObjectId =
-    typeof orgId === 'string' ? new Types.ObjectId(orgId) : orgId;
+    typeof orgId === "string" ? new Types.ObjectId(orgId) : orgId;
 
   // Group ids by locationType.
   const grouped = new Map<string, Set<string>>();
   for (const { locationType, locationId } of locations) {
-    if (locationType === 'Account' || !locationId) continue;
+    if (locationType === "Account" || !locationId) continue;
     if (!Types.ObjectId.isValid(locationId)) continue;
     const set = grouped.get(locationType) ?? new Set<string>();
     set.add(locationId);
@@ -238,8 +241,8 @@ export async function resolveLocationDisplays(
       const projection = PROJECTION_BY_COLLECTION[collection];
       if (!projection) return;
       const objectIds = Array.from(idSet).map((id) => new Types.ObjectId(id));
-      const rows = await conn.db!
-        .collection<IdRow>(collection)
+      const rows = await conn
+        .db!.collection<IdRow>(collection)
         .find(
           { _id: { $in: objectIds }, organizationId: orgObjectId },
           { projection },

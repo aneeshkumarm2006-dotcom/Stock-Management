@@ -18,14 +18,14 @@
 //              window so future writes hitting `txnDate ≤ endDate` on
 //              this BankAccount surface a 423 (BR-AC-17)
 //            * Bumps BankAccount.lastReconciliationDate
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { Reconciliation } from '@/lib/db/models/pm/Reconciliation';
-import { BankAccount } from '@/lib/db/models/pm/BankAccount';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import { LockedPeriodPolicy } from '@/lib/db/models/pm/LockedPeriodPolicy';
-import type { PmContext } from '@/lib/auth/getCurrentUser';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { Reconciliation } from "@/lib/db/models/pm/Reconciliation";
+import { BankAccount } from "@/lib/db/models/pm/BankAccount";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { LockedPeriodPolicy } from "@/lib/db/models/pm/LockedPeriodPolicy";
+import type { PmContext } from "@/lib/auth/getCurrentUser";
 
 export interface UnclearedLineRow {
   journalEntryId: string;
@@ -59,23 +59,25 @@ export async function computeUnclearedLines(opts: {
 
   const jes = await JournalEntry.find({
     organizationId: opts.orgId,
-    status: 'Posted',
+    status: "Posted",
     date: { $gte: opts.startDate, $lte: opts.endDate },
-    'lines.accountId': bank.chartOfAccountId,
+    "lines.accountId": bank.chartOfAccountId,
   })
-    .select('date memo lines')
-    .lean<{
-      _id: Types.ObjectId;
-      date: Date;
-      memo?: string;
-      lines: Array<{
+    .select("date memo lines")
+    .lean<
+      {
         _id: Types.ObjectId;
-        accountId: Types.ObjectId;
-        debit: number;
-        credit: number;
-        cleared?: boolean;
-      }>;
-    }[]>();
+        date: Date;
+        memo?: string;
+        lines: Array<{
+          _id: Types.ObjectId;
+          accountId: Types.ObjectId;
+          debit: number;
+          credit: number;
+          cleared?: boolean;
+        }>;
+      }[]
+    >();
 
   const rows: UnclearedLineRow[] = [];
   for (const je of jes) {
@@ -86,7 +88,7 @@ export async function computeUnclearedLines(opts: {
         journalEntryId: String(je._id),
         lineId: String(line._id),
         date: je.date,
-        memo: je.memo ?? '',
+        memo: je.memo ?? "",
         debit: line.debit ?? 0,
         credit: line.credit ?? 0,
       });
@@ -118,7 +120,7 @@ export async function computeBookEndingBalance(opts: {
   const prior = await Reconciliation.findOne({
     organizationId: opts.orgId,
     bankAccountId: rec.bankAccountId,
-    status: 'Completed',
+    status: "Completed",
     endDate: { $lt: rec.endDate },
   })
     .sort({ endDate: -1 })
@@ -134,11 +136,13 @@ export async function computeBookEndingBalance(opts: {
     _id: { $in: jeIds },
     organizationId: opts.orgId,
   })
-    .select('lines')
-    .lean<{
-      _id: Types.ObjectId;
-      lines: Array<{ _id: Types.ObjectId; debit: number; credit: number }>;
-    }[]>();
+    .select("lines")
+    .lean<
+      {
+        _id: Types.ObjectId;
+        lines: Array<{ _id: Types.ObjectId; debit: number; credit: number }>;
+      }[]
+    >();
 
   const clearedSet = new Set(
     rec.clearedLines.map((c) => `${c.journalEntryId}:${c.lineId}`),
@@ -165,10 +169,7 @@ async function postAdjustmentJournalEntry(opts: {
   serviceChargeCents: number;
   interestEarnedCents: number;
 }): Promise<Types.ObjectId | null> {
-  if (
-    opts.serviceChargeCents <= 0 &&
-    opts.interestEarnedCents <= 0
-  ) {
+  if (opts.serviceChargeCents <= 0 && opts.interestEarnedCents <= 0) {
     return null;
   }
 
@@ -176,31 +177,31 @@ async function postAdjustmentJournalEntry(opts: {
     opts.serviceChargeCents > 0
       ? ChartOfAccount.findOne({
           organizationId: opts.orgId,
-          defaultFor: 'Bank Service Charges',
+          defaultFor: "Bank Service Charges",
         }).lean<{ _id: Types.ObjectId } | null>()
       : null,
     opts.interestEarnedCents > 0
       ? ChartOfAccount.findOne({
           organizationId: opts.orgId,
-          defaultFor: 'Interest Income',
+          defaultFor: "Interest Income",
         }).lean<{ _id: Types.ObjectId } | null>()
       : null,
   ]);
 
   if (opts.serviceChargeCents > 0 && !serviceCoA) {
     throw new Error(
-      'No Bank Service Charges CoA configured. Run the system seeder.',
+      "No Bank Service Charges CoA configured. Run the system seeder.",
     );
   }
   if (opts.interestEarnedCents > 0 && !interestCoA) {
     throw new Error(
-      'No Interest Income CoA configured. Run the system seeder.',
+      "No Interest Income CoA configured. Run the system seeder.",
     );
   }
 
   const lines: Array<{
     accountId: Types.ObjectId;
-    scopeType: 'Property' | 'Company';
+    scopeType: "Property" | "Company";
     scopeId: Types.ObjectId | null;
     unitId: null;
     description: string;
@@ -210,19 +211,19 @@ async function postAdjustmentJournalEntry(opts: {
   if (opts.serviceChargeCents > 0 && serviceCoA) {
     lines.push({
       accountId: serviceCoA._id,
-      scopeType: 'Company',
+      scopeType: "Company",
       scopeId: null,
       unitId: null,
-      description: 'Bank service charge (reconciliation)',
+      description: "Bank service charge (reconciliation)",
       debit: opts.serviceChargeCents,
       credit: 0,
     });
     lines.push({
       accountId: opts.bankCashCoAId,
-      scopeType: 'Company',
+      scopeType: "Company",
       scopeId: null,
       unitId: null,
-      description: 'Bank service charge',
+      description: "Bank service charge",
       debit: 0,
       credit: opts.serviceChargeCents,
     });
@@ -230,19 +231,19 @@ async function postAdjustmentJournalEntry(opts: {
   if (opts.interestEarnedCents > 0 && interestCoA) {
     lines.push({
       accountId: opts.bankCashCoAId,
-      scopeType: 'Company',
+      scopeType: "Company",
       scopeId: null,
       unitId: null,
-      description: 'Bank interest earned (reconciliation)',
+      description: "Bank interest earned (reconciliation)",
       debit: opts.interestEarnedCents,
       credit: 0,
     });
     lines.push({
       accountId: interestCoA._id,
-      scopeType: 'Company',
+      scopeType: "Company",
       scopeId: null,
       unitId: null,
-      description: 'Bank interest earned',
+      description: "Bank interest earned",
       debit: 0,
       credit: opts.interestEarnedCents,
     });
@@ -251,11 +252,11 @@ async function postAdjustmentJournalEntry(opts: {
   const je = await JournalEntry.create({
     organizationId: opts.orgId,
     date: opts.statementDate,
-    scopeType: 'Company',
+    scopeType: "Company",
     scopeId: null,
-    memo: 'Reconciliation adjustment',
+    memo: "Reconciliation adjustment",
     lines,
-    status: 'Posted',
+    status: "Posted",
     createdByUserId: new Types.ObjectId(opts.ctx.userId),
   });
   return je._id;
@@ -297,8 +298,8 @@ export async function commitReconciliation(
     _id: recId,
     organizationId: orgObjectId,
   });
-  if (!rec) throw new Error('Reconciliation not found');
-  if (rec.status !== 'In progress') {
+  if (!rec) throw new Error("Reconciliation not found");
+  if (rec.status !== "In progress") {
     throw new Error(`Cannot commit a ${rec.status} reconciliation.`);
   }
 
@@ -326,7 +327,7 @@ export async function commitReconciliation(
   ).lean<{ chartOfAccountId?: Types.ObjectId | null } | null>();
   if (!bank?.chartOfAccountId) {
     throw new Error(
-      'BankAccount has no Chart of Accounts mapping; configure it before committing.',
+      "BankAccount has no Chart of Accounts mapping; configure it before committing.",
     );
   }
 
@@ -346,13 +347,13 @@ export async function commitReconciliation(
       {
         _id: ref.journalEntryId,
         organizationId: orgObjectId,
-        'lines._id': ref.lineId,
+        "lines._id": ref.lineId,
       },
       {
         $set: {
-          'lines.$.cleared': true,
-          'lines.$.clearedDate': rec.endDate,
-          'lines.$.reconciliationId': rec._id,
+          "lines.$.cleared": true,
+          "lines.$.clearedDate": rec.endDate,
+          "lines.$.reconciliationId": rec._id,
         },
       },
     );
@@ -369,7 +370,7 @@ export async function commitReconciliation(
   const priorReconciliation = await Reconciliation.findOne({
     organizationId: orgObjectId,
     bankAccountId: rec.bankAccountId,
-    status: 'Completed',
+    status: "Completed",
     endDate: { $lt: rec.endDate },
   })
     .sort({ endDate: -1 })
@@ -378,18 +379,18 @@ export async function commitReconciliation(
 
   const policy = await LockedPeriodPolicy.create({
     organizationId: orgObjectId,
-    scope: 'Per-bank-account',
+    scope: "Per-bank-account",
     propertyId: null,
     bankAccountId: rec.bankAccountId,
     fromDate: lockFromDate,
     toDate: rec.endDate,
     message: `Reconciliation period locked ${lockFromDate.toISOString().slice(0, 10)} through ${rec.endDate.toISOString().slice(0, 10)} (BR-AC-17).`,
     active: true,
-    createdBy: 'Reconciliation commit',
+    createdBy: "Reconciliation commit",
     createdByUserId: new Types.ObjectId(input.ctx.userId),
   });
 
-  rec.status = 'Completed';
+  rec.status = "Completed";
   rec.completedAt = new Date();
   rec.completedByUserId = new Types.ObjectId(input.ctx.userId);
   rec.bookEndingBalance = adjustedBook;
@@ -426,9 +427,9 @@ export async function voidReconciliation(input: {
     _id: new Types.ObjectId(input.reconciliationId),
     organizationId: orgObjectId,
   });
-  if (!rec) throw new Error('Reconciliation not found');
-  if (rec.status !== 'Completed') {
-    throw new Error('Only Completed reconciliations can be voided.');
+  if (!rec) throw new Error("Reconciliation not found");
+  if (rec.status !== "Completed") {
+    throw new Error("Only Completed reconciliations can be voided.");
   }
 
   for (const ref of rec.clearedLines) {
@@ -436,13 +437,13 @@ export async function voidReconciliation(input: {
       {
         _id: ref.journalEntryId,
         organizationId: orgObjectId,
-        'lines._id': ref.lineId,
+        "lines._id": ref.lineId,
       },
       {
         $set: {
-          'lines.$.cleared': false,
-          'lines.$.clearedDate': null,
-          'lines.$.reconciliationId': null,
+          "lines.$.cleared": false,
+          "lines.$.clearedDate": null,
+          "lines.$.reconciliationId": null,
         },
       },
     );
@@ -455,7 +456,7 @@ export async function voidReconciliation(input: {
     );
   }
 
-  rec.status = 'Voided';
+  rec.status = "Voided";
   rec.voidedAt = new Date();
   rec.voidedByUserId = new Types.ObjectId(input.ctx.userId);
   await rec.save();
@@ -464,7 +465,7 @@ export async function voidReconciliation(input: {
   const prior = await Reconciliation.findOne({
     organizationId: orgObjectId,
     bankAccountId: rec.bankAccountId,
-    status: 'Completed',
+    status: "Completed",
   })
     .sort({ endDate: -1 })
     .lean<{ endDate: Date } | null>();

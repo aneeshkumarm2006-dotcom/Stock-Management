@@ -10,16 +10,16 @@
 //   3. Reminder dispatch — sweep upcoming events whose start −
 //      lead-time has elapsed but `reminderSentAt` is still null; write a
 //      Notification per active Tenant on the Property and stamp the row.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { CalendarEvent, type ICalendarEvent } from '@/lib/db/models/pm/CalendarEvent';
-import { Lease } from '@/lib/db/models/pm/Lease';
-import { Tenant } from '@/lib/db/models/pm/Tenant';
-import { Notification } from '@/lib/db/models/pm/Notification';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
 import {
-  CALENDAR_REMINDER_LEAD_MS,
-  type CalendarRepeat,
-} from '@/types/pm';
+  CalendarEvent,
+  type ICalendarEvent,
+} from "@/lib/db/models/pm/CalendarEvent";
+import { Lease } from "@/lib/db/models/pm/Lease";
+import { Tenant } from "@/lib/db/models/pm/Tenant";
+import { Notification } from "@/lib/db/models/pm/Notification";
+import { CALENDAR_REMINDER_LEAD_MS, type CalendarRepeat } from "@/types/pm";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -38,7 +38,7 @@ export interface ExpandedOccurrence {
 export function expandRecurrence(
   master: Pick<
     ICalendarEvent,
-    'startDate' | 'endDate' | 'repeat' | 'recurrenceExclusions' | '_id'
+    "startDate" | "endDate" | "repeat" | "recurrenceExclusions" | "_id"
   >,
   windowStart: Date,
   windowEnd: Date,
@@ -66,7 +66,7 @@ export function expandRecurrence(
   }
 
   const repeat = master.repeat as CalendarRepeat;
-  if (repeat === 'Does not repeat' || repeat === 'Custom') {
+  if (repeat === "Does not repeat" || repeat === "Custom") {
     push(master.startDate, true);
     return out;
   }
@@ -86,16 +86,16 @@ export function expandRecurrence(
 function stepForward(start: Date, repeat: CalendarRepeat, n: number): Date {
   const d = new Date(start);
   switch (repeat) {
-    case 'Daily':
+    case "Daily":
       d.setTime(start.getTime() + n * DAY_MS);
       return d;
-    case 'Weekly':
+    case "Weekly":
       d.setTime(start.getTime() + n * 7 * DAY_MS);
       return d;
-    case 'Monthly':
+    case "Monthly":
       d.setMonth(start.getMonth() + n);
       return d;
-    case 'Annually':
+    case "Annually":
       d.setFullYear(start.getFullYear() + n);
       return d;
     default:
@@ -109,42 +109,42 @@ function stepForward(start: Date, repeat: CalendarRepeat, n: number): Date {
 
 function icsEscape(value: string): string {
   return value
-    .replace(/\\/g, '\\\\')
-    .replace(/\n/g, '\\n')
-    .replace(/,/g, '\\,')
-    .replace(/;/g, '\\;');
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
 }
 
 function icsDate(d: Date, allDay: boolean): string {
   if (allDay) {
     const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(d.getUTCDate()).padStart(2, '0');
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
     return `${y}${m}${day}`;
   }
-  return d.toISOString().replace(/[-:]|\.\d{3}/g, '');
+  return d.toISOString().replace(/[-:]|\.\d{3}/g, "");
 }
 
 const REPEAT_TO_RRULE: Record<CalendarRepeat, string | null> = {
-  'Does not repeat': null,
-  Daily: 'FREQ=DAILY',
-  Weekly: 'FREQ=WEEKLY',
-  Monthly: 'FREQ=MONTHLY',
-  Annually: 'FREQ=YEARLY',
+  "Does not repeat": null,
+  Daily: "FREQ=DAILY",
+  Weekly: "FREQ=WEEKLY",
+  Monthly: "FREQ=MONTHLY",
+  Annually: "FREQ=YEARLY",
   Custom: null,
 };
 
 /** Build one VEVENT block for a single master row. */
 function buildVEvent(ev: ICalendarEvent): string[] {
   const lines: string[] = [];
-  lines.push('BEGIN:VEVENT');
+  lines.push("BEGIN:VEVENT");
   lines.push(`UID:${String(ev._id)}@stockportfolio.pm`);
   lines.push(`DTSTAMP:${icsDate(new Date(), false)}`);
   lines.push(
-    `DTSTART${ev.allDay ? ';VALUE=DATE' : ''}:${icsDate(ev.startDate, ev.allDay)}`,
+    `DTSTART${ev.allDay ? ";VALUE=DATE" : ""}:${icsDate(ev.startDate, ev.allDay)}`,
   );
   lines.push(
-    `DTEND${ev.allDay ? ';VALUE=DATE' : ''}:${icsDate(ev.endDate, ev.allDay)}`,
+    `DTEND${ev.allDay ? ";VALUE=DATE" : ""}:${icsDate(ev.endDate, ev.allDay)}`,
   );
   lines.push(`SUMMARY:${icsEscape(ev.eventName)}`);
   if (ev.description) {
@@ -155,7 +155,7 @@ function buildVEvent(ev: ICalendarEvent): string[] {
   }
   const rrule = REPEAT_TO_RRULE[ev.repeat as CalendarRepeat];
   if (rrule) lines.push(`RRULE:${rrule}`);
-  else if (ev.repeat === 'Custom' && ev.recurrenceRule) {
+  else if (ev.repeat === "Custom" && ev.recurrenceRule) {
     lines.push(`RRULE:${ev.recurrenceRule}`);
   }
   if (ev.recurrenceExclusions && ev.recurrenceExclusions.length > 0) {
@@ -163,23 +163,26 @@ function buildVEvent(ev: ICalendarEvent): string[] {
       lines.push(`EXDATE:${icsDate(ex, ev.allDay)}`);
     }
   }
-  lines.push('END:VEVENT');
+  lines.push("END:VEVENT");
   return lines;
 }
 
-export function buildIcs(events: ICalendarEvent[], calName = 'Calendar'): string {
+export function buildIcs(
+  events: ICalendarEvent[],
+  calName = "Calendar",
+): string {
   const lines: string[] = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Stock Portfolio PM//Calendar//EN',
-    'CALSCALE:GREGORIAN',
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Stock Portfolio PM//Calendar//EN",
+    "CALSCALE:GREGORIAN",
     `X-WR-CALNAME:${icsEscape(calName)}`,
   ];
   for (const ev of events) {
     lines.push(...buildVEvent(ev));
   }
-  lines.push('END:VCALENDAR');
-  return lines.join('\r\n');
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -201,9 +204,9 @@ export async function resolveActiveTenantsOnProperty(
   const leases = await Lease.find({
     organizationId: orgId,
     propertyId,
-    status: { $in: ['Active', 'Future'] },
+    status: { $in: ["Active", "Future"] },
   })
-    .select('tenants')
+    .select("tenants")
     .lean();
   const ids = new Set<string>();
   for (const lease of leases) {
@@ -219,7 +222,7 @@ export async function resolveActiveTenantsOnProperty(
     _id: { $in: Array.from(ids).map((id) => new Types.ObjectId(id)) },
     active: true,
   })
-    .select('_id email firstName lastName')
+    .select("_id email firstName lastName")
     .lean();
   return tenants.map((t) => ({
     tenantId: t._id,
@@ -248,12 +251,12 @@ export async function dispatchCalendarReminders(
 ): Promise<ReminderDispatchResult> {
   await connectToDatabase();
   const due = await CalendarEvent.find({
-    reminder: { $ne: 'None' },
+    reminder: { $ne: "None" },
     reminderSentAt: null,
     startDate: { $gt: now },
   })
     .select(
-      '_id organizationId propertyId eventName startDate reminder reminderSentAt',
+      "_id organizationId propertyId eventName startDate reminder reminderSentAt",
     )
     .lean<
       Array<{
@@ -283,14 +286,14 @@ export async function dispatchCalendarReminders(
         tenants.map((t) => ({
           organizationId: ev.organizationId,
           recipientUserId: t.tenantId,
-          kind: 'info',
+          kind: "info",
           title: `Upcoming: ${ev.eventName}`,
           body: `Starts ${ev.startDate.toISOString()}`,
           link: `/properties/calendars?event=${String(ev._id)}`,
         })),
         { ordered: false },
       ).catch((err) => {
-        console.error('dispatchCalendarReminders insertMany failed', err);
+        console.error("dispatchCalendarReminders insertMany failed", err);
       });
       sent += tenants.length;
     }

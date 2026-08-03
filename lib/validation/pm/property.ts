@@ -4,6 +4,10 @@ import { objectIdString } from './parentRef';
 
 const PROPERTY_CLASSES = ['Residential', 'Commercial'] as const;
 
+/** Keep in sync with PM_CURRENCIES in types/pm.ts. Declared locally to match
+ *  this file's convention of self-contained enum tuples. */
+const PM_CURRENCIES_TUPLE = ['USD', 'CAD'] as const;
+
 const RESIDENT_CENTER_PAYMENT_HISTORY = [
   'Hidden',
   'Tenant can view current lease only',
@@ -42,6 +46,9 @@ const baseFields = {
   // payloads sane.
   propertySubType: z.string().max(80).optional(),
   address: addressSchema.optional(),
+  // Native booking currency. `null` clears it back to "inherit the org
+  // default" — the state every property predating this field is in.
+  currency: z.enum(PM_CURRENCIES_TUPLE).nullable().optional(),
   photo: objectIdString.nullable().optional(),
   images: z.array(objectIdString).max(100).optional(),
   propertyManagerUserId: objectIdString.nullable().optional(),
@@ -82,6 +89,7 @@ export const propertyUpdateSchema = z
     propertyClass: baseFields.propertyClass,
     propertySubType: baseFields.propertySubType,
     address: baseFields.address,
+    currency: baseFields.currency,
     photo: baseFields.photo,
     images: baseFields.images,
     propertyManagerUserId: baseFields.propertyManagerUserId,

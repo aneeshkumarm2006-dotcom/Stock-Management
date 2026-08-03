@@ -7,23 +7,25 @@
 // Open-ended bounds: `fromDate=null` means "always blocked up to toDate";
 // `toDate=null` means "blocked from fromDate forward". Both null is unusual
 // but treated as "always blocked while active=true" (admins can override).
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { LockedPeriodPolicy } from '@/lib/db/models/pm/LockedPeriodPolicy';
-import { OrgMembership } from '@/lib/db/models/pm/OrgMembership';
-import { canOverrideLockedPeriod } from '@/lib/pm/roles';
-import type { PmContext } from '@/lib/auth/getCurrentUser';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { LockedPeriodPolicy } from "@/lib/db/models/pm/LockedPeriodPolicy";
+import { OrgMembership } from "@/lib/db/models/pm/OrgMembership";
+import { canOverrideLockedPeriod } from "@/lib/pm/roles";
+import type { PmContext } from "@/lib/auth/getCurrentUser";
 
 export class LockedPeriodError extends Error {
   readonly status = 423 as const;
   readonly policyId: string;
   readonly policyMessage: string;
   constructor(opts: { policyId: string; policyMessage: string }) {
-    super(opts.policyMessage || 'Transaction date falls inside a locked period.');
-    this.name = 'LockedPeriodError';
+    super(
+      opts.policyMessage || "Transaction date falls inside a locked period.",
+    );
+    this.name = "LockedPeriodError";
     this.policyId = opts.policyId;
     this.policyMessage =
-      opts.policyMessage || 'Transaction date falls inside a locked period.';
+      opts.policyMessage || "Transaction date falls inside a locked period.";
   }
 }
 
@@ -69,7 +71,7 @@ export async function resolveCanOverrideLockedPeriod(
     active: true,
   })
     .select({ roles: 1 })
-    .lean<{ roles: PmContext['roles'] } | null>();
+    .lean<{ roles: PmContext["roles"] } | null>();
   return canOverrideLockedPeriod({ roles: membership?.roles ?? [] });
 }
 
@@ -90,12 +92,12 @@ export async function assertWriteAllowed(
   // fromDate/toDate window — DEL-002 — so unrelated banks' history stays
   // writable). Per-property policies only match the line's own property.
   const scopeClauses: Record<string, unknown>[] = [
-    { scope: 'Global' },
-    { scope: 'Per-bank-account' },
+    { scope: "Global" },
+    { scope: "Per-bank-account" },
   ];
   if (input.scopePropertyId && Types.ObjectId.isValid(input.scopePropertyId)) {
     scopeClauses.push({
-      scope: 'Per-property',
+      scope: "Per-property",
       propertyId: new Types.ObjectId(input.scopePropertyId),
     });
   }
@@ -114,7 +116,7 @@ export async function assertWriteAllowed(
         policyId: String(policy._id),
         policyMessage:
           policy.message ??
-          'This date falls inside a locked accounting period.',
+          "This date falls inside a locked accounting period.",
       });
     }
   }

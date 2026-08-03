@@ -66,7 +66,9 @@ export function EvictionToggleDialog({
       return;
     }
     toast({
-      title: nextValue ? "Eviction pending flagged" : "Eviction pending cleared",
+      title: nextValue
+        ? "Eviction pending flagged"
+        : "Eviction pending cleared",
     });
     onClose();
     await onSaved();
@@ -78,7 +80,7 @@ export function EvictionToggleDialog({
         <DialogHeader
           title={nextValue ? "Flag eviction pending" : "Clear eviction pending"}
         />
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           {nextValue
             ? "EVICTION PENDING is an overlay attribute, not a status (BR-LL-3). The lease keeps its current status; the rent-roll row gains a red banner."
             : "Remove the EVICTION PENDING overlay from this lease."}

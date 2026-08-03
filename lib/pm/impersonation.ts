@@ -1,7 +1,7 @@
 // Sign-in-as-user helpers (DECISIONS.md [G-B-6]). Server reads/writes the
 // `impersonatedBy` JWT claim via NextAuth's `update()` trigger from the
 // `POST /api/pm/impersonate` route; this module only normalises the shape.
-import type { Session } from 'next-auth';
+import type { Session } from "next-auth";
 
 export interface ImpersonationState {
   /** Effective user id used by data queries while impersonation is active. */

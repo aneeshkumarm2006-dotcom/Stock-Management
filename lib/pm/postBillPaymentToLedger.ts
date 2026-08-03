@@ -1,14 +1,14 @@
 // postBillPaymentToLedger — invoked when a BillPayment is recorded.
 // Builds a JE: debit A/P (clearing the Bill), credit BankAccount cash CoA.
 // Also rolls up Bill.status to `Paid` or `Partially paid`.
-import { Types } from 'mongoose';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import { BankAccount } from '@/lib/db/models/pm/BankAccount';
-import { Bill } from '@/lib/db/models/pm/Bill';
-import { BillPayment } from '@/lib/db/models/pm/BillPayment';
-import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
-import type { PmContext } from '@/lib/auth/getCurrentUser';
+import { Types } from "mongoose";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { BankAccount } from "@/lib/db/models/pm/BankAccount";
+import { Bill } from "@/lib/db/models/pm/Bill";
+import { BillPayment } from "@/lib/db/models/pm/BillPayment";
+import { assertWriteAllowed, LockedPeriodError } from "@/lib/pm/lockedPeriod";
+import type { PmContext } from "@/lib/auth/getCurrentUser";
 
 export interface PostBillPaymentToLedgerInput {
   orgId: string;
@@ -25,7 +25,12 @@ export interface PostBillPaymentToLedgerResult {
   newBillStatus: string;
 }
 
-async function resolveBankCashAccountId(
+/**
+ * Cash CoA behind a bank account: the account's own `chartOfAccountId`, else
+ * the org-default Operating Cash. Exported because the recurring poster needs
+ * the same resolution for a recurring journal entry's offsetting leg.
+ */
+export async function resolveBankCashAccountId(
   orgObjectId: Types.ObjectId,
   bankAccountId: Types.ObjectId | null,
 ): Promise<Types.ObjectId | null> {
@@ -38,7 +43,7 @@ async function resolveBankCashAccountId(
   }
   const fallback = await ChartOfAccount.findOne({
     organizationId: orgObjectId,
-    defaultFor: 'Operating Cash',
+    defaultFor: "Operating Cash",
     active: true,
   }).lean<{ _id: Types.ObjectId } | null>();
   return fallback ? fallback._id : null;
@@ -52,16 +57,16 @@ export async function postBillPaymentToLedger(
     _id: input.billId,
     organizationId: orgObjectId,
   });
-  if (!bill) throw new Error('Bill not found.');
-  if (bill.status === 'Voided') {
-    throw new Error('Cannot pay a voided bill.');
+  if (!bill) throw new Error("Bill not found.");
+  if (bill.status === "Voided") {
+    throw new Error("Cannot pay a voided bill.");
   }
 
   await assertWriteAllowed({
     orgId: input.orgId,
     txnDate: input.paidDate,
     scopePropertyId:
-      bill.scope?.type === 'Property' && bill.scope.id
+      bill.scope?.type === "Property" && bill.scope.id
         ? String(bill.scope.id)
         : null,
     ctx: input.ctx,
@@ -69,10 +74,10 @@ export async function postBillPaymentToLedger(
 
   const ap = await ChartOfAccount.findOne({
     organizationId: orgObjectId,
-    defaultFor: 'Accounts Payable',
+    defaultFor: "Accounts Payable",
   }).lean<{ _id: Types.ObjectId } | null>();
   if (!ap) {
-    throw new Error('No Accounts Payable CoA configured for this org.');
+    throw new Error("No Accounts Payable CoA configured for this org.");
   }
 
   const cashCoA = await resolveBankCashAccountId(
@@ -81,14 +86,14 @@ export async function postBillPaymentToLedger(
   );
   if (!cashCoA) {
     throw new Error(
-      'Bank account has no linked Chart of Accounts row and no Operating Cash default exists.',
+      "Bank account has no linked Chart of Accounts row and no Operating Cash default exists.",
     );
   }
 
-  const scopeType: 'Property' | 'Company' =
-    bill.scope?.type === 'Property' && bill.scope.id ? 'Property' : 'Company';
+  const scopeType: "Property" | "Company" =
+    bill.scope?.type === "Property" && bill.scope.id ? "Property" : "Company";
   const scopeId =
-    scopeType === 'Property' && bill.scope.id
+    scopeType === "Property" && bill.scope.id
       ? new Types.ObjectId(String(bill.scope.id))
       : null;
 
@@ -105,7 +110,7 @@ export async function postBillPaymentToLedger(
         scopeType,
         scopeId,
         unitId: null,
-        description: 'A/P clearing',
+        description: "A/P clearing",
         debit: input.amount,
         credit: 0,
       },
@@ -114,12 +119,12 @@ export async function postBillPaymentToLedger(
         scopeType,
         scopeId,
         unitId: null,
-        description: 'Bank cash out',
+        description: "Bank cash out",
         debit: 0,
         credit: input.amount,
       },
     ],
-    status: 'Posted',
+    status: "Posted",
     createdByUserId: new Types.ObjectId(input.ctx.userId),
   });
 
@@ -131,7 +136,7 @@ export async function postBillPaymentToLedger(
         billId: bill._id,
       },
     },
-    { $group: { _id: null, total: { $sum: '$amount' } } },
+    { $group: { _id: null, total: { $sum: "$amount" } } },
   ]);
   // The current BillPayment row is created by the caller BEFORE this function
   // runs (see app/api/pm/bill-payments/route.ts: BillPayment.create → then
@@ -141,10 +146,10 @@ export async function postBillPaymentToLedger(
 
   let newStatus = bill.status;
   if (totalPaid >= bill.amount) {
-    newStatus = 'Paid';
+    newStatus = "Paid";
     bill.paidDate = input.paidDate;
   } else if (totalPaid > 0) {
-    newStatus = 'Partially paid';
+    newStatus = "Partially paid";
   }
   if (newStatus !== bill.status) {
     bill.status = newStatus as typeof bill.status;

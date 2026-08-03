@@ -142,9 +142,7 @@ export function AddProjectTasksModal({
                       checked={selected.has(r.id)}
                       onChange={() => toggle(r.id)}
                     />
-                    <span className="font-mono text-fg-muted">
-                      #{r.taskId}
-                    </span>
+                    <span className="font-mono text-fg-muted">#{r.taskId}</span>
                     <span className="flex-1 truncate">{r.title}</span>
                     <span className="text-xs text-fg-muted">{r.status}</span>
                   </li>

@@ -123,8 +123,9 @@ async function fetchOptions(
         return rows.map((r2) => ({
           id: r2.id,
           label: r2.isCompany
-            ? r2.companyName ?? "(unnamed)"
-            : `${r2.firstName ?? ""} ${r2.lastName ?? ""}`.trim() || "(unnamed)",
+            ? (r2.companyName ?? "(unnamed)")
+            : `${r2.firstName ?? ""} ${r2.lastName ?? ""}`.trim() ||
+              "(unnamed)",
           email: r2.primaryEmail ?? "",
         }));
       }
@@ -142,8 +143,9 @@ async function fetchOptions(
         return rows.map((r2) => ({
           id: r2.id,
           label: r2.isCompany
-            ? r2.companyName ?? "(unnamed)"
-            : `${r2.firstName ?? ""} ${r2.lastName ?? ""}`.trim() || "(unnamed)",
+            ? (r2.companyName ?? "(unnamed)")
+            : `${r2.firstName ?? ""} ${r2.lastName ?? ""}`.trim() ||
+              "(unnamed)",
           email: r2.primaryEmail ?? "",
         }));
       }
@@ -194,9 +196,11 @@ async function fetchOptions(
         }>;
         return rows.map((row) => {
           const names = (row.tenants ?? [])
-            .map((t) =>
-              (t.companyName?.trim() ||
-                `${t.firstName ?? ""} ${t.lastName ?? ""}`.trim()) ?? "",
+            .map(
+              (t) =>
+                (t.companyName?.trim() ||
+                  `${t.firstName ?? ""} ${t.lastName ?? ""}`.trim()) ??
+                "",
             )
             .filter(Boolean)
             .join(", ");
@@ -482,8 +486,8 @@ export function ComposeEmailModal({
           action === "send"
             ? "Email sent"
             : action === "schedule"
-            ? "Email scheduled"
-            : "Draft saved",
+              ? "Email scheduled"
+              : "Draft saved",
         description: `Recipients: ${data.recipientCount ?? 0}`,
       });
       onOpenChange(false);
@@ -524,8 +528,7 @@ export function ComposeEmailModal({
               />
               <p className="text-xs text-fg-muted">
                 Sending from custom mailboxes is coming soon — for now all
-                outbound mail is sent from{" "}
-                <code>{LOCKED_FROM_MAILBOX}</code>.
+                outbound mail is sent from <code>{LOCKED_FROM_MAILBOX}</code>.
               </p>
             </div>
             <div className="space-y-1">
@@ -571,8 +574,8 @@ export function ComposeEmailModal({
               placeholder="Write your email…"
             />
             <p className="text-xs text-fg-muted">
-              Rich-text editing lands in a later phase. Template variables
-              like <code>{`{{tenantName}}`}</code> are substituted at send time.
+              Rich-text editing lands in a later phase. Template variables like{" "}
+              <code>{`{{tenantName}}`}</code> are substituted at send time.
             </p>
           </div>
 

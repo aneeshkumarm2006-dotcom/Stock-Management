@@ -104,9 +104,7 @@ export function BankFeedImportModal({
     toast({
       title: `Imported ${result.inserted} rows`,
       description:
-        result.skipped > 0
-          ? `${result.skipped} duplicates skipped`
-          : undefined,
+        result.skipped > 0 ? `${result.skipped} duplicates skipped` : undefined,
       variant: "success",
     });
     await onImported();
@@ -126,8 +124,8 @@ export function BankFeedImportModal({
               onChange={onFileChange}
             />
             <p className="mt-1 text-xs text-fg-muted">
-              CSV or OFX. OFX FITID is used as the dedupe key so re-imports
-              are safe.
+              CSV or OFX. OFX FITID is used as the dedupe key so re-imports are
+              safe.
             </p>
           </div>
 

@@ -2,21 +2,21 @@
 // choice into the initial Line array stored on the new Budget document.
 //
 // All amounts here are integer cents to match the persistence convention.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { Budget, type IBudgetLine } from '@/lib/db/models/pm/Budget';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import type { BudgetLineCategory, FiscalMonth } from '@/types/pm';
-import { FISCAL_MONTH_INDEX } from '@/types/pm';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { Budget, type IBudgetLine } from "@/lib/db/models/pm/Budget";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import type { BudgetLineCategory, FiscalMonth } from "@/types/pm";
+import { FISCAL_MONTH_INDEX } from "@/types/pm";
 
 export interface SeedArgs {
   orgId: string;
-  scopeType: 'Property' | 'Company';
+  scopeType: "Property" | "Company";
   scopeId: string;
   fiscalYear: number;
   fiscalYearStart: FiscalMonth;
-  defaultAmounts: 'Zero' | 'Copy previous FY actuals' | 'Copy existing budget';
+  defaultAmounts: "Zero" | "Copy previous FY actuals" | "Copy existing budget";
   copySourceBudgetId?: string | null;
 }
 
@@ -41,18 +41,19 @@ export function getFiscalYearDateRange(
 }
 
 /** Default amounts = Zero — emit one zeroed line per Income/Expense CoA. */
-async function seedZeroLines(orgObjectId: Types.ObjectId): Promise<IBudgetLine[]> {
+async function seedZeroLines(
+  orgObjectId: Types.ObjectId,
+): Promise<IBudgetLine[]> {
   const accounts = await ChartOfAccount.find({
     organizationId: orgObjectId,
     active: true,
-    type: { $in: ['Income', 'Operating Expense'] },
-  })
-    .lean<{ _id: Types.ObjectId; type: string }[]>();
+    type: { $in: ["Income", "Operating Expense"] },
+  }).lean<{ _id: Types.ObjectId; type: string }[]>();
   return accounts.map((a) => ({
     accountId: a._id,
-    category: (a.type === 'Income'
-      ? 'Income'
-      : 'Expense') as BudgetLineCategory,
+    category: (a.type === "Income"
+      ? "Income"
+      : "Expense") as BudgetLineCategory,
     monthlyAmounts: ZERO_MONTHS(),
   }));
 }
@@ -77,7 +78,7 @@ async function seedFromBudget(
 /** Default amounts = Copy previous FY actuals — aggregate the posted GL. */
 async function seedFromPriorFY(
   orgObjectId: Types.ObjectId,
-  scopeType: 'Property' | 'Company',
+  scopeType: "Property" | "Company",
   scopeObjectId: Types.ObjectId,
   fiscalYear: number,
   fiscalYearStart: FiscalMonth,
@@ -86,9 +87,8 @@ async function seedFromPriorFY(
 
   const accounts = await ChartOfAccount.find({
     organizationId: orgObjectId,
-    type: { $in: ['Income', 'Operating Expense'] },
-  })
-    .lean<{ _id: Types.ObjectId; type: string }[]>();
+    type: { $in: ["Income", "Operating Expense"] },
+  }).lean<{ _id: Types.ObjectId; type: string }[]>();
 
   const accountById = new Map(accounts.map((a) => [String(a._id), a]));
 
@@ -101,23 +101,23 @@ async function seedFromPriorFY(
   };
 
   const matchScope =
-    scopeType === 'Property'
-      ? { 'lines.scopeType': 'Property', 'lines.scopeId': scopeObjectId }
-      : { 'lines.scopeType': 'Company', 'lines.scopeId': scopeObjectId };
+    scopeType === "Property"
+      ? { "lines.scopeType": "Property", "lines.scopeId": scopeObjectId }
+      : { "lines.scopeType": "Company", "lines.scopeId": scopeObjectId };
 
   const rows: Bucket[] = await JournalEntry.aggregate([
     {
       $match: {
         organizationId: orgObjectId,
-        status: 'Posted',
+        status: "Posted",
         date: { $gte: prior.startDate, $lt: prior.endDate },
       },
     },
-    { $unwind: '$lines' },
+    { $unwind: "$lines" },
     {
       $match: {
         ...matchScope,
-        'lines.accountId': { $in: accounts.map((a) => a._id) },
+        "lines.accountId": { $in: accounts.map((a) => a._id) },
       },
     },
     {
@@ -129,7 +129,7 @@ async function seedFromPriorFY(
               $add: [
                 {
                   $subtract: [
-                    { $month: '$date' },
+                    { $month: "$date" },
                     FISCAL_MONTH_INDEX[fiscalYearStart],
                   ],
                 },
@@ -144,19 +144,19 @@ async function seedFromPriorFY(
     {
       $group: {
         _id: {
-          accountId: '$lines.accountId',
-          fiscalMonthIndex: '$fiscalMonthIndex',
+          accountId: "$lines.accountId",
+          fiscalMonthIndex: "$fiscalMonthIndex",
         },
         total: {
-          $sum: { $subtract: ['$lines.credit', '$lines.debit'] },
+          $sum: { $subtract: ["$lines.credit", "$lines.debit"] },
         },
       },
     },
     {
       $project: {
         _id: 0,
-        accountId: '$_id.accountId',
-        fiscalMonthIndex: '$_id.fiscalMonthIndex',
+        accountId: "$_id.accountId",
+        fiscalMonthIndex: "$_id.fiscalMonthIndex",
         total: 1,
       },
     },
@@ -170,8 +170,7 @@ async function seedFromPriorFY(
     const acct = accountById.get(String(row.accountId));
     if (!acct) continue;
     const arr = byAccount.get(String(row.accountId)) ?? ZERO_MONTHS();
-    const value =
-      acct.type === 'Income' ? row.total : -row.total; // expenses: flip sign
+    const value = acct.type === "Income" ? row.total : -row.total; // expenses: flip sign
     arr[row.fiscalMonthIndex] = (arr[row.fiscalMonthIndex] ?? 0) + value;
     byAccount.set(String(row.accountId), arr);
   }
@@ -180,9 +179,9 @@ async function seedFromPriorFY(
   // some accounts had zero posted activity last year).
   return accounts.map((a) => ({
     accountId: a._id,
-    category: (a.type === 'Income'
-      ? 'Income'
-      : 'Expense') as BudgetLineCategory,
+    category: (a.type === "Income"
+      ? "Income"
+      : "Expense") as BudgetLineCategory,
     monthlyAmounts: byAccount.get(String(a._id)) ?? ZERO_MONTHS(),
   }));
 }
@@ -193,10 +192,16 @@ export async function seedBudgetLines(args: SeedArgs): Promise<IBudgetLine[]> {
   const orgObjectId = new Types.ObjectId(args.orgId);
   const scopeObjectId = new Types.ObjectId(args.scopeId);
 
-  if (args.defaultAmounts === 'Copy existing budget' && args.copySourceBudgetId) {
-    return seedFromBudget(orgObjectId, new Types.ObjectId(args.copySourceBudgetId));
+  if (
+    args.defaultAmounts === "Copy existing budget" &&
+    args.copySourceBudgetId
+  ) {
+    return seedFromBudget(
+      orgObjectId,
+      new Types.ObjectId(args.copySourceBudgetId),
+    );
   }
-  if (args.defaultAmounts === 'Copy previous FY actuals') {
+  if (args.defaultAmounts === "Copy previous FY actuals") {
     return seedFromPriorFY(
       orgObjectId,
       args.scopeType,

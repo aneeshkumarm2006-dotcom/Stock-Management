@@ -90,7 +90,10 @@ export function MarketValueCard({
           return;
         }
         const byProp = glIncomeExpenseCentsByProperty(data);
-        const mine = byProp.get(propertyId) ?? { incomeCents: 0, expenseCents: 0 };
+        const mine = byProp.get(propertyId) ?? {
+          incomeCents: 0,
+          expenseCents: 0,
+        };
         setGlIncome(fromCents(mine.incomeCents));
         setGlExpense(fromCents(mine.expenseCents));
         setLoadingGl(false);
@@ -232,8 +235,8 @@ export function MarketValueCard({
         {canEdit && (
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs italic text-fg-muted">
-              Income &amp; expenses default to the trailing-12-month ledger. Type
-              to override; clear a field to track the ledger again.
+              Income &amp; expenses default to the trailing-12-month ledger.
+              Type to override; clear a field to track the ledger again.
             </p>
             <Button size="sm" onClick={save} disabled={saving || !dirty}>
               {saving ? "Saving…" : "Save"}

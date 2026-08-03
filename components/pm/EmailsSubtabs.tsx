@@ -67,7 +67,9 @@ export function EmailsSubtabs({ active }: { active: View }) {
         >
           {t.label}
           {counts[t.value] !== null && (
-            <span className="ml-1 text-xs text-fg-muted">({counts[t.value]})</span>
+            <span className="ml-1 text-xs text-fg-muted">
+              ({counts[t.value]})
+            </span>
           )}
         </Link>
       ))}

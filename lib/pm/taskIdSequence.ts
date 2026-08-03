@@ -8,8 +8,8 @@
 // says "globally unique within the system" but Buildium-parity behaviour
 // resets the visible number per org tenant; cross-org collisions never
 // surface in the UI.
-import { connectToDatabase } from '@/lib/db/mongoose';
-import mongoose from 'mongoose';
+import { connectToDatabase } from "@/lib/db/mongoose";
+import mongoose from "mongoose";
 
 interface PmSequenceDoc {
   _id: string;
@@ -20,9 +20,9 @@ async function getCollection() {
   await connectToDatabase();
   const conn = mongoose.connection;
   if (!conn.db) {
-    throw new Error('Database connection has no db handle.');
+    throw new Error("Database connection has no db handle.");
   }
-  return conn.db.collection<PmSequenceDoc>('pm_sequences');
+  return conn.db.collection<PmSequenceDoc>("pm_sequences");
 }
 
 /**
@@ -35,13 +35,13 @@ export async function nextTaskId(orgId: string): Promise<number> {
   const result = await col.findOneAndUpdate(
     { _id: `task:${orgId}` },
     { $inc: { current: 1 } },
-    { upsert: true, returnDocument: 'after' },
+    { upsert: true, returnDocument: "after" },
   );
   // findOneAndUpdate with upsert always returns a document when
   // returnDocument='after'.
   const doc = result as PmSequenceDoc | null;
-  if (!doc || typeof doc.current !== 'number') {
-    throw new Error('Failed to allocate next task id.');
+  if (!doc || typeof doc.current !== "number") {
+    throw new Error("Failed to allocate next task id.");
   }
   return doc.current;
 }

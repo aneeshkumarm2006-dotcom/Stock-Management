@@ -421,6 +421,21 @@ export const SUPPORTED_ADDRESS_COUNTRIES: readonly AddressCountry[] = [
   "CA",
 ] as const;
 
+/** Currencies the PM ledger can book in. Mirrors `Organization.defaultCurrency`
+ *  and the stock-side USD/CAD toggle. */
+export type PmCurrency = "USD" | "CAD";
+
+export const PM_CURRENCIES: readonly PmCurrency[] = ["USD", "CAD"] as const;
+
+/** Default currency implied by a property's country. Only a SUGGESTION used by
+ *  the "Add property" form and the backfill script — never applied silently to
+ *  existing rows, since only the client knows which currency historical amounts
+ *  were keyed in. See `resolvePropertyCurrency`. */
+export const CURRENCY_BY_COUNTRY: Record<AddressCountry, PmCurrency> = {
+  US: "USD",
+  CA: "CAD",
+};
+
 // -----------------------------------------------------------------------------
 // Phase 4 — Maintenance + A/P enums (DECISIONS.md Phase 4)
 // -----------------------------------------------------------------------------

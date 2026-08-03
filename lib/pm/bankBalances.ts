@@ -11,11 +11,11 @@
 // been matched to a reconciliation" — reconciliation lands Phase 9, so the
 // flag effectively reads as "any undeposited-funds activity exists on this
 // bank's ledger". Refines later when reconciliation arrives.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { BankAccount } from '@/lib/db/models/pm/BankAccount';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { BankAccount } from "@/lib/db/models/pm/BankAccount";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
 
 export interface BankRollup {
   /** Balance in cents (signed). */
@@ -38,7 +38,7 @@ export async function computeBankRollups(
     _id: { $in: bankAccountIds },
     organizationId: orgObjectId,
   })
-    .select('_id chartOfAccountId')
+    .select("_id chartOfAccountId")
     .lean();
   const bankToCash = new Map<string, Types.ObjectId | null>(
     banks.map((b) => [String(b._id), b.chartOfAccountId ?? null]),
@@ -46,9 +46,9 @@ export async function computeBankRollups(
 
   const undepositedAccount = await ChartOfAccount.findOne({
     organizationId: orgObjectId,
-    defaultFor: 'Undeposited Funds',
+    defaultFor: "Undeposited Funds",
   })
-    .select('_id')
+    .select("_id")
     .lean();
 
   const cashAccountIds = Array.from(bankToCash.values()).filter(
@@ -59,14 +59,14 @@ export async function computeBankRollups(
   const balanceRows: { _id: Types.ObjectId; net: number }[] =
     cashAccountIds.length > 0
       ? await JournalEntry.aggregate([
-          { $match: { organizationId: orgObjectId, status: 'Posted' } },
-          { $unwind: '$lines' },
-          { $match: { 'lines.accountId': { $in: cashAccountIds } } },
+          { $match: { organizationId: orgObjectId, status: "Posted" } },
+          { $unwind: "$lines" },
+          { $match: { "lines.accountId": { $in: cashAccountIds } } },
           {
             $group: {
-              _id: '$lines.accountId',
+              _id: "$lines.accountId",
               net: {
-                $sum: { $subtract: ['$lines.debit', '$lines.credit'] },
+                $sum: { $subtract: ["$lines.debit", "$lines.credit"] },
               },
             },
           },
@@ -84,8 +84,8 @@ export async function computeBankRollups(
     undepositedActive = Boolean(
       await JournalEntry.exists({
         organizationId: orgObjectId,
-        status: 'Posted',
-        'lines.accountId': undepositedAccount._id,
+        status: "Posted",
+        "lines.accountId": undepositedAccount._id,
       }),
     );
   }

@@ -60,9 +60,8 @@ export function AddRecurringTaskModal({
   const [nextDate, setNextDate] = React.useState("");
   const [priority, setPriority] = React.useState<WorkPriority>("Normal");
   const [propertyId, setPropertyId] = React.useState("");
-  const [duration, setDuration] = React.useState<RecurringDuration>(
-    "Until cancelled",
-  );
+  const [duration, setDuration] =
+    React.useState<RecurringDuration>("Until cancelled");
   const [occurrenceCount, setOccurrenceCount] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -231,9 +230,7 @@ export function AddRecurringTaskModal({
                 id="rt-priority"
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
                 value={priority}
-                onChange={(e) =>
-                  setPriority(e.target.value as WorkPriority)
-                }
+                onChange={(e) => setPriority(e.target.value as WorkPriority)}
               >
                 {WORK_PRIORITIES.map((p) => (
                   <option key={p} value={p}>

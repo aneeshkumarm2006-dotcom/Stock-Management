@@ -12,6 +12,7 @@ import { RecordBillModal } from "@/components/pm/RecordBillModal";
 import { PayBillsModal } from "@/components/pm/PayBillsModal";
 import { RequestOwnerContributionModal } from "@/components/pm/RequestOwnerContributionModal";
 import { formatDateOnly } from "@/lib/utils/dateInput";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 
 interface BillRow {
   id: string;
@@ -256,7 +257,7 @@ export default function BillsPage() {
                     </div>
                   </td>
                   <td className="tabular-nums font-bold text-fg">
-                    ${(b.amount / 100).toFixed(2)}
+                    <CurrencyAmount cents={b.amount} />
                   </td>
                   <td className="text-xs text-fg-muted">{b.createdBy}</td>
                 </tr>

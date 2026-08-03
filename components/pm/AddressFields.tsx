@@ -7,11 +7,7 @@
 // also swaps the ZIP/Postal-code label + pattern.
 import * as React from "react";
 import type { StateOrProvince, AddressCountry } from "@/types/pm";
-import {
-  US_STATES,
-  CA_PROVINCES,
-  CA_PROVINCE_NAMES,
-} from "@/types/pm";
+import { US_STATES, CA_PROVINCES, CA_PROVINCE_NAMES } from "@/types/pm";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -131,9 +127,7 @@ export function AddressFields({ prefix, value, onChange, required }: Props) {
         <select
           id={`${prefix}-state`}
           value={value.state}
-          onChange={(e) =>
-            set("state", e.target.value as StateOrProvince | "")
-          }
+          onChange={(e) => set("state", e.target.value as StateOrProvince | "")}
           required={required}
           className="h-10 w-full rounded border border-border bg-surface-highest px-3 text-sm text-fg"
         >

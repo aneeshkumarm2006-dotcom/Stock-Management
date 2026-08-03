@@ -23,6 +23,7 @@ import { EditBillModal } from "@/components/pm/EditBillModal";
 import { DeleteBillDialog } from "@/components/pm/DeleteBillDialog";
 import { useToast } from "@/components/ui/toast";
 import { formatDateOnly } from "@/lib/utils/dateInput";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 
 interface BillLine {
   accountId: string;
@@ -136,7 +137,7 @@ export default function BillDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            Bill ${(doc.amount / 100).toFixed(2)} —{" "}
+            Bill <CurrencyAmount cents={doc.amount} /> —{" "}
             <span className="text-fg-muted">{doc.status}</span>
           </CardTitle>
           <div className="text-xs text-fg-muted">
@@ -240,7 +241,7 @@ export default function BillDetailPage() {
                         <td className="py-2 text-fg-muted">{l.accountId}</td>
                         <td className="text-fg">{l.description}</td>
                         <td className="tabular-nums font-bold text-fg">
-                          ${(l.amount / 100).toFixed(2)}
+                          <CurrencyAmount cents={l.amount} />
                         </td>
                       </tr>
                     ))}
@@ -251,7 +252,7 @@ export default function BillDetailPage() {
                         Total
                       </td>
                       <td className="tabular-nums font-bold text-fg">
-                        ${(doc.amount / 100).toFixed(2)}
+                        <CurrencyAmount cents={doc.amount} />
                       </td>
                     </tr>
                   </tfoot>

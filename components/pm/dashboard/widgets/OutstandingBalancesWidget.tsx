@@ -8,6 +8,9 @@
 import * as React from "react";
 import { WidgetCard } from "../WidgetCard";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { MoneyTotal } from "@/components/pm/MoneyTotal";
+import type { MoneyByCurrency } from "@/lib/pm/moneyByCurrency";
+import type { PmCurrency } from "@/types/pm";
 
 interface Row {
   propertyId: string | null;
@@ -15,21 +18,26 @@ interface Row {
   leaseId: string | null;
   label: string;
   balanceCents: number;
+  /** Currency this row's balance is denominated in. */
+  currency?: PmCurrency;
 }
 
 interface CountryGroup {
   country: string;
-  totalCents: number;
+  totals: MoneyByCurrency;
   count: number;
   top: Row[];
 }
 
 interface Payload {
-  totalCents: number;
+  /** Per-currency buckets — a country can hold properties booking in either. */
+  totals: MoneyByCurrency;
   count: number;
   top: Row[];
   groups?: CountryGroup[];
 }
+
+const EMPTY: Payload = { totals: {}, count: 0, top: [], groups: [] };
 
 function BalanceRow({ r, i }: { r: Row; i: number }) {
   return (
@@ -40,7 +48,12 @@ function BalanceRow({ r, i }: { r: Row; i: number }) {
       <span className="truncate text-fg" title={r.label}>
         {r.label}
       </span>
-      <CurrencyAmount cents={r.balanceCents} className="shrink-0 text-fg" />
+      {/* Each row converts from its OWN property's currency. */}
+      <CurrencyAmount
+        cents={r.balanceCents}
+        currency={r.currency}
+        className="shrink-0 text-fg"
+      />
     </li>
   );
 }
@@ -51,12 +64,12 @@ export function OutstandingBalancesWidget() {
   React.useEffect(() => {
     let cancelled = false;
     fetch("/api/pm/outstanding-balances")
-      .then((r) => (r.ok ? r.json() : { totalCents: 0, count: 0, top: [], groups: [] }))
+      .then((r) => (r.ok ? r.json() : EMPTY))
       .then((d) => {
         if (!cancelled) setData(d as Payload);
       })
       .catch(() => {
-        if (!cancelled) setData({ totalCents: 0, count: 0, top: [], groups: [] });
+        if (!cancelled) setData(EMPTY);
       });
     return () => {
       cancelled = true;
@@ -64,7 +77,7 @@ export function OutstandingBalancesWidget() {
   }, []);
 
   const rows = data?.top ?? [];
-  const total = data?.totalCents ?? 0;
+  const totals = data?.totals;
   const count = data?.count ?? 0;
   const groups = (data?.groups ?? []).filter((g) => g.top.length > 0);
   const hasGroups = groups.length > 0;
@@ -73,13 +86,15 @@ export function OutstandingBalancesWidget() {
     <WidgetCard
       title="Outstanding Balances"
       viewAllHref="/properties/rentals/rent-roll"
-      footer={!hasGroups && count > 0 ? `Showing ${rows.length} of ${count}` : null}
+      footer={
+        !hasGroups && count > 0 ? `Showing ${rows.length} of ${count}` : null
+      }
     >
       <div className="flex items-baseline justify-between">
         <span className="text-xs uppercase tracking-wider text-fg-muted">
           Total
         </span>
-        <CurrencyAmount cents={total} className="text-2xl font-bold" />
+        <MoneyTotal totals={totals} className="text-2xl font-bold" />
       </div>
 
       {count === 0 ? (
@@ -92,8 +107,8 @@ export function OutstandingBalancesWidget() {
                 <span className="text-xs font-semibold uppercase tracking-wider text-fg">
                   {g.country}
                 </span>
-                <CurrencyAmount
-                  cents={g.totalCents}
+                <MoneyTotal
+                  totals={g.totals}
                   className="text-sm font-semibold text-fg"
                 />
               </div>

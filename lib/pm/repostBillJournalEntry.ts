@@ -12,17 +12,17 @@
 // The caller owns the locked-period gate (it lock-checks BOTH the old JE date
 // and the new invoice date up front, before any write), so this helper does NOT
 // run `assertWriteAllowed` — mirroring `reverseJournalEntry`.
-import { Types, type HydratedDocument } from 'mongoose';
+import { Types, type HydratedDocument } from "mongoose";
 import {
   JournalEntry,
   type IJournalEntry,
-} from '@/lib/db/models/pm/JournalEntry';
+} from "@/lib/db/models/pm/JournalEntry";
 import {
   buildBillJeFields,
   type PostBillToLedgerInput,
   type PostBillToLedgerResult,
-} from '@/lib/pm/postBillToLedger';
-import type { PmContext } from '@/lib/auth/getCurrentUser';
+} from "@/lib/pm/postBillToLedger";
+import type { PmContext } from "@/lib/auth/getCurrentUser";
 
 export interface RepostBillJournalEntryInput {
   orgId: string;
@@ -30,7 +30,7 @@ export interface RepostBillJournalEntryInput {
   /** The bill's current accrual JE (already loaded + org-scoped), or null when
    *  the posted bill never had one / its JE is missing. */
   existingJe: HydratedDocument<IJournalEntry> | null;
-  bill: PostBillToLedgerInput['bill'];
+  bill: PostBillToLedgerInput["bill"];
 }
 
 export async function repostBillJournalEntry(
@@ -43,7 +43,7 @@ export async function repostBillJournalEntry(
 
   // No reusable Posted JE (missing, Draft, or already Voided) → create a fresh
   // one so a posted bill always has a live accrual entry.
-  if (!input.existingJe || input.existingJe.status !== 'Posted') {
+  if (!input.existingJe || input.existingJe.status !== "Posted") {
     const je = await JournalEntry.create({
       organizationId: new Types.ObjectId(input.orgId),
       date: fields.date,
@@ -52,7 +52,7 @@ export async function repostBillJournalEntry(
       memo: fields.memo,
       attachmentFileId: fields.attachmentFileId,
       lines: fields.lines,
-      status: 'Posted',
+      status: "Posted",
       createdByUserId: new Types.ObjectId(input.ctx.userId),
     });
     return { journalEntryId: je._id, totalCents: fields.totalCents };

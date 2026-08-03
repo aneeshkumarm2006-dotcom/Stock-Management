@@ -1,11 +1,14 @@
 // Phase 9 approval-rule resolution (BR-AC-19, [G-S-31]). Called from the
 // EFT create + approve routes to (a) snapshot the rule onto the EFT and
 // (b) decide whether the EFT can post to the GL.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { ApprovalRule, type IApprovalRule } from '@/lib/db/models/pm/ApprovalRule';
-import { Bill } from '@/lib/db/models/pm/Bill';
-import type { ApprovalRuleSemantics } from '@/types/pm';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import {
+  ApprovalRule,
+  type IApprovalRule,
+} from "@/lib/db/models/pm/ApprovalRule";
+import { Bill } from "@/lib/db/models/pm/Bill";
+import type { ApprovalRuleSemantics } from "@/types/pm";
 
 export interface ResolvedApprovalRule {
   ruleId: Types.ObjectId;
@@ -35,14 +38,14 @@ export async function resolveApprovalRule(input: {
   let propertyId: Types.ObjectId | null = null;
   if (input.billId) {
     const billIdObj =
-      typeof input.billId === 'string'
+      typeof input.billId === "string"
         ? new Types.ObjectId(input.billId)
         : input.billId;
     const bill = await Bill.findOne({
       _id: billIdObj,
       organizationId: orgObjectId,
     }).lean<{ scope?: { type?: string; id?: Types.ObjectId | null } } | null>();
-    if (bill?.scope?.type === 'Property' && bill.scope.id) {
+    if (bill?.scope?.type === "Property" && bill.scope.id) {
       propertyId = bill.scope.id;
     }
   }
@@ -51,18 +54,16 @@ export async function resolveApprovalRule(input: {
     organizationId: orgObjectId,
     active: true,
     $or: [
-      { scopeType: 'Company', scopeId: null },
-      ...(propertyId
-        ? [{ scopeType: 'Property', scopeId: propertyId }]
-        : []),
+      { scopeType: "Company", scopeId: null },
+      ...(propertyId ? [{ scopeType: "Property", scopeId: propertyId }] : []),
     ],
   })
     .sort({ scopeType: 1 }) // 'Company' < 'Property' alphabetically — prefer 'Property' below
     .lean<IApprovalRule[]>();
 
   // Prefer the Property-scope hit when it exists.
-  const propertyRule = candidates.find((r) => r.scopeType === 'Property');
-  const companyRule = candidates.find((r) => r.scopeType === 'Company');
+  const propertyRule = candidates.find((r) => r.scopeType === "Property");
+  const companyRule = candidates.find((r) => r.scopeType === "Company");
   const rule = propertyRule ?? companyRule ?? null;
 
   if (!rule) return null;
@@ -72,7 +73,7 @@ export async function resolveApprovalRule(input: {
     ruleId: rule._id,
     semantics: rule.semantics,
     approverUserIds: rule.approverUserIds.map((id) =>
-      typeof id === 'string' ? new Types.ObjectId(id) : id,
+      typeof id === "string" ? new Types.ObjectId(id) : id,
     ),
   };
 }
@@ -90,10 +91,8 @@ export function isApprovalThresholdMet(
   receivedApprovals: { userId: Types.ObjectId }[],
 ): boolean {
   if (!semantics || requiredApproverUserIds.length === 0) return true;
-  const receivedSet = new Set(
-    receivedApprovals.map((a) => String(a.userId)),
-  );
-  if (semantics === 'any-of') {
+  const receivedSet = new Set(receivedApprovals.map((a) => String(a.userId)));
+  if (semantics === "any-of") {
     return requiredApproverUserIds.some((id) => receivedSet.has(String(id)));
   }
   return requiredApproverUserIds.every((id) => receivedSet.has(String(id)));

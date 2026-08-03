@@ -69,7 +69,10 @@ export function CustomFieldsRenderer({
         switch (f.fieldType) {
           case "boolean":
             return (
-              <label key={f.id} className="flex items-center gap-2 text-sm text-fg">
+              <label
+                key={f.id}
+                className="flex items-center gap-2 text-sm text-fg"
+              >
                 <input
                   type="checkbox"
                   checked={Boolean(v)}
@@ -116,7 +119,10 @@ export function CustomFieldsRenderer({
                   type="number"
                   value={typeof v === "number" ? v : ""}
                   onChange={(e) =>
-                    onChange(f.key, e.target.value === "" ? null : Number(e.target.value))
+                    onChange(
+                      f.key,
+                      e.target.value === "" ? null : Number(e.target.value),
+                    )
                   }
                   disabled={disabled}
                   required={f.required}

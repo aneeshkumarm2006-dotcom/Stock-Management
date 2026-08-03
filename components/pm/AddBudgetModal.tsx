@@ -19,10 +19,7 @@ import type {
   BudgetScopeType,
   FiscalMonth,
 } from "@/types/pm";
-import {
-  BUDGET_DEFAULT_AMOUNTS,
-  FISCAL_MONTHS,
-} from "@/types/pm";
+import { BUDGET_DEFAULT_AMOUNTS, FISCAL_MONTHS } from "@/types/pm";
 import { computeWarnings } from "@/lib/pm/warnings";
 import { WarningInline } from "@/components/pm/WarningBadge";
 
@@ -195,7 +192,8 @@ export function AddBudgetModal({
       };
       toast({
         title:
-          errBody.error ?? (isEdit ? "Failed to update budget" : "Failed to create budget"),
+          errBody.error ??
+          (isEdit ? "Failed to update budget" : "Failed to create budget"),
         variant: "error",
       });
       return;

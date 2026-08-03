@@ -23,6 +23,7 @@ import {
   type OwnershipRow,
 } from "@/components/pm/PropertyOwnershipEditor";
 import type {
+  PmCurrency,
   PropertyClass,
   PropertySubType,
   ResidentialSubType,
@@ -52,6 +53,8 @@ interface PropertyRow {
     zip?: string;
     country?: string;
   } | null;
+  /** Native booking currency; null = inherit the org default. */
+  currency: PmCurrency | null;
   propertyManagerUserId: string | null;
   ownerCount: number;
   owners: Array<{
@@ -241,7 +244,8 @@ export default function PropertiesListPage() {
               —
             </span>
           ) : (
-            <CurrencyAmount value={mv} />
+            // Mixed list — each row converts from its OWN property's currency.
+            <CurrencyAmount value={mv} currency={p.currency ?? undefined} />
           );
         })()}
       </td>

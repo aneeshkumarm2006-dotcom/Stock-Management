@@ -5,13 +5,13 @@
 //   [G-B-34] Daily cron writes one Notification per assignee when a Task
 //            crosses past-due; dedupes via a marker title lookup so re-running
 //            on the same day yields zero duplicates.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { Notification } from '@/lib/db/models/pm/Notification';
-import { Task, TASK_TERMINAL_STATUSES_DB } from '@/lib/db/models/pm/Task';
-import type { ITask } from '@/lib/db/models/pm/Task';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { Notification } from "@/lib/db/models/pm/Notification";
+import { Task, TASK_TERMINAL_STATUSES_DB } from "@/lib/db/models/pm/Task";
+import type { ITask } from "@/lib/db/models/pm/Task";
 
-const PAST_DUE_TITLE = 'Past-due task';
+const PAST_DUE_TITLE = "Past-due task";
 
 interface TaskRef {
   _id: Types.ObjectId | string;
@@ -35,14 +35,14 @@ export async function notifyTaskAssigned(
     newAssigneeIds.map((uid) => ({
       organizationId: new Types.ObjectId(String(task.organizationId)),
       recipientUserId: new Types.ObjectId(String(uid)),
-      kind: 'info',
+      kind: "info",
       title: `Assigned: ${task.title}`,
       body: `Task #${task.taskId}`,
       link: taskLink(task),
     })),
     { ordered: false },
   ).catch((err) => {
-    console.error('notifyTaskAssigned failed', err);
+    console.error("notifyTaskAssigned failed", err);
   });
 }
 
@@ -50,24 +50,21 @@ export async function notifyTaskAssigned(
 export async function notifyTaskCompleted(
   task: ITask & { _id: Types.ObjectId },
 ): Promise<void> {
-  const recipients = [
-    ...(task.assignees ?? []),
-    ...(task.collaborators ?? []),
-  ];
+  const recipients = [...(task.assignees ?? []), ...(task.collaborators ?? [])];
   if (recipients.length === 0) return;
   await connectToDatabase();
   await Notification.insertMany(
     recipients.map((uid) => ({
       organizationId: task.organizationId,
       recipientUserId: uid,
-      kind: 'info',
+      kind: "info",
       title: `Completed: ${task.title}`,
       body: `Task #${task.taskId} reached status ${task.status}`,
       link: taskLink(task),
     })),
     { ordered: false },
   ).catch((err) => {
-    console.error('notifyTaskCompleted failed', err);
+    console.error("notifyTaskCompleted failed", err);
   });
 }
 
@@ -94,7 +91,7 @@ export async function escalatePastDueTasks(
     dueDate: { $lt: today, $ne: null },
     status: { $nin: TASK_TERMINAL_STATUSES_DB },
   })
-    .select('_id organizationId taskId title assignees')
+    .select("_id organizationId taskId title assignees")
     .lean<
       Array<{
         _id: Types.ObjectId;
@@ -122,7 +119,7 @@ export async function escalatePastDueTasks(
       title: PAST_DUE_TITLE,
       body: { $regex: `Task #${t.taskId}\\b` },
     })
-      .select('recipientUserId')
+      .select("recipientUserId")
       .lean<Array<{ recipientUserId: Types.ObjectId }>>();
     const alreadyNotified = new Set(
       existingRows.map((r) => String(r.recipientUserId)),
@@ -137,7 +134,7 @@ export async function escalatePastDueTasks(
       toNotify.map((uid) => ({
         organizationId: t.organizationId,
         recipientUserId: uid,
-        kind: 'warning',
+        kind: "warning",
         title: PAST_DUE_TITLE,
         body: `Task #${t.taskId} — ${t.title}`,
         link: taskLink(t),

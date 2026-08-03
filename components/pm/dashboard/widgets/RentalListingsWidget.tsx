@@ -33,7 +33,13 @@ function Donut({ arcs, total }: { arcs: ArcInput[]; total: number }) {
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
   return (
-    <svg width={120} height={120} viewBox="0 0 120 120" role="img" aria-label="Rental listings breakdown">
+    <svg
+      width={120}
+      height={120}
+      viewBox="0 0 120 120"
+      role="img"
+      aria-label="Rental listings breakdown"
+    >
       <circle
         cx={60}
         cy={60}
@@ -140,7 +146,10 @@ export function RentalListingsWidget() {
     : [];
 
   return (
-    <WidgetCard title="Rental Listings" viewAllHref="/properties/leasing/listings">
+    <WidgetCard
+      title="Rental Listings"
+      viewAllHref="/properties/leasing/listings"
+    >
       {total === 0 ? (
         <p className="text-sm text-fg-muted">No units.</p>
       ) : (

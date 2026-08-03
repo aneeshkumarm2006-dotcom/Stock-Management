@@ -29,9 +29,9 @@ export function PropertyVacancyWidget({
       fetch(`/api/pm/units?propertyId=${propertyId}`).then((r) =>
         r.ok ? r.json() : [],
       ),
-      fetch(`/api/pm/leases?propertyId=${propertyId}&status=Active,Future`).then(
-        (r) => (r.ok ? r.json() : []),
-      ),
+      fetch(
+        `/api/pm/leases?propertyId=${propertyId}&status=Active,Future`,
+      ).then((r) => (r.ok ? r.json() : [])),
     ]).then(([u, l]) => {
       if (cancelled) return;
       const units = u as UnitLite[];

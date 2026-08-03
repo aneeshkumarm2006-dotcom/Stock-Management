@@ -9,15 +9,15 @@
 //
 // Mirrors the Deposit → JE wiring at `app/api/pm/deposits/route.ts`
 // (lines 140–180).
-import { Types } from 'mongoose';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
+import { Types } from "mongoose";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
 import {
   JournalEntry,
   type IJournalLine,
-} from '@/lib/db/models/pm/JournalEntry';
-import type { JournalEntryScopeType } from '@/types/pm';
-import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
-import type { PmContext } from '@/lib/auth/getCurrentUser';
+} from "@/lib/db/models/pm/JournalEntry";
+import type { JournalEntryScopeType } from "@/types/pm";
+import { assertWriteAllowed, LockedPeriodError } from "@/lib/pm/lockedPeriod";
+import type { PmContext } from "@/lib/auth/getCurrentUser";
 
 export interface BillLedgerLine {
   /** FK ChartOfAccount. */
@@ -68,7 +68,7 @@ export interface BillJeFields {
  */
 export async function buildBillJeFields(input: {
   orgId: string;
-  bill: PostBillToLedgerInput['bill'];
+  bill: PostBillToLedgerInput["bill"];
 }): Promise<BillJeFields> {
   const orgObjectId = new Types.ObjectId(input.orgId);
   const scopePropertyId = input.bill.scopePropertyId
@@ -77,28 +77,28 @@ export async function buildBillJeFields(input: {
 
   const ap = await ChartOfAccount.findOne({
     organizationId: orgObjectId,
-    defaultFor: 'Accounts Payable',
+    defaultFor: "Accounts Payable",
   }).lean<{ _id: Types.ObjectId } | null>();
   if (!ap) {
     throw new Error(
-      'No Accounts Payable chart-of-accounts row is set for this org. Configure one in Settings → Chart of Accounts before recording bills.',
+      "No Accounts Payable chart-of-accounts row is set for this org. Configure one in Settings → Chart of Accounts before recording bills.",
     );
   }
 
   let total = 0;
   for (const line of input.bill.lines) {
     if (!Number.isFinite(line.amount)) {
-      throw new Error('Bill lines must have numeric amounts.');
+      throw new Error("Bill lines must have numeric amounts.");
     }
     total += line.amount;
   }
   if (total === 0) {
-    throw new Error('Bill total must be non-zero.');
+    throw new Error("Bill total must be non-zero.");
   }
 
   const scopeType: JournalEntryScopeType = scopePropertyId
-    ? 'Property'
-    : 'Company';
+    ? "Property"
+    : "Company";
   const scopeId = scopePropertyId ? new Types.ObjectId(scopePropertyId) : null;
 
   const debits = input.bill.lines.map((l) => ({
@@ -107,7 +107,7 @@ export async function buildBillJeFields(input: {
     scopeId,
     unitId: null,
     name: undefined,
-    description: l.description ?? '',
+    description: l.description ?? "",
     debit: l.amount,
     credit: 0,
   }));
@@ -118,7 +118,7 @@ export async function buildBillJeFields(input: {
     scopeId,
     unitId: null,
     name: undefined,
-    description: 'Bill payable',
+    description: "Bill payable",
     debit: 0,
     credit: total,
   };
@@ -127,7 +127,7 @@ export async function buildBillJeFields(input: {
     date: input.bill.invoiceDate,
     scopeType,
     scopeId,
-    memo: input.bill.memo ? `Bill — ${input.bill.memo}`.slice(0, 256) : 'Bill',
+    memo: input.bill.memo ? `Bill — ${input.bill.memo}`.slice(0, 256) : "Bill",
     attachmentFileId: input.bill.attachmentFileId ?? null,
     lines: [...debits, credit] as unknown as IJournalLine[],
     totalCents: total,
@@ -149,7 +149,10 @@ export async function postBillToLedger(
     ctx: input.ctx,
   });
 
-  const fields = await buildBillJeFields({ orgId: input.orgId, bill: input.bill });
+  const fields = await buildBillJeFields({
+    orgId: input.orgId,
+    bill: input.bill,
+  });
 
   const je = await JournalEntry.create({
     organizationId: orgObjectId,
@@ -159,7 +162,7 @@ export async function postBillToLedger(
     memo: fields.memo,
     attachmentFileId: fields.attachmentFileId,
     lines: fields.lines,
-    status: 'Posted',
+    status: "Posted",
     createdByUserId: new Types.ObjectId(input.ctx.userId),
   });
 

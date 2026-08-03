@@ -132,6 +132,8 @@ export async function GET(
     propertyClass: doc.propertyClass,
     propertySubType: doc.propertySubType,
     address: doc.address,
+    // null = inherit Organization.defaultCurrency (resolvePropertyCurrency).
+    currency: doc.currency ?? null,
     photo: doc.photo ? String(doc.photo) : null,
     images,
     propertyManagerUserId: doc.propertyManagerUserId

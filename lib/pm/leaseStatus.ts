@@ -12,34 +12,36 @@
 // `Tenant.currentLeaseId` (added in Phase 3) follows the lease lifecycle:
 // set on the Active lease the tenant lives on, cleared when the lease moves
 // to Ended/Expired/Cancelled, also kept in sync on bulk recomputes here.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
 import {
   Lease,
   daysRemainingForChip,
   deriveLeaseStatus,
   type ILease,
-} from '@/lib/db/models/pm/Lease';
-import { Tenant } from '@/lib/db/models/pm/Tenant';
-import type { LeaseStatus } from '@/types/pm';
+} from "@/lib/db/models/pm/Lease";
+import { Tenant } from "@/lib/db/models/pm/Tenant";
+import type { LeaseStatus } from "@/types/pm";
 
 export interface ComputeLeaseStatusInput {
   startDate: Date | string | null | undefined;
   endDate: Date | string | null | undefined;
-  leaseType: ILease['leaseType'];
+  leaseType: ILease["leaseType"];
   /** Manual override — `Ended` / `Cancelled` short-circuit derivation. */
   manual?: LeaseStatus;
 }
 
 /** Wraps `deriveLeaseStatus` and the manual terminal-state escape hatch. */
-export function computeLeaseStatus(input: ComputeLeaseStatusInput): LeaseStatus {
-  if (input.manual === 'Ended' || input.manual === 'Cancelled') {
+export function computeLeaseStatus(
+  input: ComputeLeaseStatusInput,
+): LeaseStatus {
+  if (input.manual === "Ended" || input.manual === "Cancelled") {
     return input.manual;
   }
   const startDate = input.startDate ? new Date(input.startDate) : null;
   const endDate = input.endDate ? new Date(input.endDate) : null;
   return deriveLeaseStatus({
-    status: input.manual ?? 'Active',
+    status: input.manual ?? "Active",
     startDate: startDate as Date,
     endDate,
     leaseType: input.leaseType,
@@ -49,7 +51,7 @@ export function computeLeaseStatus(input: ComputeLeaseStatusInput): LeaseStatus 
 /** Returns the day count for the BR-LL-5 orange chip, or `null` when the
  *  chip should not render (At-will, past endDate, or > 90 days out). */
 export function daysRemaining(
-  lease: Pick<ILease, 'endDate' | 'leaseType'>,
+  lease: Pick<ILease, "endDate" | "leaseType">,
 ): number | null {
   return daysRemainingForChip(lease);
 }
@@ -77,7 +79,7 @@ export async function recomputeLeaseStatuses(
 
   const leases = await Lease.find({
     organizationId: orgObjectId,
-    status: { $in: ['Active', 'Future', 'Expired'] },
+    status: { $in: ["Active", "Future", "Expired"] },
   });
 
   let updated = 0;
@@ -103,7 +105,7 @@ export async function recomputeLeaseStatuses(
       .filter((v): v is Types.ObjectId => Boolean(v));
     if (tenantIds.length === 0) continue;
 
-    if (next === 'Active') {
+    if (next === "Active") {
       const res = await Tenant.updateMany(
         {
           organizationId: orgObjectId,
@@ -117,11 +119,7 @@ export async function recomputeLeaseStatuses(
         { $set: { currentLeaseId: lease._id } },
       );
       tenantsTouched += res.modifiedCount;
-    } else if (
-      next === 'Ended' ||
-      next === 'Cancelled' ||
-      next === 'Expired'
-    ) {
+    } else if (next === "Ended" || next === "Cancelled" || next === "Expired") {
       const res = await Tenant.updateMany(
         {
           organizationId: orgObjectId,

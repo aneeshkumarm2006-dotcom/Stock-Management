@@ -17,34 +17,34 @@
 // one post — only the run that wins the atomic claim writes the JE; the loser's
 // guard no longer matches and it skips. One period is posted per row per run
 // (matching the manual sweep); consecutive daily runs catch up any backlog.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { Lease } from '@/lib/db/models/pm/Lease';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import { logActivity } from '@/lib/pm/activity';
-import { assertWriteAllowed, LockedPeriodError } from '@/lib/pm/lockedPeriod';
-import { buildRentChargeLines } from '@/lib/pm/rentCharge';
-import { resolveScheduledRentForDate } from '@/lib/pm/rentSchedule';
-import type { PmContext } from '@/lib/auth/getCurrentUser';
-import type { RentCycle } from '@/types/pm';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { Lease } from "@/lib/db/models/pm/Lease";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { logActivity } from "@/lib/pm/activity";
+import { assertWriteAllowed, LockedPeriodError } from "@/lib/pm/lockedPeriod";
+import { buildRentChargeLines } from "@/lib/pm/rentCharge";
+import { resolveScheduledRentForDate } from "@/lib/pm/rentSchedule";
+import type { PmContext } from "@/lib/auth/getCurrentUser";
+import type { RentCycle } from "@/types/pm";
 
 export function advanceRentDate(current: Date, frequency: RentCycle): Date {
   const next = new Date(current);
   switch (frequency) {
-    case 'Weekly':
+    case "Weekly":
       next.setDate(next.getDate() + 7);
       break;
-    case 'Bi-weekly':
+    case "Bi-weekly":
       next.setDate(next.getDate() + 14);
       break;
-    case 'Monthly':
+    case "Monthly":
       next.setMonth(next.getMonth() + 1);
       break;
-    case 'Quarterly':
+    case "Quarterly":
       next.setMonth(next.getMonth() + 3);
       break;
-    case 'Yearly':
+    case "Yearly":
       next.setFullYear(next.getFullYear() + 1);
       break;
   }
@@ -81,7 +81,7 @@ export async function runLeaseRecurringPoster(
 ): Promise<LeasePostResult[]> {
   await connectToDatabase();
   if (!Types.ObjectId.isValid(orgId)) {
-    throw new Error('runLeaseRecurringPoster requires a valid orgId.');
+    throw new Error("runLeaseRecurringPoster requires a valid orgId.");
   }
   const orgObjectId = new Types.ObjectId(orgId);
   const today = startOfDay(now);
@@ -100,7 +100,7 @@ export async function runLeaseRecurringPoster(
   // can't post anything for this org.
   const arCoa = await ChartOfAccount.findOne({
     organizationId: orgObjectId,
-    defaultFor: 'Accounts Receivable',
+    defaultFor: "Accounts Receivable",
     active: true,
   })
     .select({ _id: 1 })
@@ -108,10 +108,10 @@ export async function runLeaseRecurringPoster(
   if (!arCoa) {
     return [
       {
-        leaseId: '',
-        chargeId: '',
+        leaseId: "",
+        chargeId: "",
         posted: false,
-        note: 'No Accounts Receivable chart-of-account configured; skipped org.',
+        note: "No Accounts Receivable chart-of-account configured; skipped org.",
       },
     ];
   }
@@ -122,10 +122,10 @@ export async function runLeaseRecurringPoster(
   // row, so a lease whose rent lived only in primaryRent was never swept.)
   const leases = await Lease.find({
     organizationId: orgObjectId,
-    status: { $in: ['Active', 'Future'] },
+    status: { $in: ["Active", "Future"] },
     $or: [
-      { 'recurringCharges.0': { $exists: true } },
-      { 'primaryRent.nextDueDate': { $ne: null } },
+      { "recurringCharges.0": { $exists: true } },
+      { "primaryRent.nextDueDate": { $ne: null } },
     ],
   });
 
@@ -134,7 +134,7 @@ export async function runLeaseRecurringPoster(
     let postedThisLease = 0;
 
     for (const charge of lease.recurringCharges) {
-      const chargeId = String((charge as { _id?: unknown })._id ?? '');
+      const chargeId = String((charge as { _id?: unknown })._id ?? "");
       if (!charge.nextDate) continue; // no schedule on this row
 
       // DUE when today has reached the post-in-advance window. JE/lock still
@@ -146,7 +146,7 @@ export async function runLeaseRecurringPoster(
           leaseId: String(lease._id),
           chargeId,
           posted: false,
-          note: 'Not yet due',
+          note: "Not yet due",
         });
         continue;
       }
@@ -176,7 +176,10 @@ export async function runLeaseRecurringPoster(
       // guard pins the row by _id AND its current nextDate, so only one racer
       // matches; the positional `$` advances that same row.
       const originalNextDate = charge.nextDate;
-      const claimedNextDate = advanceRentDate(originalNextDate, charge.frequency);
+      const claimedNextDate = advanceRentDate(
+        originalNextDate,
+        charge.frequency,
+      );
       const claim = await Lease.findOneAndUpdate(
         {
           _id: lease._id,
@@ -188,7 +191,7 @@ export async function runLeaseRecurringPoster(
             },
           },
         },
-        { $set: { 'recurringCharges.$.nextDate': claimedNextDate } },
+        { $set: { "recurringCharges.$.nextDate": claimedNextDate } },
         { new: false },
       );
       if (!claim) {
@@ -196,7 +199,7 @@ export async function runLeaseRecurringPoster(
           leaseId: String(lease._id),
           chargeId,
           posted: false,
-          note: 'Already claimed by a concurrent run',
+          note: "Already claimed by a concurrent run",
         });
         continue;
       }
@@ -205,30 +208,30 @@ export async function runLeaseRecurringPoster(
         const je = await JournalEntry.create({
           organizationId: orgObjectId,
           date: originalNextDate,
-          scopeType: 'Property',
+          scopeType: "Property",
           scopeId: lease.propertyId,
           memo: `Recurring charge for lease #${lease.leaseNumber} (${charge.memo ?? charge.frequency})`,
           lines: [
             {
               accountId: accountsReceivableCoaId,
-              scopeType: 'Property',
+              scopeType: "Property",
               scopeId: lease.propertyId,
               unitId: lease.unitId,
-              description: 'Recurring rent receivable',
+              description: "Recurring rent receivable",
               debit: charge.amount,
               credit: 0,
             },
             {
               accountId: charge.accountId,
-              scopeType: 'Property',
+              scopeType: "Property",
               scopeId: lease.propertyId,
               unitId: lease.unitId,
-              description: 'Recurring rent income',
+              description: "Recurring rent income",
               debit: 0,
               credit: charge.amount,
             },
           ],
-          status: 'Posted',
+          status: "Posted",
           postedAt: new Date(now),
           // No human actor — attribute to the org's system id (mirrors the
           // systemCtx used for the locked-period gate).
@@ -257,13 +260,13 @@ export async function runLeaseRecurringPoster(
               },
             },
           },
-          { $set: { 'recurringCharges.$.nextDate': originalNextDate } },
+          { $set: { "recurringCharges.$.nextDate": originalNextDate } },
         );
         results.push({
           leaseId: String(lease._id),
           chargeId,
           posted: false,
-          note: err instanceof Error ? err.message : 'Posting failed',
+          note: err instanceof Error ? err.message : "Posting failed",
         });
       }
     }
@@ -293,7 +296,7 @@ export async function runLeaseRecurringPoster(
           locked = true;
           results.push({
             leaseId: String(lease._id),
-            chargeId: 'primary-rent',
+            chargeId: "primary-rent",
             posted: false,
             note: `Locked period: ${err.policyMessage}`,
           });
@@ -308,17 +311,17 @@ export async function runLeaseRecurringPoster(
           {
             _id: lease._id,
             organizationId: orgObjectId,
-            'primaryRent.nextDueDate': dueDate,
+            "primaryRent.nextDueDate": dueDate,
           },
-          { $set: { 'primaryRent.nextDueDate': claimedNext } },
+          { $set: { "primaryRent.nextDueDate": claimedNext } },
           { new: false },
         );
         if (!claim) {
           results.push({
             leaseId: String(lease._id),
-            chargeId: 'primary-rent',
+            chargeId: "primary-rent",
             posted: false,
-            note: 'Already claimed by a concurrent run',
+            note: "Already claimed by a concurrent run",
           });
         } else {
           // Resolve the rent for THIS due date. With a rent schedule, the
@@ -335,27 +338,27 @@ export async function runLeaseRecurringPoster(
               {
                 _id: lease._id,
                 organizationId: orgObjectId,
-                'primaryRent.nextDueDate': claimedNext,
+                "primaryRent.nextDueDate": claimedNext,
               },
-              { $set: { 'primaryRent.nextDueDate': dueDate } },
+              { $set: { "primaryRent.nextDueDate": dueDate } },
             );
           } else {
             try {
               const je = await JournalEntry.create({
                 organizationId: orgObjectId,
                 date: dueDate,
-                scopeType: 'Property',
+                scopeType: "Property",
                 scopeId: lease.propertyId,
                 memo: `Rent charge for lease #${lease.leaseNumber}`,
                 lines: built.lines,
-                status: 'Posted',
+                status: "Posted",
                 postedAt: new Date(now),
                 createdByUserId: orgObjectId,
               });
               postedThisLease += 1;
               results.push({
                 leaseId: String(lease._id),
-                chargeId: 'primary-rent',
+                chargeId: "primary-rent",
                 posted: true,
                 journalEntryId: String(je._id),
                 amount: built.total,
@@ -368,15 +371,15 @@ export async function runLeaseRecurringPoster(
                 {
                   _id: lease._id,
                   organizationId: orgObjectId,
-                  'primaryRent.nextDueDate': claimedNext,
+                  "primaryRent.nextDueDate": claimedNext,
                 },
-                { $set: { 'primaryRent.nextDueDate': dueDate } },
+                { $set: { "primaryRent.nextDueDate": dueDate } },
               );
               results.push({
                 leaseId: String(lease._id),
-                chargeId: 'primary-rent',
+                chargeId: "primary-rent",
                 posted: false,
-                note: err instanceof Error ? err.message : 'Posting failed',
+                note: err instanceof Error ? err.message : "Posting failed",
               });
             }
           }
@@ -387,11 +390,15 @@ export async function runLeaseRecurringPoster(
     if (postedThisLease > 0) {
       await logActivity({
         orgId,
-        parentType: 'Lease',
+        parentType: "Lease",
         parentId: lease._id,
-        eventType: 'Recurring charges posted',
+        eventType: "Recurring charges posted",
         actorUserId: null, // system-originated (cron) — no human actor
-        payload: { count: postedThisLease, source: 'cron', asOfDate: today.toISOString() },
+        payload: {
+          count: postedThisLease,
+          source: "cron",
+          asOfDate: today.toISOString(),
+        },
       });
     }
   }

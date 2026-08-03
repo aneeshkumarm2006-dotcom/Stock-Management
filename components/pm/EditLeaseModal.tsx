@@ -31,7 +31,8 @@ import {
 } from "@/types/pm";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
 import { TenantPicker, type TenantOption } from "@/components/pm/TenantPicker";
-import { fromCents, formatMoney } from "@/lib/pm/currency";
+import { fromCents } from "@/lib/pm/currency";
+import { usePmMoneyFormatter } from "@/components/pm/PmCurrencyProvider";
 import { toDateInputValueUTC } from "@/lib/utils/dateInput";
 import {
   LeaseTermScheduleEditor,
@@ -63,7 +64,11 @@ const RENT_ROW_DEFS: {
   defaultAccountName: string;
 }[] = [
   { key: "base", label: "Base Rent", defaultAccountName: "Base Rent" },
-  { key: "opex", label: "OPEX Recovery", defaultAccountName: "OPEX Recoveries" },
+  {
+    key: "opex",
+    label: "OPEX Recovery",
+    defaultAccountName: "OPEX Recoveries",
+  },
   { key: "tax", label: "Tax Recovery", defaultAccountName: "Tax Recoveries" },
 ];
 function defaultRentRows(): RentRow[] {
@@ -130,6 +135,7 @@ export function EditLeaseModal({
   leaseId,
 }: EditLeaseModalProps) {
   const { toast } = useToast();
+  const fmt = usePmMoneyFormatter();
   const [loading, setLoading] = React.useState(true);
   const [accounts, setAccounts] = React.useState<AccountOption[]>([]);
   const [propertyName, setPropertyName] = React.useState("");
@@ -190,15 +196,18 @@ export function EditLeaseModal({
         return;
       }
 
-      const income = (acc as {
-        id: string;
-        name: string;
-        type: string;
-        active?: boolean;
-        isGroup?: boolean;
-      }[])
+      const income = (
+        acc as {
+          id: string;
+          name: string;
+          type: string;
+          active?: boolean;
+          isGroup?: boolean;
+        }[]
+      )
         .filter(
-          (row) => row.active !== false && row.type === "Income" && !row.isGroup,
+          (row) =>
+            row.active !== false && row.type === "Income" && !row.isGroup,
         )
         .map((row) => ({ id: row.id, name: row.name }));
 
@@ -244,7 +253,9 @@ export function EditLeaseModal({
       setDeposit(String(fromCents(lease.securityDeposit?.received ?? 0)));
       setScheduleRows(scheduleApiToRows(lease.rentSchedule));
       setProportionateSharePct(
-        lease.proportionateSharePct != null ? String(lease.proportionateSharePct) : "",
+        lease.proportionateSharePct != null
+          ? String(lease.proportionateSharePct)
+          : "",
       );
       setSalesTaxRatePct(
         lease.salesTaxRatePct != null ? String(lease.salesTaxRatePct) : "",
@@ -496,7 +507,9 @@ export function EditLeaseModal({
 
             {/* End date */}
             <div>
-              <Label>End date {leaseType === "At-will" && "(N/A — At-will)"}</Label>
+              <Label>
+                End date {leaseType === "At-will" && "(N/A — At-will)"}
+              </Label>
               <Input
                 type="date"
                 value={endDate}
@@ -514,7 +527,8 @@ export function EditLeaseModal({
                 onChange={(e) => setNextDueDate(e.target.value)}
               />
               <p className="mt-1 text-xs text-fg-muted">
-                Rent posts from this date forward. Clear it to stop auto-posting.
+                Rent posts from this date forward. Clear it to stop
+                auto-posting.
               </p>
             </div>
 
@@ -551,10 +565,15 @@ export function EditLeaseModal({
                 category
               </Label>
               {rentRows.map((r) => (
-                <div key={r.key} className="grid grid-cols-12 items-center gap-2">
+                <div
+                  key={r.key}
+                  className="grid grid-cols-12 items-center gap-2"
+                >
                   <div className="col-span-3 text-sm text-fg">
                     {r.label}
-                    {r.key === "base" && <span className="text-fg-muted"> *</span>}
+                    {r.key === "base" && (
+                      <span className="text-fg-muted"> *</span>
+                    )}
                   </div>
                   <div className="col-span-4">
                     {rentMethod === "Fixed" ? (
@@ -606,7 +625,7 @@ export function EditLeaseModal({
                     : ""}
                 </span>
                 <span className="text-sm font-medium text-fg">
-                  Total: {formatMoney(Math.round(totalMonthlyDollars * 100))} / mo
+                  Total: {fmt(Math.round(totalMonthlyDollars * 100))} / mo
                 </span>
               </div>
             </div>

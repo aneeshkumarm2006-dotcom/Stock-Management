@@ -14,10 +14,10 @@
 // `applyCashBasis(lines, opts)` filters an array of "shaped" JE row
 // objects (whichever projection the caller built) using a Set of cash
 // JE IDs that the caller pre-computed via `collectCashJournalEntryIds`.
-import type { Types } from 'mongoose';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import type { AccountingMode } from '@/types/pm';
+import type { Types } from "mongoose";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import type { AccountingMode } from "@/types/pm";
 
 export interface CashBasisFilterOpts {
   orgId: Types.ObjectId;
@@ -38,7 +38,7 @@ export async function collectCashJournalEntryIds(
   opts: CashBasisFilterOpts,
 ): Promise<Set<string>> {
   const cashAccounts = await ChartOfAccount.find(
-    { organizationId: opts.orgId, type: 'Current Asset (cash)' },
+    { organizationId: opts.orgId, type: "Current Asset (cash)" },
     { _id: 1 },
   ).lean<{ _id: Types.ObjectId }[]>();
   if (cashAccounts.length === 0) return new Set();
@@ -52,8 +52,8 @@ export async function collectCashJournalEntryIds(
   const jeIds = await JournalEntry.find(
     {
       organizationId: opts.orgId,
-      status: 'Posted',
-      'lines.accountId': { $in: cashAccountIds },
+      status: "Posted",
+      "lines.accountId": { $in: cashAccountIds },
       ...(opts.from || opts.to ? { date: dateClause } : {}),
     },
     { _id: 1 },
@@ -73,6 +73,6 @@ export async function collectCashJournalEntryIds(
 export function applyCashBasis<
   T extends { journalEntryId: string | Types.ObjectId },
 >(rows: T[], mode: AccountingMode, cashJeIds: Set<string>): T[] {
-  if (mode === 'accrual') return rows;
+  if (mode === "accrual") return rows;
   return rows.filter((row) => cashJeIds.has(String(row.journalEntryId)));
 }

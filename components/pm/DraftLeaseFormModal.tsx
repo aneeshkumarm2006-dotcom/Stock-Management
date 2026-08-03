@@ -26,7 +26,7 @@ import {
 import { computeWarnings } from "@/lib/pm/warnings";
 import { WarningInline } from "@/components/pm/WarningBadge";
 import { LeaseTypeHelp } from "@/components/pm/LeaseTypeHelp";
-import { formatMoney } from "@/lib/pm/currency";
+import { usePmMoneyFormatter } from "@/components/pm/PmCurrencyProvider";
 import {
   LeaseTermScheduleEditor,
   scheduleRowsToPayload,
@@ -65,7 +65,11 @@ const RENT_ROW_DEFS: {
   defaultAccountName: string;
 }[] = [
   { key: "base", label: "Base Rent", defaultAccountName: "Base Rent" },
-  { key: "opex", label: "OPEX Recovery", defaultAccountName: "OPEX Recoveries" },
+  {
+    key: "opex",
+    label: "OPEX Recovery",
+    defaultAccountName: "OPEX Recoveries",
+  },
   { key: "tax", label: "Tax Recovery", defaultAccountName: "Tax Recoveries" },
 ];
 function defaultRentRows(): RentRow[] {
@@ -105,6 +109,7 @@ export function DraftLeaseFormModal({
   onSaved,
 }: DraftLeaseFormModalProps) {
   const { toast } = useToast();
+  const fmt = usePmMoneyFormatter();
   const [properties, setProperties] = React.useState<PropertyOption[]>([]);
   const [units, setUnits] = React.useState<UnitOption[]>([]);
   const [accounts, setAccounts] = React.useState<AccountOption[]>([]);
@@ -122,7 +127,8 @@ export function DraftLeaseFormModal({
   const [proportionateSharePct, setProportionateSharePct] = React.useState("");
   const [salesTaxRatePct, setSalesTaxRatePct] = React.useState("");
   const [tenants, setTenants] = React.useState<TenantDraft[]>([newTenant()]);
-  const [residentCenterWelcome, setResidentCenterWelcome] = React.useState(false);
+  const [residentCenterWelcome, setResidentCenterWelcome] =
+    React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -154,13 +160,15 @@ export function DraftLeaseFormModal({
           propertyName: row.propertyName,
         })),
       );
-      const all = (a as {
-        id: string;
-        name: string;
-        type: string;
-        active?: boolean;
-        isGroup?: boolean;
-      }[])
+      const all = (
+        a as {
+          id: string;
+          name: string;
+          type: string;
+          active?: boolean;
+          isGroup?: boolean;
+        }[]
+      )
         .filter((row) => row.active !== false && !row.isGroup)
         .map((row) => ({ id: row.id, name: row.name, type: row.type }));
       setAccounts(all);
@@ -195,13 +203,13 @@ export function DraftLeaseFormModal({
       .then((data) => {
         if (cancelled) return;
         setUnits(
-          (data as { id: string; unitId: string; sizeSqft: number | null }[]).map(
-            (r) => ({
-              id: r.id,
-              unitId: r.unitId,
-              sizeSqft: r.sizeSqft ?? null,
-            }),
-          ),
+          (
+            data as { id: string; unitId: string; sizeSqft: number | null }[]
+          ).map((r) => ({
+            id: r.id,
+            unitId: r.unitId,
+            sizeSqft: r.sizeSqft ?? null,
+          })),
         );
       });
     return () => {
@@ -210,13 +218,17 @@ export function DraftLeaseFormModal({
   }, [propertyId]);
 
   function updateTenant(idx: number, patch: Partial<TenantDraft>) {
-    setTenants((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
+    setTenants((prev) =>
+      prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)),
+    );
   }
   function addTenant() {
     setTenants((prev) => [...prev, newTenant()]);
   }
   function removeTenant(idx: number) {
-    setTenants((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
+    setTenants((prev) =>
+      prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx),
+    );
   }
 
   // §3/§4 — the rent method applies to all three revenue rows; per-sqft rows
@@ -310,7 +322,9 @@ export function DraftLeaseFormModal({
           ? undefined
           : Number(proportionateSharePct) || 0,
       salesTaxRatePct:
-        salesTaxRatePct.trim() === "" ? undefined : Number(salesTaxRatePct) || 0,
+        salesTaxRatePct.trim() === ""
+          ? undefined
+          : Number(salesTaxRatePct) || 0,
       tenants: cleanTenants.map((t) => ({
         firstName: t.firstName,
         lastName: t.lastName,
@@ -419,7 +433,9 @@ export function DraftLeaseFormModal({
             />
           </div>
           <div>
-            <Label>End date {leaseType === "At-will" && "(N/A — At-will)"}</Label>
+            <Label>
+              End date {leaseType === "At-will" && "(N/A — At-will)"}
+            </Label>
             <Input
               type="date"
               value={endDate}
@@ -449,10 +465,7 @@ export function DraftLeaseFormModal({
               category
             </Label>
             {rentRows.map((r) => (
-              <div
-                key={r.key}
-                className="grid grid-cols-12 items-center gap-2"
-              >
+              <div key={r.key} className="grid grid-cols-12 items-center gap-2">
                 <div className="col-span-3 text-sm">
                   {r.label}
                   {r.key === "base" && (
@@ -508,8 +521,8 @@ export function DraftLeaseFormModal({
                     : "Select a unit with a square footage to use price per sq ft."
                   : ""}
               </span>
-              <span className="text-sm font-medium text-foreground">
-                Total: {formatMoney(Math.round(totalMonthlyDollars * 100))} / mo
+              <span className="text-foreground text-sm font-medium">
+                Total: {fmt(Math.round(totalMonthlyDollars * 100))} / mo
               </span>
             </div>
           </div>
@@ -520,7 +533,7 @@ export function DraftLeaseFormModal({
               value={rentMemo}
               onChange={(e) => setRentMemo(e.target.value)}
             />
-            <div className="text-xs text-muted-foreground">
+            <div className="text-muted-foreground text-xs">
               {rentMemo.length}/100 (BR-PU-6)
             </div>
           </div>
@@ -552,10 +565,10 @@ export function DraftLeaseFormModal({
           <h3 className="text-sm font-semibold">
             Lease term schedule (past &amp; future) — optional
           </h3>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">
             Record an escalating rent across dated periods plus renewal options.
-            Base Rent, OPEX Recovery and Tax Recovery are monthly dollar amounts.
-            When set, the active term period drives rent posting.
+            Base Rent, OPEX Recovery and Tax Recovery are monthly dollar
+            amounts. When set, the active term period drives rent posting.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -595,9 +608,9 @@ export function DraftLeaseFormModal({
               + Add tenant
             </Button>
           </div>
-          <div className="space-y-2 mt-2">
+          <div className="mt-2 space-y-2">
             {tenants.map((t, idx) => (
-              <div key={t.key} className="grid grid-cols-7 gap-2 items-end">
+              <div key={t.key} className="grid grid-cols-7 items-end gap-2">
                 <div className="col-span-2">
                   <Label>First name</Label>
                   <Input

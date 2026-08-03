@@ -27,7 +27,7 @@ export interface CsvColumnMapping {
 
 function parseCsvLine(line: string): string[] {
   const out: string[] = [];
-  let cur = '';
+  let cur = "";
   let inQuote = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
@@ -41,9 +41,9 @@ function parseCsvLine(line: string): string[] {
         cur += ch;
       }
     } else {
-      if (ch === ',') {
+      if (ch === ",") {
         out.push(cur);
-        cur = '';
+        cur = "";
       } else if (ch === '"') {
         inQuote = true;
       } else {
@@ -57,14 +57,14 @@ function parseCsvLine(line: string): string[] {
 
 function toCentsSigned(raw: string): number {
   if (!raw) return 0;
-  const cleaned = raw.replace(/[$,\s]/g, '');
+  const cleaned = raw.replace(/[$,\s]/g, "");
   const n = Number(cleaned);
   if (!Number.isFinite(n)) return 0;
   return Math.round(n * 100);
 }
 
 function parseCsvDate(raw: string): Date | null {
-  const trimmed = (raw ?? '').trim();
+  const trimmed = (raw ?? "").trim();
   if (!trimmed) return null;
   // Try ISO first.
   const iso = new Date(trimmed);
@@ -109,29 +109,27 @@ export function parseCsv(
   const out: ParsedBankFeedRow[] = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCsvLine(lines[i]!);
-    const date = parseCsvDate(cols[dateIdx] ?? '');
+    const date = parseCsvDate(cols[dateIdx] ?? "");
     if (!date) continue;
-    const amountCents = toCentsSigned(cols[amtIdx] ?? '0');
+    const amountCents = toCentsSigned(cols[amtIdx] ?? "0");
     if (amountCents === 0) continue;
-    const description = (cols[descIdx] ?? '').trim();
+    const description = (cols[descIdx] ?? "").trim();
     if (!description) continue;
     out.push({
       txnDate: date,
       description,
       amountCents,
       externalRef:
-        refIdx >= 0 && cols[refIdx]?.trim()
-          ? cols[refIdx]!.trim()
-          : null,
+        refIdx >= 0 && cols[refIdx]?.trim() ? cols[refIdx]!.trim() : null,
     });
   }
   return out;
 }
 
 function ofxField(block: string, tag: string): string | null {
-  const re = new RegExp(`<${tag}>([^<\r\n]*)`, 'i');
+  const re = new RegExp(`<${tag}>([^<\r\n]*)`, "i");
   const m = block.match(re);
-  return m ? (m[1] ?? '').trim() : null;
+  return m ? (m[1] ?? "").trim() : null;
 }
 
 function parseOfxDate(raw: string | null): Date | null {
@@ -139,9 +137,7 @@ function parseOfxDate(raw: string | null): Date | null {
   // OFX dates: YYYYMMDD[HHMMSS][.MMM][offset]. We accept just the date prefix.
   const m = raw.match(/^(\d{4})(\d{2})(\d{2})/);
   if (!m) return null;
-  return new Date(
-    Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])),
-  );
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
 }
 
 /** Parse an OFX 2.x statement. Pulls every <STMTTRN>…</STMTTRN> block;
@@ -151,13 +147,13 @@ export function parseOfx(text: string): ParsedBankFeedRow[] {
   const re = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
-    const block = m[1] ?? '';
-    const txnDate = parseOfxDate(ofxField(block, 'DTPOSTED'));
-    const amount = Number(ofxField(block, 'TRNAMT') ?? '');
-    const fitId = ofxField(block, 'FITID');
-    const name = ofxField(block, 'NAME');
-    const memo = ofxField(block, 'MEMO');
-    const description = (name || memo || '').trim();
+    const block = m[1] ?? "";
+    const txnDate = parseOfxDate(ofxField(block, "DTPOSTED"));
+    const amount = Number(ofxField(block, "TRNAMT") ?? "");
+    const fitId = ofxField(block, "FITID");
+    const name = ofxField(block, "NAME");
+    const memo = ofxField(block, "MEMO");
+    const description = (name || memo || "").trim();
     if (!txnDate || !Number.isFinite(amount) || !description) continue;
     out.push({
       txnDate,

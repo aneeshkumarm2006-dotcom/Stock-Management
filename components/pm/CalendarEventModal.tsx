@@ -110,21 +110,18 @@ export function CalendarEventModal({
 }: CalendarEventModalProps) {
   const { toast } = useToast();
   const isEdit = !!initial?.id;
-  const isRecurring =
-    !!initial?.repeat && initial.repeat !== "Does not repeat";
+  const isRecurring = !!initial?.repeat && initial.repeat !== "Does not repeat";
 
-  const defaultStart =
-    initial?.startDate
-      ? new Date(initial.startDate)
-      : presetStart
-        ? new Date(presetStart)
-        : new Date();
-  const defaultEnd =
-    initial?.endDate
-      ? new Date(initial.endDate)
-      : presetEnd
-        ? new Date(presetEnd)
-        : new Date(defaultStart.getTime() + 60 * 60 * 1000);
+  const defaultStart = initial?.startDate
+    ? new Date(initial.startDate)
+    : presetStart
+      ? new Date(presetStart)
+      : new Date();
+  const defaultEnd = initial?.endDate
+    ? new Date(initial.endDate)
+    : presetEnd
+      ? new Date(presetEnd)
+      : new Date(defaultStart.getTime() + 60 * 60 * 1000);
   const startParts = toLocalInput(defaultStart);
   const endParts = toLocalInput(defaultEnd);
 
@@ -147,8 +144,7 @@ export function CalendarEventModal({
     initial?.reminder ?? "None",
   );
   const [location, setLocation] = React.useState(initial?.location ?? "");
-  const [editScope, setEditScope] =
-    React.useState<CalendarEditScope>("series");
+  const [editScope, setEditScope] = React.useState<CalendarEditScope>("series");
   const [saving, setSaving] = React.useState(false);
 
   // [G-B-16] — file attachments. `attachments` holds the selected file ids
@@ -179,10 +175,10 @@ export function CalendarEventModal({
     setAllDay(initial?.allDay ?? false);
     const s = initial?.startDate
       ? new Date(initial.startDate)
-      : presetStart ?? new Date();
+      : (presetStart ?? new Date());
     const e = initial?.endDate
       ? new Date(initial.endDate)
-      : presetEnd ?? new Date(s.getTime() + 60 * 60 * 1000);
+      : (presetEnd ?? new Date(s.getTime() + 60 * 60 * 1000));
     const sp = toLocalInput(s);
     const ep = toLocalInput(e);
     setStartDate(sp.date);
@@ -250,7 +246,8 @@ export function CalendarEventModal({
     if (end.getTime() <= start.getTime()) {
       toast({
         title: "End must be after start",
-        description: "Adjust the end date/time so the event has a positive duration.",
+        description:
+          "Adjust the end date/time so the event has a positive duration.",
         variant: "error",
       });
       return;
@@ -303,7 +300,9 @@ export function CalendarEventModal({
     setSaving(false);
     toast({
       title: isEdit ? "Event updated" : "Event published",
-      description: isEdit ? undefined : "Visible to all active tenants on the property.",
+      description: isEdit
+        ? undefined
+        : "Visible to all active tenants on the property.",
       variant: "success",
     });
     onClose();
@@ -323,7 +322,11 @@ export function CalendarEventModal({
       const errBody = (await res.json().catch(() => ({}))) as {
         error?: string;
       };
-      toast({ title: "Delete failed", description: errBody.error, variant: "error" });
+      toast({
+        title: "Delete failed",
+        description: errBody.error,
+        variant: "error",
+      });
       return;
     }
     toast({ title: "Event deleted", variant: "success" });
@@ -371,7 +374,9 @@ export function CalendarEventModal({
           )}
 
           <div className="space-y-1">
-            <Label htmlFor="ce-prop">Property * (single-property scope, BR-CC-6)</Label>
+            <Label htmlFor="ce-prop">
+              Property * (single-property scope, BR-CC-6)
+            </Label>
             <select
               id="ce-prop"
               disabled={isEdit}
@@ -474,7 +479,9 @@ export function CalendarEventModal({
                 id="ce-reminder"
                 className="w-full rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg"
                 value={reminder}
-                onChange={(e) => setReminder(e.target.value as CalendarReminder)}
+                onChange={(e) =>
+                  setReminder(e.target.value as CalendarReminder)
+                }
               >
                 {CALENDAR_REMINDERS.map((r) => (
                   <option key={r} value={r}>
@@ -527,9 +534,7 @@ export function CalendarEventModal({
                       <button
                         type="button"
                         onClick={() =>
-                          setAttachments((prev) =>
-                            prev.filter((x) => x !== id),
-                          )
+                          setAttachments((prev) => prev.filter((x) => x !== id))
                         }
                         aria-label="Remove attachment"
                         className="text-fg-muted hover:text-error"
@@ -612,10 +617,12 @@ export function CalendarEventModal({
 
           <div className="grid gap-2 rounded border border-border bg-surface p-3 text-sm text-fg-muted">
             <div>
-              <span className="font-medium text-fg">Invitees:</span> All tenants (read-only, BR-CC-8)
+              <span className="font-medium text-fg">Invitees:</span> All tenants
+              (read-only, BR-CC-8)
             </div>
             <div>
-              <span className="font-medium text-fg">Timezone:</span> {timezone} (org-level, read-only, BR-CC-9)
+              <span className="font-medium text-fg">Timezone:</span> {timezone}{" "}
+              (org-level, read-only, BR-CC-9)
             </div>
           </div>
 

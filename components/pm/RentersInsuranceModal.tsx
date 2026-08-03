@@ -24,7 +24,11 @@ interface RentersInsuranceModalProps {
   onClose: () => void;
   onSaved: () => void | Promise<void>;
   leaseId: string;
-  leaseTenants: Array<{ tenantId: string; firstName: string; lastName: string }>;
+  leaseTenants: Array<{
+    tenantId: string;
+    firstName: string;
+    lastName: string;
+  }>;
   /** When set, modal loads the policy and saves via PATCH. */
   editingId?: string;
 }
@@ -75,9 +79,7 @@ export function RentersInsuranceModal({
         setCarrier(p.carrier);
         setPolicyNumber(p.policyNumber ?? "");
         setLiability(String((p.liabilityCoverage ?? 0) / 100));
-        setEffectiveDate(
-          p.effectiveDate ? p.effectiveDate.slice(0, 10) : "",
-        );
+        setEffectiveDate(p.effectiveDate ? p.effectiveDate.slice(0, 10) : "");
         setExpirationDate(
           p.expirationDate ? p.expirationDate.slice(0, 10) : "",
         );
@@ -91,7 +93,10 @@ export function RentersInsuranceModal({
 
   async function save() {
     if (!effectiveDate || !expirationDate) {
-      toast({ title: "Effective and expiration dates required", variant: "error" });
+      toast({
+        title: "Effective and expiration dates required",
+        variant: "error",
+      });
       return;
     }
     if (new Date(expirationDate) <= new Date(effectiveDate)) {
@@ -209,7 +214,7 @@ export function RentersInsuranceModal({
         {leaseTenants.length > 0 && (
           <div>
             <Label>Covered residents</Label>
-            <p className="text-xs text-muted-foreground mb-2">
+            <p className="text-muted-foreground mb-2 text-xs">
               Empty = all tenants on the lease are covered (default).
             </p>
             <div className="space-y-1">

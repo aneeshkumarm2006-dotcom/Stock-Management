@@ -61,7 +61,10 @@ function monthHeaderFor(idxFromFyStart: number, fyStart: FiscalMonth): string {
 }
 
 function fyTotalDollars(line: LineDraft): number {
-  return line.monthlyAmounts.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+  return line.monthlyAmounts.reduce(
+    (a, b) => a + (Number.isFinite(b) ? b : 0),
+    0,
+  );
 }
 
 export function BudgetGridEditor({
@@ -384,9 +387,7 @@ export function BudgetGridEditor({
             <Plus className="h-3.5 w-3.5" /> Add line
           </Button>
         )}
-        {saving && (
-          <span className="text-xs text-fg-muted">Saving…</span>
-        )}
+        {saving && <span className="text-xs text-fg-muted">Saving…</span>}
       </div>
     </div>
   );

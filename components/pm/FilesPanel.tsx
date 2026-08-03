@@ -33,7 +33,7 @@ interface FileRow {
   fileSize: number;
   storageKey: string;
   storageUrl: string;
-  resourceType: 'image' | 'video' | 'raw';
+  resourceType: "image" | "video" | "raw";
   uploadedAt: string;
   lastModifiedAt: string;
 }
@@ -130,7 +130,9 @@ export function FilesPanel({ locationType, locationId }: Props) {
       // 1. Get a signed payload from our server.
       const signRes = await fetch("/api/pm/files/sign", { method: "POST" });
       if (!signRes.ok) {
-        const err = (await signRes.json().catch(() => ({}))) as { error?: string };
+        const err = (await signRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
         toast({
           title: "Storage not ready",
           description: err.error ?? "Could not get upload signature.",
@@ -192,7 +194,11 @@ export function FilesPanel({ locationType, locationId }: Props) {
       });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as { error?: string };
-        toast({ title: "Save failed", description: err.error, variant: "error" });
+        toast({
+          title: "Save failed",
+          description: err.error,
+          variant: "error",
+        });
         return;
       }
       toast({ title: "File uploaded", variant: "success" });
@@ -288,7 +294,11 @@ export function FilesPanel({ locationType, locationId }: Props) {
                 <td className="py-2 text-fg">
                   {f.storageUrl ? (
                     <a
-                      href={fileDeliveryUrl(f.storageUrl, f.resourceType, f.originalFilename)}
+                      href={fileDeliveryUrl(
+                        f.storageUrl,
+                        f.resourceType,
+                        f.originalFilename,
+                      )}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-fg underline-offset-2 hover:underline"
@@ -299,7 +309,9 @@ export function FilesPanel({ locationType, locationId }: Props) {
                     f.title
                   )}
                 </td>
-                <td className="text-fg-muted">{Math.round(f.fileSize / 1024)} KB</td>
+                <td className="text-fg-muted">
+                  {Math.round(f.fileSize / 1024)} KB
+                </td>
                 <td className="text-fg-muted">
                   {format(new Date(f.uploadedAt), "yyyy-MM-dd")}
                 </td>
@@ -307,7 +319,11 @@ export function FilesPanel({ locationType, locationId }: Props) {
                   <div className="flex items-center justify-end gap-1">
                     {f.storageUrl && (
                       <a
-                        href={fileDeliveryUrl(f.storageUrl, f.resourceType, f.originalFilename)}
+                        href={fileDeliveryUrl(
+                          f.storageUrl,
+                          f.resourceType,
+                          f.originalFilename,
+                        )}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="rounded p-1 text-fg-muted hover:bg-surface-high hover:text-fg"

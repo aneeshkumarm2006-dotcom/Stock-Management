@@ -109,7 +109,9 @@ export function RequestOwnerContributionModal({
     });
     if (!createRes.ok) {
       setSaving(false);
-      const body = (await createRes.json().catch(() => ({}))) as { error?: string };
+      const body = (await createRes.json().catch(() => ({}))) as {
+        error?: string;
+      };
       toast({
         title: body.error ?? "Failed to create request",
         variant: "error",
@@ -124,7 +126,9 @@ export function RequestOwnerContributionModal({
         { method: "POST" },
       );
       if (!sendRes.ok) {
-        const body = (await sendRes.json().catch(() => ({}))) as { error?: string };
+        const body = (await sendRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
         toast({
           title: `Created. Email failed: ${body.error ?? "unknown error"}`,
           variant: "error",

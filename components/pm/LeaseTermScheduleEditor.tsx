@@ -15,11 +15,9 @@ import { Trash2, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { formatMoney, fromCents, toCents } from "@/lib/pm/currency";
-import {
-  annualRatePerSqft,
-  computePeriodAmounts,
-} from "@/lib/pm/rentSchedule";
+import { fromCents, toCents } from "@/lib/pm/currency";
+import { usePmMoneyFormatter } from "@/components/pm/PmCurrencyProvider";
+import { annualRatePerSqft, computePeriodAmounts } from "@/lib/pm/rentSchedule";
 import type { LeaseTermKind } from "@/types/pm";
 import { toDateInputValueUTC } from "@/lib/utils/dateInput";
 
@@ -115,7 +113,9 @@ interface ApiPeriod {
 
 /** Pre-fill editor rows from an API `rentSchedule` payload (edit flow). The API
  *  returns cents; the inputs show dollars. */
-export function scheduleApiToRows(periods: ApiPeriod[] | undefined): ScheduleRow[] {
+export function scheduleApiToRows(
+  periods: ApiPeriod[] | undefined,
+): ScheduleRow[] {
   const dollars = (cents: number) => (cents ? String(fromCents(cents)) : "");
   return (periods ?? []).map((p) => ({
     key: genKey(),
@@ -142,8 +142,7 @@ interface Props {
   salesTaxRatePct?: number | null;
 }
 
-const selectCls =
-  "w-full rounded border bg-background px-2 py-1.5 text-sm";
+const selectCls = "w-full rounded border bg-background px-2 py-1.5 text-sm";
 
 export function LeaseTermScheduleEditor({
   rows,
@@ -152,9 +151,11 @@ export function LeaseTermScheduleEditor({
   defaultSizeSqft,
   salesTaxRatePct,
 }: Props) {
+  const fmt = usePmMoneyFormatter();
   const update = (key: string, patch: Partial<ScheduleRow>) =>
     onRowsChange(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const remove = (key: string) => onRowsChange(rows.filter((r) => r.key !== key));
+  const remove = (key: string) =>
+    onRowsChange(rows.filter((r) => r.key !== key));
   const add = (kind: LeaseTermKind) =>
     onRowsChange([...rows, emptyScheduleRow(kind, defaultSizeSqft)]);
 
@@ -181,8 +182,8 @@ export function LeaseTermScheduleEditor({
       {noCurrentTerm && (
         <p className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-fg">
           <span className="font-medium">No term period covers today.</span> Rent
-          posts only from the term period active on the due date, so nothing will
-          post until a period covers the current date. Add or extend a term
+          posts only from the term period active on the due date, so nothing
+          will post until a period covers the current date. Add or extend a term
           period, or remove the schedule to go back to the revenue rows above.
         </p>
       )}
@@ -204,8 +205,10 @@ export function LeaseTermScheduleEditor({
           <div
             key={r.key}
             className={
-              "rounded border p-3 space-y-2 " +
-              (isOption ? "border-dashed border-border bg-surface/50" : "border-border")
+              "space-y-2 rounded border p-3 " +
+              (isOption
+                ? "border-dashed border-border bg-surface/50"
+                : "border-border")
             }
           >
             <div className="flex items-end gap-2">
@@ -270,14 +273,15 @@ export function LeaseTermScheduleEditor({
 
             {/* Base Rent / OPEX Recovery / Tax Recovery — MONTHLY dollars
                 (what you type is what posts) + income account. */}
-            {(
-              [
-                ["base", "Base Rent", r.baseAmount, r.baseAccountId] as const,
-                ["opex", "OPEX Recovery", r.opexAmount, r.opexAccountId] as const,
-                ["tax", "Tax Recovery", r.taxAmount, r.taxAccountId] as const,
-              ]
-            ).map(([k, label, amount, acct]) => (
-              <div key={k} className="grid grid-cols-[9rem_1fr] items-center gap-2">
+            {[
+              ["base", "Base Rent", r.baseAmount, r.baseAccountId] as const,
+              ["opex", "OPEX Recovery", r.opexAmount, r.opexAccountId] as const,
+              ["tax", "Tax Recovery", r.taxAmount, r.taxAccountId] as const,
+            ].map(([k, label, amount, acct]) => (
+              <div
+                key={k}
+                className="grid grid-cols-[9rem_1fr] items-center gap-2"
+              >
                 <div>
                   <Label>
                     {label}{" "}
@@ -324,18 +328,18 @@ export function LeaseTermScheduleEditor({
               )}
               Monthly{" "}
               <span className="font-medium text-fg">
-                {formatMoney(amounts.totalBeforeTaxMonthly)}
+                {fmt(amounts.totalBeforeTaxMonthly)}
               </span>{" "}
               · Annual{" "}
               <span className="font-medium text-fg">
-                {formatMoney(amounts.totalBeforeTaxAnnual)}
+                {fmt(amounts.totalBeforeTaxAnnual)}
               </span>
               {salesTaxRatePct ? (
                 <>
                   {" "}
                   · With GST/QST/mo{" "}
                   <span className="font-medium text-fg">
-                    {formatMoney(amounts.totalWithGstMonthly)}
+                    {fmt(amounts.totalWithGstMonthly)}
                   </span>
                 </>
               ) : null}
@@ -350,9 +354,8 @@ export function LeaseTermScheduleEditor({
                 </>
               ) : null}
               <span className="ml-2">
-                (Base {formatMoney(amounts.baseMonthly)} · OPEX{" "}
-                {formatMoney(amounts.opexMonthly)} · Tax{" "}
-                {formatMoney(amounts.taxMonthly)})
+                (Base {fmt(amounts.baseMonthly)} · OPEX{" "}
+                {fmt(amounts.opexMonthly)} · Tax {fmt(amounts.taxMonthly)})
               </span>
             </div>
           </div>
@@ -360,7 +363,12 @@ export function LeaseTermScheduleEditor({
       })}
 
       <div className="flex gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={() => add("Term")}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => add("Term")}
+        >
           <Plus className="mr-1 h-4 w-4" /> Add term period
         </Button>
         <Button

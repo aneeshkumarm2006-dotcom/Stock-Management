@@ -31,7 +31,7 @@ import {
 import { TenantPicker, type TenantOption } from "@/components/pm/TenantPicker";
 import { LeaseTypeHelp } from "@/components/pm/LeaseTypeHelp";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
-import { formatMoney } from "@/lib/pm/currency";
+import { usePmMoneyFormatter } from "@/components/pm/PmCurrencyProvider";
 import {
   LeaseTermScheduleEditor,
   scheduleRowsToPayload,
@@ -80,7 +80,11 @@ const RENT_ROW_DEFS: {
   defaultAccountName: string;
 }[] = [
   { key: "base", label: "Base Rent", defaultAccountName: "Base Rent" },
-  { key: "opex", label: "OPEX Recovery", defaultAccountName: "OPEX Recoveries" },
+  {
+    key: "opex",
+    label: "OPEX Recovery",
+    defaultAccountName: "OPEX Recoveries",
+  },
   { key: "tax", label: "Tax Recovery", defaultAccountName: "Tax Recoveries" },
 ];
 function defaultRentRows(): RentRow[] {
@@ -132,6 +136,7 @@ export function AssignLeaseModal({
   presetUnitId,
 }: AssignLeaseModalProps) {
   const { toast } = useToast();
+  const fmt = usePmMoneyFormatter();
   const [properties, setProperties] = React.useState<PropertyOption[]>([]);
   const [units, setUnits] = React.useState<UnitOption[]>([]);
   const [accounts, setAccounts] = React.useState<AccountOption[]>([]);
@@ -183,13 +188,15 @@ export function AssignLeaseModal({
           propertyName: row.propertyName,
         })),
       );
-      const income = (a as {
-        id: string;
-        name: string;
-        type: string;
-        active?: boolean;
-        isGroup?: boolean;
-      }[])
+      const income = (
+        a as {
+          id: string;
+          name: string;
+          type: string;
+          active?: boolean;
+          isGroup?: boolean;
+        }[]
+      )
         .filter(
           (row) =>
             row.active !== false && row.type === "Income" && !row.isGroup,
@@ -249,8 +256,7 @@ export function AssignLeaseModal({
 
   // §3/§4 — the rent method applies to all three revenue rows; per-sqft rows
   // resolve against the selected unit's sizeSqft.
-  const selectedUnitSqft =
-    units.find((u) => u.id === unitId)?.sizeSqft ?? null;
+  const selectedUnitSqft = units.find((u) => u.id === unitId)?.sizeSqft ?? null;
   // Existing occupants of the chosen unit. A unit may carry more than one
   // active tenant; we don't block assigning here, just warn (non-blocking).
   const selectedUnitOccupants =
@@ -560,10 +566,7 @@ export function AssignLeaseModal({
               category
             </Label>
             {rentRows.map((r) => (
-              <div
-                key={r.key}
-                className="grid grid-cols-12 items-center gap-2"
-              >
+              <div key={r.key} className="grid grid-cols-12 items-center gap-2">
                 <div className="col-span-3 text-sm text-fg">
                   {r.label}
                   {r.key === "base" && (
@@ -620,7 +623,7 @@ export function AssignLeaseModal({
                   : ""}
               </span>
               <span className="text-sm font-medium text-fg">
-                Total: {formatMoney(Math.round(totalMonthlyDollars * 100))} / mo
+                Total: {fmt(Math.round(totalMonthlyDollars * 100))} / mo
               </span>
             </div>
           </div>
@@ -629,9 +632,10 @@ export function AssignLeaseModal({
           <div className="col-span-2 space-y-2 border-t border-border pt-3">
             <Label>Lease term schedule (past &amp; future) — optional</Label>
             <p className="text-xs text-fg-muted">
-              Record an escalating rent across dated periods plus renewal options.
-              Base Rent, OPEX Recovery and Tax Recovery are monthly dollar
-              amounts. When set, the active term period drives rent posting.
+              Record an escalating rent across dated periods plus renewal
+              options. Base Rent, OPEX Recovery and Tax Recovery are monthly
+              dollar amounts. When set, the active term period drives rent
+              posting.
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>

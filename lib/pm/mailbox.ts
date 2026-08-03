@@ -2,9 +2,9 @@
 // Lookup order: per-property override → org default. Phase 6 callers pull
 // the chosen mailbox from this helper instead of reaching into the
 // Organization document directly.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { Organization } from '@/lib/db/models/pm/Organization';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { Organization } from "@/lib/db/models/pm/Organization";
 
 export interface MailboxLookupInput {
   orgId: string | Types.ObjectId;
@@ -19,11 +19,13 @@ export async function resolveSenderMailbox(
 ): Promise<string | null> {
   await connectToDatabase();
   const org = await Organization.findById(input.orgId)
-    .select('senderMailbox')
-    .lean<{ senderMailbox?: {
-      defaultFrom?: string;
-      perPropertyOverrides?: Map<string, string> | Record<string, string>;
-    } }>();
+    .select("senderMailbox")
+    .lean<{
+      senderMailbox?: {
+        defaultFrom?: string;
+        perPropertyOverrides?: Map<string, string> | Record<string, string>;
+      };
+    }>();
   if (!org?.senderMailbox) return null;
 
   const overrides = org.senderMailbox.perPropertyOverrides;
@@ -34,7 +36,7 @@ export async function resolveSenderMailbox(
     if (overrides instanceof Map) {
       const v = overrides.get(key);
       if (v) return v;
-    } else if (typeof overrides === 'object') {
+    } else if (typeof overrides === "object") {
       const v = (overrides as Record<string, string>)[key];
       if (v) return v;
     }

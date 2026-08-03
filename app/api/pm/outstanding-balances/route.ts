@@ -7,8 +7,15 @@
 // It ALSO returns a per-country breakdown (`groups`): the client operates in
 // Canada and the United States and wants each country listed separately with
 // its own subtotal. Grouping key is each property's `address.country`
-// (normalized). Org currency is single-currency, so grouping by country never
-// mixes currencies within a total.
+// (normalized).
+//
+// CURRENCY. Properties can book in different currencies, so a plain sum of
+// cents across them is meaningless. Every total is therefore returned as a
+// `MoneyByCurrency` bucket rather than a single number, and each row carries
+// the currency it is denominated in. The client converts and sums at render
+// time using the live FX table (see lib/pm/moneyByCurrency.ts). Note a country
+// group is NOT automatically single-currency — a property's currency is its own
+// field, not derived from its address — so groups get buckets too.
 //
 // Why aggregate here rather than client-side:
 //  - The journal is large; we never want the dashboard to pull every JE.
@@ -31,6 +38,13 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { normalizeCountry, OTHER } from '@/lib/pm/country';
+import { Organization } from '@/lib/db/models/pm/Organization';
+import { resolvePropertyCurrency } from '@/lib/pm/currency';
+import {
+  addMoney,
+  type MoneyByCurrency,
+} from '@/lib/pm/moneyByCurrency';
+import type { PmCurrency } from '@/types/pm';
 
 export const runtime = 'nodejs';
 
@@ -45,16 +59,24 @@ interface Row {
   leaseId: string | null;
   label: string;
   balanceCents: number;
+  /** Currency `balanceCents` is denominated in. */
+  currency: PmCurrency;
 }
 
 interface CountryGroup {
   country: string;
-  totalCents: number;
+  /** Per-currency subtotal — convert client-side before displaying. */
+  totals: MoneyByCurrency;
   count: number;
   top: Row[];
 }
 
-const emptyPayload = { totalCents: 0, count: 0, top: [] as Row[], groups: [] as CountryGroup[] };
+const emptyPayload = {
+  totals: {} as MoneyByCurrency,
+  count: 0,
+  top: [] as Row[],
+  groups: [] as CountryGroup[],
+};
 
 export async function GET() {
   const ctx = await getPmContext();
@@ -107,7 +129,6 @@ export async function GET() {
     return NextResponse.json(emptyPayload);
   }
 
-  const totalCents = agg.reduce((acc, r) => acc + r.balanceCents, 0);
   const overallTop5 = agg.slice(0, 5);
 
   // 3. Fetch every property referenced by the aggregation — we need each one's
@@ -121,13 +142,39 @@ export async function GET() {
     ),
   ).map((s) => new Types.ObjectId(s));
 
-  const props =
+  const [props, org] = await Promise.all([
     allPropIds.length === 0
-      ? []
-      : await Property.find({ _id: { $in: allPropIds }, organizationId: orgId })
-          .select({ _id: 1, propertyName: 1, propertySubType: 1, 'address.country': 1 })
-          .lean();
+      ? Promise.resolve([])
+      : Property.find({ _id: { $in: allPropIds }, organizationId: orgId })
+          .select({
+            _id: 1,
+            propertyName: 1,
+            propertySubType: 1,
+            currency: 1,
+            'address.country': 1,
+          })
+          .lean(),
+    Organization.findById(orgId).select({ defaultCurrency: 1 }).lean(),
+  ]);
   const propById = new Map(props.map((p) => [String(p._id), p]));
+
+  const orgDefaultCurrency = (org?.defaultCurrency ?? 'USD') as PmCurrency;
+
+  // A property with no `currency` set inherits the org default — the same
+  // interpretation those amounts had before the field existed.
+  const currencyForRow = (r: AggRow): PmCurrency => {
+    const pKey = r._id.propertyId ? String(r._id.propertyId) : null;
+    const prop = pKey ? propById.get(pKey) : null;
+    return resolvePropertyCurrency(
+      (prop as { currency?: PmCurrency | null } | null)?.currency,
+      orgDefaultCurrency,
+    );
+  };
+
+  const totals = agg.reduce<MoneyByCurrency>(
+    (acc, r) => addMoney(acc, currencyForRow(r), r.balanceCents),
+    {},
+  );
 
   const countryForRow = (r: AggRow): string => {
     const pKey = r._id.propertyId ? String(r._id.propertyId) : null;
@@ -211,6 +258,7 @@ export async function GET() {
       leaseId: lease ? String(lease._id) : null,
       label: `${propertyName}${subType}${unitLabel}`,
       balanceCents: row.balanceCents,
+      currency: currencyForRow(row),
     };
   };
 
@@ -219,21 +267,28 @@ export async function GET() {
   const groups: CountryGroup[] = Array.from(groupMap.entries()).map(
     ([country, list]) => ({
       country,
-      totalCents: list.reduce((acc, r) => acc + r.balanceCents, 0),
+      totals: list.reduce<MoneyByCurrency>(
+        (acc, r) => addMoney(acc, currencyForRow(r), r.balanceCents),
+        {},
+      ),
       count: list.length,
       top: (groupTopSlices.get(country) ?? []).map(toRow),
     }),
   );
 
-  // Sort groups by total desc, but always keep "Other" last.
+  // Sort groups by size, keeping "Other" last. Ordering only — it compares the
+  // raw cents sum without FX, which is close enough to rank groups and avoids
+  // making the server depend on a live rate.
+  const rank = (g: CountryGroup) =>
+    Object.values(g.totals).reduce<number>((s, v) => s + (v ?? 0), 0);
   groups.sort((a, b) => {
     if (a.country === OTHER) return 1;
     if (b.country === OTHER) return -1;
-    return b.totalCents - a.totalCents;
+    return rank(b) - rank(a);
   });
 
   return NextResponse.json({
-    totalCents,
+    totals,
     count: agg.length,
     top,
     groups,

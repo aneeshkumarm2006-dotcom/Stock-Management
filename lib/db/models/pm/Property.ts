@@ -16,10 +16,12 @@ import type {
   CommercialSubType,
   StateOrProvince,
   ManagementFeeBillingFrequency,
+  PmCurrency,
 } from '@/types/pm';
 import {
   COMMERCIAL_SUBTYPES,
   MANAGEMENT_FEE_BILLING_FREQUENCIES,
+  PM_CURRENCIES,
   RESIDENTIAL_SUBTYPES,
 } from '@/types/pm';
 import { WarningSchema, type IWarning } from './_shared/WarningSchema';
@@ -79,6 +81,20 @@ export interface IProperty {
    *  SUBTYPE_CLASS_MISMATCH warning rather than a hard validator. */
   propertySubType: PropertySubType | '';
   address: IPropertyAddress;
+  /**
+   * Native currency of every money amount booked against this property —
+   * leases, bills, GL lines, deposits. The PM analogue of `Position.currency`
+   * on the stock side.
+   *
+   * OPTIONAL BY DESIGN. `undefined` means "inherit Organization.defaultCurrency",
+   * which is exactly how the ledger behaved before this field existed, so
+   * existing data renders unchanged until someone sets it deliberately.
+   * `scripts/backfill-property-currency.ts` proposes a value from
+   * `address.country` (CA → CAD, US → USD) and only writes with `--apply`.
+   * Resolve via `resolvePropertyCurrency()` in lib/pm/currency.ts — never read
+   * this field raw, or you lose the org fallback.
+   */
+  currency?: PmCurrency | null;
   photo?: Types.ObjectId | null;
   /** Image gallery — refs to PmFile rows. `photo` is the cover image (auto-set
    *  to images[0] when none is chosen explicitly). */
@@ -175,6 +191,9 @@ const PropertySchema = new Schema<IProperty>(
     propertyClass: { type: String, enum: PROPERTY_CLASSES, default: 'Residential' },
     propertySubType: { type: String, default: '', trim: true },
     address: { type: AddressSchema, default: () => ({}) },
+    // No `default:` on purpose — an unset value means "inherit the org
+    // currency", which preserves pre-existing ledger behaviour exactly.
+    currency: { type: String, enum: [...PM_CURRENCIES], default: undefined },
     photo: { type: Schema.Types.ObjectId, ref: 'PmFile', default: null },
     images: {
       type: [{ type: Schema.Types.ObjectId, ref: 'PmFile' }],

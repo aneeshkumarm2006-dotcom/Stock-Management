@@ -45,7 +45,9 @@ import {
   type GalleryImage,
 } from "@/components/pm/EntityImageGallery";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
+import { PmNativeCurrency } from "@/components/pm/PmCurrencyProvider";
 import type {
+  PmCurrency,
   PropertyClass,
   PropertySubType,
   TenantType,
@@ -77,6 +79,8 @@ interface PropertyDetail {
     zip: string;
     country: string;
   };
+  /** Native booking currency; null = inherit the org default. */
+  currency: PmCurrency | null;
   photo: string | null;
   images: GalleryImage[];
   propertyManagerUserId: string | null;
@@ -238,6 +242,10 @@ export default function PropertyDetailPage() {
   const isCommercial = doc.propertyClass === "Commercial";
 
   return (
+    // Declare this property's booking currency ONCE — every CurrencyAmount
+    // below converts from it into the user's display currency without needing
+    // a prop of its own.
+    <PmNativeCurrency currency={doc.currency}>
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Button
@@ -307,6 +315,8 @@ export default function PropertyDetailPage() {
                   state: doc.address.state,
                   zip: doc.address.zip,
                   country: doc.address.country || "US",
+                  // "" = inherit the org default (the pre-field behaviour).
+                  currency: doc.currency ?? "",
                   listingDescription: doc.listingDescription,
                 } as Record<string, unknown>}
                 fields={[
@@ -337,6 +347,18 @@ export default function PropertyDetailPage() {
                           : ((v as string) || "—"),
                   },
                   {
+                    key: "currency",
+                    label: "Booking currency",
+                    type: "select",
+                    options: [
+                      { value: "", label: "Use organisation default" },
+                      { value: "CAD", label: "CAD — Canadian dollar" },
+                      { value: "USD", label: "USD — US dollar" },
+                    ],
+                    display: (v) =>
+                      v ? String(v) : "Organisation default",
+                  },
+                  {
                     key: "listingDescription",
                     label: "Listing description",
                     type: "textarea",
@@ -348,6 +370,8 @@ export default function PropertyDetailPage() {
                 payloadTransform={(p) => ({
                   propertyName: p.propertyName,
                   listingDescription: p.listingDescription,
+                  // Empty string clears the override back to "inherit org".
+                  currency: p.currency ? p.currency : null,
                   address: {
                     line1: p.line1,
                     line2: p.line2,
@@ -869,6 +893,7 @@ export default function PropertyDetailPage() {
         </TabsContent>
       </Tabs>
     </div>
+    </PmNativeCurrency>
   );
 }
 

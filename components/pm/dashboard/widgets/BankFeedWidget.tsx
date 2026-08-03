@@ -35,7 +35,9 @@ export function BankFeedWidget() {
     <WidgetCard
       title="Bank Feed"
       viewAllHref="/properties/accounting/banking"
-      footer={empty ? null : `${count} unmatched transaction${count === 1 ? "" : "s"}`}
+      footer={
+        empty ? null : `${count} unmatched transaction${count === 1 ? "" : "s"}`
+      }
     >
       {empty ? (
         <p className="text-sm text-fg-muted">

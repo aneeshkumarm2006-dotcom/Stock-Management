@@ -27,7 +27,9 @@ const TAB_LABELS: Record<TabValue, string> = {
 };
 
 function fetchApplicants(status: TabValue): Promise<ApplicantRow[]> {
-  return fetch(`/api/pm/applicants?status=${encodeURIComponent(status)}&includeClosed=1`)
+  return fetch(
+    `/api/pm/applicants?status=${encodeURIComponent(status)}&includeClosed=1`,
+  )
     .then((r) => (r.ok ? r.json() : []))
     .then((d) => (Array.isArray(d) ? (d as ApplicantRow[]) : []))
     .catch(() => []);

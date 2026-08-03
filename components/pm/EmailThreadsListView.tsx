@@ -90,8 +90,8 @@ export function EmailThreadsListView() {
                   <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-fg-muted">
                     <Users className="h-3 w-3" />
                     {t.participantCount} participant
-                    {t.participantCount === 1 ? "" : "s"} ·{" "}
-                    {t.messageCount} message
+                    {t.participantCount === 1 ? "" : "s"} · {t.messageCount}{" "}
+                    message
                     {t.messageCount === 1 ? "" : "s"}
                   </p>
                 </div>

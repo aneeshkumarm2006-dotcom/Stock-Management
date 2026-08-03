@@ -9,10 +9,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { EditRecurringCheckModal } from "@/components/pm/EditRecurringCheckModal";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { RecurringCatchUpModal } from "@/components/pm/RecurringCatchUpModal";
+
+/** Collapsed per-line scope; see summariseScope in the list route. */
+type RtScope =
+  | { type: "Company" }
+  | { type: "Property"; propertyId: string; propertyName: string }
+  | { type: "Multiple"; count: number };
 
 interface RtRow {
   id: string;
   type: string;
+  scope: RtScope;
+  /** Sum of the rule's amount lines, in integer cents. */
+  amount: number;
   payee: { type: string; id: string } | null;
   frequency: string;
   nextDate: string;
@@ -35,6 +46,7 @@ export default function RecurringTransactionsPage() {
   const [loading, setLoading] = React.useState(true);
   const [editing, setEditing] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
+  const [catchingUp, setCatchingUp] = React.useState(false);
   const [printFilter, setPrintFilter] = React.useState<PrintQueueFilter>("all");
 
   const load = React.useCallback(async () => {
@@ -76,6 +88,13 @@ export default function RecurringTransactionsPage() {
             <Button size="sm" variant="outline" onClick={runCron}>
               Run poster now
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCatchingUp(true)}
+            >
+              Catch up…
+            </Button>
             <div className="ml-auto flex gap-1.5">
               {(
                 [
@@ -104,6 +123,8 @@ export default function RecurringTransactionsPage() {
             <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
               <tr>
                 <th className="py-2">Type</th>
+                <th>Property</th>
+                <th className="px-4 text-right">Amount</th>
                 <th>Frequency</th>
                 <th>Next date</th>
                 <th>Posted</th>
@@ -115,14 +136,14 @@ export default function RecurringTransactionsPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={7} className="py-4 text-fg-muted">
+                  <td colSpan={9} className="py-4 text-fg-muted">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-4 text-fg-muted">
+                  <td colSpan={9} className="py-4 text-fg-muted">
                     No recurring rules.
                   </td>
                 </tr>
@@ -136,6 +157,22 @@ export default function RecurringTransactionsPage() {
                 .map((r) => (
                 <tr key={r.id} className="border-b border-border/40">
                   <td className="py-2 text-fg">{r.type}</td>
+                  <td className="text-fg-muted">
+                    {r.scope?.type === "Property"
+                      ? r.scope.propertyName
+                      : r.scope?.type === "Multiple"
+                        ? `Multiple (${r.scope.count})`
+                        : "Company"}
+                  </td>
+                  <td className="px-4 text-right text-fg-muted tabular-nums">
+                    {/* convert={false}: a rule's amount is stored in the
+                        currency of whatever it books to, and a rule can be
+                        company-scoped (no property, so no currency) or span
+                        properties. There is no per-row native currency to
+                        convert FROM, so converting off the org default would
+                        misstate the figure that actually posts. */}
+                    <CurrencyAmount cents={r.amount} convert={false} />
+                  </td>
                   <td className="text-fg-muted">{r.frequency}</td>
                   <td className="text-fg-muted">
                     {new Date(r.nextDate).toLocaleDateString()}
@@ -179,6 +216,24 @@ export default function RecurringTransactionsPage() {
           onClose={() => setCreating(false)}
           onSaved={async () => {
             setCreating(false);
+            await load();
+          }}
+        />
+      )}
+      {catchingUp && (
+        <RecurringCatchUpModal
+          open={catchingUp}
+          rules={rows
+            .filter((r) => r.active)
+            .map((r) => ({
+              id: r.id,
+              label: `${r.memo || r.type} — ${r.frequency}, next ${new Date(
+                r.nextDate,
+              ).toLocaleDateString()}`,
+            }))}
+          onClose={() => setCatchingUp(false)}
+          onPosted={async () => {
+            setCatchingUp(false);
             await load();
           }}
         />

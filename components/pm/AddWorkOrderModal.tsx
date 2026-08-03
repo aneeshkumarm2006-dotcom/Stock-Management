@@ -128,10 +128,7 @@ export function AddWorkOrderModal({
   }
 
   function addPart() {
-    setParts([
-      ...parts,
-      { qty: 1, accountId: "", description: "", price: 0 },
-    ]);
+    setParts([...parts, { qty: 1, accountId: "", description: "", price: 0 }]);
   }
   function removePart(idx: number) {
     setParts(parts.filter((_, i) => i !== idx));
@@ -194,7 +191,9 @@ export function AddWorkOrderModal({
     });
     if (!res.ok) {
       setSaving(false);
-      const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+      const errBody = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
       toast({
         title: "Failed",
         description: errBody.error,
@@ -438,7 +437,7 @@ export function AddWorkOrderModal({
               <tbody>
                 {parts.map((p, i) => (
                   <tr key={i} className="border-b border-border/40">
-                    <td className="py-1 w-16">
+                    <td className="w-16 py-1">
                       <Input
                         type="number"
                         min={0}
@@ -453,7 +452,9 @@ export function AddWorkOrderModal({
                       <select
                         className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
                         value={p.accountId}
-                        onChange={(e) => updatePart(i, "accountId", e.target.value)}
+                        onChange={(e) =>
+                          updatePart(i, "accountId", e.target.value)
+                        }
                       >
                         <option value="">Choose…</option>
                         {accounts.map((a) => (
@@ -526,10 +527,9 @@ export function AddWorkOrderModal({
                 subject,
                 vendorId,
                 assignedToUserId,
-                chargeWorkTo:
-                  chargeType
-                    ? { type: chargeType, id: chargeId }
-                    : null,
+                chargeWorkTo: chargeType
+                  ? { type: chargeType, id: chargeId }
+                  : null,
               },
               "WorkOrder",
             )}

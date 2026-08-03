@@ -436,7 +436,7 @@ export default function TaskDetailPage() {
                         </td>
                         <td className="text-fg-muted">{w.status}</td>
                         <td className="tabular-nums text-fg">
-                          ${(w.billTotal / 100).toFixed(2)}
+                          <CurrencyAmount cents={w.billTotal} />
                         </td>
                       </tr>
                     ))}

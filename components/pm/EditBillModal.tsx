@@ -135,7 +135,9 @@ export function EditBillModal({
     value: LineRow[K],
   ) {
     setLines(
-      lines.map((l, i) => (i === idx ? ({ ...l, [key]: value } as LineRow) : l)),
+      lines.map((l, i) =>
+        i === idx ? ({ ...l, [key]: value } as LineRow) : l,
+      ),
     );
   }
 
@@ -206,9 +208,9 @@ export function EditBillModal({
           <div className="space-y-4">
             {lockedFinancials && (
               <div className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-fg-muted">
-                This bill has payments applied. Only the vendor and reference can
-                be edited here. To change amounts, dates, scope, or memo, void the
-                payments first.
+                This bill has payments applied. Only the vendor and reference
+                can be edited here. To change amounts, dates, scope, or memo,
+                void the payments first.
               </div>
             )}
 
@@ -324,7 +326,7 @@ export function EditBillModal({
                 <tbody>
                   {lines.map((l, i) => (
                     <tr key={i} className="border-b border-border/40">
-                      <td className="py-1 w-56">
+                      <td className="w-56 py-1">
                         <select
                           className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
                           value={l.accountId}
@@ -382,7 +384,7 @@ export function EditBillModal({
                     >
                       Total
                     </td>
-                    <td className="tabular-nums font-bold text-fg">
+                    <td className="font-bold tabular-nums text-fg">
                       ${total.toFixed(2)}
                     </td>
                   </tr>

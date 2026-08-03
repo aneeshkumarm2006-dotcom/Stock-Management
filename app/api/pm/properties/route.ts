@@ -30,6 +30,9 @@ interface PropertyLeanLike {
     // Carried so the list can group/separate properties by country (US/CAN).
     country?: string;
   };
+  // Native currency of this property's money amounts; absent means "inherit
+  // the org default" (see lib/pm/currency.ts resolvePropertyCurrency).
+  currency?: string | null;
   propertyManagerUserId?: unknown;
   rentalOwners?: Array<{ rentalOwnerId: unknown; ownershipPct: number }>;
   active: boolean;
@@ -48,6 +51,7 @@ function listSerialize(p: PropertyLeanLike, ownerNames: Map<string, string>) {
     propertyClass: p.propertyClass,
     propertySubType: p.propertySubType,
     address: p.address ?? null,
+    currency: p.currency ?? null,
     propertyManagerUserId: p.propertyManagerUserId
       ? String(p.propertyManagerUserId)
       : null,

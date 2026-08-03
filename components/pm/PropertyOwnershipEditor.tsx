@@ -38,7 +38,9 @@ export function PropertyOwnershipEditor({ value, onChange }: Props) {
         setOwners(
           rows.map((r) => ({
             id: String(r.id),
-            displayName: String(r.displayName ?? `${r.firstName} ${r.lastName}`),
+            displayName: String(
+              r.displayName ?? `${r.firstName} ${r.lastName}`,
+            ),
           })),
         );
       })
@@ -50,7 +52,10 @@ export function PropertyOwnershipEditor({ value, onChange }: Props) {
     };
   }, []);
 
-  const total = value.reduce((acc, r) => acc + (Number.isFinite(r.ownershipPct) ? r.ownershipPct : 0), 0);
+  const total = value.reduce(
+    (acc, r) => acc + (Number.isFinite(r.ownershipPct) ? r.ownershipPct : 0),
+    0,
+  );
   // Compare with an epsilon so valid splits like 33.33/33.33/33.34 (which sum
   // to 100.00 but accumulate binary-float error) aren't rejected (EDIT-019).
   const valid = value.length === 0 || Math.abs(total - 100) < 0.01;
@@ -93,7 +98,10 @@ export function PropertyOwnershipEditor({ value, onChange }: Props) {
       )}
 
       {value.map((row, i) => (
-        <div key={i} className="grid gap-2 md:grid-cols-[1fr_120px_auto] md:items-end">
+        <div
+          key={i}
+          className="grid gap-2 md:grid-cols-[1fr_120px_auto] md:items-end"
+        >
           <div className="space-y-1">
             <Label htmlFor={`po-owner-${i}`}>Owner</Label>
             <select
@@ -121,7 +129,8 @@ export function PropertyOwnershipEditor({ value, onChange }: Props) {
               value={Number.isFinite(row.ownershipPct) ? row.ownershipPct : 0}
               onChange={(e) =>
                 update(i, {
-                  ownershipPct: e.target.value === "" ? 0 : Number(e.target.value),
+                  ownershipPct:
+                    e.target.value === "" ? 0 : Number(e.target.value),
                 })
               }
             />

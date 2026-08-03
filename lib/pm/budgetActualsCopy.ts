@@ -7,16 +7,16 @@
 //   - POST /api/pm/budgets when `defaultAmounts === 'Copy previous FY actuals'`
 //   - POST /api/pm/budgets when `defaultAmounts === 'Copy existing budget'`
 //     (the existing-budget clone path uses `copyExistingBudgetLines`)
-import { Types } from 'mongoose';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { Budget } from '@/lib/db/models/pm/Budget';
-import type { FiscalMonth } from '@/types/pm';
-import { FISCAL_MONTH_INDEX } from '@/types/pm';
+import { Types } from "mongoose";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { Budget } from "@/lib/db/models/pm/Budget";
+import type { FiscalMonth } from "@/types/pm";
+import { FISCAL_MONTH_INDEX } from "@/types/pm";
 
 export interface BudgetLineSeed {
   accountId: Types.ObjectId;
-  category: 'Income' | 'Expense';
+  category: "Income" | "Expense";
   monthlyAmounts: number[]; // length 12, cents
 }
 
@@ -45,7 +45,7 @@ function fiscalMonthIndex(d: Date, fiscalYearStart: FiscalMonth): number {
   const startMonth = FISCAL_MONTH_INDEX[fiscalYearStart]; // 1-12
   const calendarMonth = d.getUTCMonth() + 1; // 1-12
   // (calendarMonth - startMonth + 12) % 12 — wraps around.
-  return ((calendarMonth - startMonth + 12) % 12);
+  return (calendarMonth - startMonth + 12) % 12;
 }
 
 /** Pull every posted JE line in the prior FY window, bucket by
@@ -75,27 +75,33 @@ export async function copyPriorFyActuals(opts: {
   // Pull all Income / Expense CoA up front so we can short-circuit the
   // category lookup and skip lines on balance-sheet accounts.
   const accounts = await ChartOfAccount.find(
-    { organizationId: opts.orgId, type: { $in: ['Income', 'Operating Expense'] } },
+    {
+      organizationId: opts.orgId,
+      type: { $in: ["Income", "Operating Expense"] },
+    },
     { _id: 1, type: 1 },
   ).lean<{ _id: Types.ObjectId; type: string }[]>();
-  const accountTypeById = new Map(
-    accounts.map((a) => [String(a._id), a.type]),
-  );
+  const accountTypeById = new Map(accounts.map((a) => [String(a._id), a.type]));
   if (accountTypeById.size === 0) return [];
 
   const jes = await JournalEntry.find({
     organizationId: opts.orgId,
-    status: 'Posted',
+    status: "Posted",
     date: { $gte: startDate, $lte: endDate },
   })
-    .select('date lines')
-    .lean<{ date: Date; lines: Array<{
-      accountId: Types.ObjectId;
-      scopeType: string;
-      scopeId: Types.ObjectId | null;
-      debit: number;
-      credit: number;
-    }> }[]>();
+    .select("date lines")
+    .lean<
+      {
+        date: Date;
+        lines: Array<{
+          accountId: Types.ObjectId;
+          scopeType: string;
+          scopeId: Types.ObjectId | null;
+          debit: number;
+          credit: number;
+        }>;
+      }[]
+    >();
 
   // Map: accountIdStr → { category, monthly[12] }
   const buckets = new Map<string, BudgetLineSeed>();
@@ -108,12 +114,12 @@ export async function copyPriorFyActuals(opts: {
 
       // Scope filter for property-budget copies.
       if (opts.scopePropertyId) {
-        if (line.scopeType !== 'Property') continue;
+        if (line.scopeType !== "Property") continue;
         if (String(line.scopeId) !== String(opts.scopePropertyId)) continue;
       }
 
-      const category: 'Income' | 'Expense' =
-        acctType === 'Income' ? 'Income' : 'Expense';
+      const category: "Income" | "Expense" =
+        acctType === "Income" ? "Income" : "Expense";
       let seed = buckets.get(acctIdStr);
       if (!seed) {
         seed = {
@@ -125,7 +131,7 @@ export async function copyPriorFyActuals(opts: {
       }
       // Income lines accrue via credits; Expense lines via debits.
       const contribution =
-        category === 'Income' ? line.credit ?? 0 : line.debit ?? 0;
+        category === "Income" ? (line.credit ?? 0) : (line.debit ?? 0);
       seed.monthlyAmounts[monthIdx] =
         (seed.monthlyAmounts[monthIdx] ?? 0) + contribution;
     }
@@ -145,11 +151,11 @@ export async function copyExistingBudgetLines(opts: {
     _id: opts.sourceBudgetId,
     organizationId: opts.orgId,
   })
-    .select('lines')
+    .select("lines")
     .lean<{
       lines: Array<{
         accountId: Types.ObjectId;
-        category: 'Income' | 'Expense';
+        category: "Income" | "Expense";
         monthlyAmounts: number[];
       }>;
     } | null>();

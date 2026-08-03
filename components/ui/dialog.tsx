@@ -52,7 +52,12 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
             aria-modal="true"
             tabIndex={-1}
             ref={(el) => el?.focus()}
-            className="relative z-10 w-full max-w-md outline-none"
+            // No max-width here: the panel's width is DialogContent's business
+            // (it defaults to max-w-md). A cap on this wrapper silently beat
+            // every `max-w-*` a caller passed to DialogContent, so wide forms
+            // — the journal entry and recurring editors especially — were
+            // squeezed into 28rem and scrolled their tables sideways.
+            className="relative z-10 flex w-full justify-center outline-none"
             initial={{ opacity: 0, scale: 0.96, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
@@ -79,7 +84,9 @@ export function DialogContent({
       className={cn(
         // Cap to the viewport (the wrapper adds p-4 = 2rem) and scroll inside so
         // tall forms (e.g. the lease term schedule editor) stay fully reachable.
-        "max-h-[calc(100vh-2rem)] overflow-y-auto rounded-md border border-border bg-surface-high p-6 shadow-2xl",
+        // `max-w-md` is the default width — pass `max-w-3xl` etc. to widen;
+        // tailwind-merge lets the caller's class win.
+        "max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-md border border-border bg-surface-high p-6 shadow-2xl",
         className,
       )}
     >

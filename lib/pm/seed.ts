@@ -8,19 +8,19 @@
 // covering the `defaultFor` enum from DECISIONS.md [G-S-14].
 // Phase 2 seeds: one CompanyAccount per org (PDR §3.28 — the management
 // company's own books).
-import type { Types } from 'mongoose';
-import { FileCategory } from '@/lib/db/models/pm/FileCategory';
-import { VendorCategory } from '@/lib/db/models/pm/VendorCategory';
-import { TaskCategory } from '@/lib/db/models/pm/TaskCategory';
-import { ProjectType } from '@/lib/db/models/pm/ProjectType';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { CompanyAccount } from '@/lib/db/models/pm/CompanyAccount';
-import { Organization } from '@/lib/db/models/pm/Organization';
+import type { Types } from "mongoose";
+import { FileCategory } from "@/lib/db/models/pm/FileCategory";
+import { VendorCategory } from "@/lib/db/models/pm/VendorCategory";
+import { TaskCategory } from "@/lib/db/models/pm/TaskCategory";
+import { ProjectType } from "@/lib/db/models/pm/ProjectType";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { CompanyAccount } from "@/lib/db/models/pm/CompanyAccount";
+import { Organization } from "@/lib/db/models/pm/Organization";
 import type {
   ChartOfAccountType,
   ChartOfAccountDefaultFor,
   CashFlowClassification,
-} from '@/types/pm';
+} from "@/types/pm";
 
 /**
  * Bump whenever SYSTEM_ACCOUNTS / ACCOUNT_GROUPS change so orgs provisioned
@@ -64,115 +64,115 @@ function leaves(
 const SYSTEM_ACCOUNTS: SystemAccountSeed[] = [
   // Cash + receivables
   {
-    name: 'Operating Cash',
-    type: 'Current Asset (cash)',
-    defaultFor: 'Operating Cash',
-    cashFlowClassification: 'Operating activities',
+    name: "Operating Cash",
+    type: "Current Asset (cash)",
+    defaultFor: "Operating Cash",
+    cashFlowClassification: "Operating activities",
   },
   {
-    name: 'Undeposited Funds',
-    type: 'Current Asset (cash)',
-    defaultFor: 'Undeposited Funds',
-    cashFlowClassification: 'Operating activities',
+    name: "Undeposited Funds",
+    type: "Current Asset (cash)",
+    defaultFor: "Undeposited Funds",
+    cashFlowClassification: "Operating activities",
   },
   {
-    name: 'Accounts Receivable',
-    type: 'Current Asset',
-    defaultFor: 'Accounts Receivable',
-    cashFlowClassification: 'Operating activities',
+    name: "Accounts Receivable",
+    type: "Current Asset",
+    defaultFor: "Accounts Receivable",
+    cashFlowClassification: "Operating activities",
   },
   // Liabilities
   {
-    name: 'Accounts Payable',
-    type: 'Current Liability',
-    defaultFor: 'Accounts Payable',
-    cashFlowClassification: 'Operating activities',
+    name: "Accounts Payable",
+    type: "Current Liability",
+    defaultFor: "Accounts Payable",
+    cashFlowClassification: "Operating activities",
   },
   {
-    name: 'Security Deposit Liability',
-    type: 'Current Liability',
-    defaultFor: 'Security Deposit Liability',
-    cashFlowClassification: 'Operating activities',
+    name: "Security Deposit Liability",
+    type: "Current Liability",
+    defaultFor: "Security Deposit Liability",
+    cashFlowClassification: "Operating activities",
   },
   // Income
   {
-    name: 'Rent Income',
-    type: 'Income',
+    name: "Rent Income",
+    type: "Income",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
   },
   {
-    name: 'Late Fee Income',
-    type: 'Income',
-    defaultFor: 'Late Fee Income',
-    cashFlowClassification: 'Operating activities',
+    name: "Late Fee Income",
+    type: "Income",
+    defaultFor: "Late Fee Income",
+    cashFlowClassification: "Operating activities",
   },
   {
-    name: 'Application Fee Income',
-    type: 'Income',
-    defaultFor: 'Application Fee Income',
-    cashFlowClassification: 'Operating activities',
+    name: "Application Fee Income",
+    type: "Income",
+    defaultFor: "Application Fee Income",
+    cashFlowClassification: "Operating activities",
   },
   {
-    name: 'Management Fee Income',
-    type: 'Income',
-    defaultFor: 'Management Fee Income',
-    cashFlowClassification: 'Operating activities',
+    name: "Management Fee Income",
+    type: "Income",
+    defaultFor: "Management Fee Income",
+    cashFlowClassification: "Operating activities",
   },
   {
-    name: 'Interest Income',
-    type: 'Income',
-    defaultFor: 'Interest Income',
-    cashFlowClassification: 'Operating activities',
+    name: "Interest Income",
+    type: "Income",
+    defaultFor: "Interest Income",
+    cashFlowClassification: "Operating activities",
   },
   // Expenses
   {
-    name: 'Repairs',
-    type: 'Operating Expense',
+    name: "Repairs",
+    type: "Operating Expense",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
   },
   {
-    name: 'Bank Fees',
-    type: 'Operating Expense',
-    defaultFor: 'Bank Fees',
-    cashFlowClassification: 'Operating activities',
+    name: "Bank Fees",
+    type: "Operating Expense",
+    defaultFor: "Bank Fees",
+    cashFlowClassification: "Operating activities",
   },
   {
-    name: 'Bank Service Charges',
-    type: 'Operating Expense',
-    defaultFor: 'Bank Service Charges',
-    cashFlowClassification: 'Operating activities',
+    name: "Bank Service Charges",
+    type: "Operating Expense",
+    defaultFor: "Bank Service Charges",
+    cashFlowClassification: "Operating activities",
   },
   {
-    name: 'Management Fee Expense',
-    type: 'Operating Expense',
-    defaultFor: 'Management Fee Expense',
-    cashFlowClassification: 'Operating activities',
+    name: "Management Fee Expense",
+    type: "Operating Expense",
+    defaultFor: "Management Fee Expense",
+    cashFlowClassification: "Operating activities",
   },
   // Equity
   {
-    name: 'Owner Contributions',
-    type: 'Equity',
-    defaultFor: 'Owner Contribution',
-    cashFlowClassification: 'Financing activities',
+    name: "Owner Contributions",
+    type: "Equity",
+    defaultFor: "Owner Contribution",
+    cashFlowClassification: "Financing activities",
   },
   // ---------------------------------------------------------------------------
   // Ramco chart — top-level (un-grouped) leaves. (changes.md §5 / Change §0B.)
   // ---------------------------------------------------------------------------
   {
-    name: 'Miscellaneous income',
-    type: 'Income',
+    name: "Miscellaneous income",
+    type: "Income",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
   },
   {
     // 🔸 Ambiguous in source — seeded as a standalone leaf; confirm with client
     // whether it should become a group.
-    name: 'Operating Taxes',
-    type: 'Operating Expense',
+    name: "Operating Taxes",
+    type: "Operating Expense",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
   },
 ];
 
@@ -188,171 +188,171 @@ const ACCOUNT_GROUPS: AccountGroupSeed[] = [
   {
     // Roll-up role so Change §6's report can find investment revenue by role,
     // not by a fragile name match.
-    name: 'Investment Income',
-    type: 'Income',
-    defaultFor: 'Investment Income',
-    cashFlowClassification: 'Investing activities',
+    name: "Investment Income",
+    type: "Income",
+    defaultFor: "Investment Income",
+    cashFlowClassification: "Investing activities",
     children: leaves(
       [
-        'US Capital Gain / (Loss)',
-        'US Interest Income',
-        'CDN Interest Income',
-        'CDN Dividend Income',
-        'CDN Capital Gain / (Loss)',
-        'US Foreign Income',
-        'US withholding tax',
-        'Realized FX – Gain / (Loss)',
+        "US Capital Gain / (Loss)",
+        "US Interest Income",
+        "CDN Interest Income",
+        "CDN Dividend Income",
+        "CDN Capital Gain / (Loss)",
+        "US Foreign Income",
+        "US withholding tax",
+        "Realized FX – Gain / (Loss)",
       ],
-      'Income',
-      'Investing activities',
+      "Income",
+      "Investing activities",
     ),
   },
   {
-    name: 'Rental Income (Ordinary Income)',
-    type: 'Income',
+    name: "Rental Income (Ordinary Income)",
+    type: "Income",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
     // The three Change §4 income accounts.
     children: leaves(
-      ['Base Rent', 'OPEX Recoveries', 'Tax Recoveries'],
-      'Income',
-      'Operating activities',
+      ["Base Rent", "OPEX Recoveries", "Tax Recoveries"],
+      "Income",
+      "Operating activities",
     ),
   },
   // --- Expense groups ---
   {
-    name: 'Operating Expenses',
-    type: 'Operating Expense',
+    name: "Operating Expenses",
+    type: "Operating Expense",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
     children: leaves(
       [
-        'Municipal Taxes',
-        'School Taxes',
-        'Water Tax',
-        'Property Insurance',
-        'Snow Removal',
-        'Lawn Care',
-        'Waste removal',
-        'Repairs & Maintenance',
+        "Municipal Taxes",
+        "School Taxes",
+        "Water Tax",
+        "Property Insurance",
+        "Snow Removal",
+        "Lawn Care",
+        "Waste removal",
+        "Repairs & Maintenance",
       ],
-      'Operating Expense',
-      'Operating activities',
+      "Operating Expense",
+      "Operating activities",
     ),
   },
   {
-    name: 'Salaries & Wages',
-    type: 'Operating Expense',
+    name: "Salaries & Wages",
+    type: "Operating Expense",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
     children: leaves(
       [
-        'Salaries',
-        'EI',
-        'QPP',
-        'FSS',
-        'QPIP',
-        'CSST',
-        'CNT expense',
-        'Vacation Accrual',
-        'Group Insurance',
-        'Payroll Expenses',
+        "Salaries",
+        "EI",
+        "QPP",
+        "FSS",
+        "QPIP",
+        "CSST",
+        "CNT expense",
+        "Vacation Accrual",
+        "Group Insurance",
+        "Payroll Expenses",
       ],
-      'Operating Expense',
-      'Operating activities',
+      "Operating Expense",
+      "Operating activities",
     ),
   },
   {
-    name: 'Administration',
-    type: 'Operating Expense',
+    name: "Administration",
+    type: "Operating Expense",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
     children: leaves(
       [
-        'Rent 4333 Ste-Catherine',
-        'Office Insurance',
-        'Phone / fax / pagette / cellulaire',
-        'Postal / courier expenses',
-        'Office expenses',
-        'Taxes & licences',
+        "Rent 4333 Ste-Catherine",
+        "Office Insurance",
+        "Phone / fax / pagette / cellulaire",
+        "Postal / courier expenses",
+        "Office expenses",
+        "Taxes & licences",
       ],
-      'Operating Expense',
-      'Operating activities',
+      "Operating Expense",
+      "Operating activities",
     ),
   },
   {
-    name: 'Fees',
-    type: 'Operating Expense',
+    name: "Fees",
+    type: "Operating Expense",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
     children: leaves(
       [
-        'Professional Fees – Legal',
-        'Professional and Auditing',
-        'Management Fees on investment',
+        "Professional Fees – Legal",
+        "Professional and Auditing",
+        "Management Fees on investment",
       ],
-      'Operating Expense',
-      'Operating activities',
+      "Operating Expense",
+      "Operating activities",
     ),
   },
   {
-    name: 'Non-Operating Administration',
-    type: 'Operating Expense',
+    name: "Non-Operating Administration",
+    type: "Operating Expense",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
     children: leaves(
       [
-        'Car – Gas & parking',
-        'Travel Expenses (Taxi)',
-        'Meal / restaurants',
-        'Meals – Non Taxable sales tax',
-        'Car insurance',
+        "Car – Gas & parking",
+        "Travel Expenses (Taxi)",
+        "Meal / restaurants",
+        "Meals – Non Taxable sales tax",
+        "Car insurance",
       ],
-      'Operating Expense',
-      'Operating activities',
+      "Operating Expense",
+      "Operating activities",
     ),
   },
   {
-    name: 'Interest & Bank',
-    type: 'Operating Expense',
+    name: "Interest & Bank",
+    type: "Operating Expense",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
     // Two sibling bank-fee leaves named distinctly to stay unique under the
     // (org, name) index.
     children: leaves(
       [
-        'Mortgage Interest',
-        'Bank Fees CAD$',
-        'Bank Fees USD$',
-        'Interest & late payment charges',
-        'Financing charges',
+        "Mortgage Interest",
+        "Bank Fees CAD$",
+        "Bank Fees USD$",
+        "Interest & late payment charges",
+        "Financing charges",
       ],
-      'Operating Expense',
-      'Operating activities',
+      "Operating Expense",
+      "Operating activities",
     ),
   },
   {
-    name: 'Depreciation',
-    type: 'Operating Expense',
+    name: "Depreciation",
+    type: "Operating Expense",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
     children: leaves(
-      ['Amortization – car', 'Amortization – buildings'],
-      'Operating Expense',
-      'Operating activities',
+      ["Amortization – car", "Amortization – buildings"],
+      "Operating Expense",
+      "Operating activities",
     ),
   },
   {
-    name: 'Income Taxes',
-    type: 'Operating Expense',
+    name: "Income Taxes",
+    type: "Operating Expense",
     defaultFor: null,
-    cashFlowClassification: 'Operating activities',
+    cashFlowClassification: "Operating activities",
     // Recorded tax bills — kept distinct from the computed estimated-tax line
     // in Change §6.
     children: leaves(
-      ['Federal Taxes', 'Provincial Taxes', 'Taxes & penalty / Government'],
-      'Operating Expense',
-      'Operating activities',
+      ["Federal Taxes", "Provincial Taxes", "Taxes & penalty / Government"],
+      "Operating Expense",
+      "Operating activities",
     ),
   },
 ];
@@ -367,7 +367,7 @@ export async function seedCompanyAccount(
   organizationId: Types.ObjectId,
 ): Promise<void> {
   const org = await Organization.findById(organizationId).lean();
-  const name = org?.name ?? org?.slug ?? 'Company';
+  const name = org?.name ?? org?.slug ?? "Company";
   await CompanyAccount.updateOne(
     { organizationId },
     {
@@ -451,7 +451,7 @@ export async function seedSystemAccounts(
     organizationId,
     isGroup: true,
   })
-    .select('_id name')
+    .select("_id name")
     .lean<Array<{ _id: Types.ObjectId; name: string }>>();
   const groupIdByName = new Map(groupRows.map((g) => [g.name, g._id]));
 
@@ -493,11 +493,11 @@ export async function seedDefaults(
 ): Promise<void> {
   await Promise.all([
     FileCategory.updateOne(
-      { organizationId, name: 'Leases' },
+      { organizationId, name: "Leases" },
       {
         $setOnInsert: {
           organizationId,
-          name: 'Leases',
+          name: "Leases",
           systemSeeded: true,
           inUseCount: 0,
           active: true,
@@ -506,11 +506,11 @@ export async function seedDefaults(
       { upsert: true },
     ),
     FileCategory.updateOne(
-      { organizationId, name: 'Photos' },
+      { organizationId, name: "Photos" },
       {
         $setOnInsert: {
           organizationId,
-          name: 'Photos',
+          name: "Photos",
           systemSeeded: true,
           inUseCount: 0,
           active: true,
@@ -519,12 +519,12 @@ export async function seedDefaults(
       { upsert: true },
     ),
     VendorCategory.updateOne(
-      { organizationId, class: 'Uncategorized', subCategory: '' },
+      { organizationId, class: "Uncategorized", subCategory: "" },
       {
         $setOnInsert: {
           organizationId,
-          class: 'Uncategorized',
-          subCategory: '',
+          class: "Uncategorized",
+          subCategory: "",
           systemSeeded: true,
           active: true,
         },
@@ -532,11 +532,11 @@ export async function seedDefaults(
       { upsert: true },
     ),
     TaskCategory.updateOne(
-      { organizationId, name: 'Uncategorized' },
+      { organizationId, name: "Uncategorized" },
       {
         $setOnInsert: {
           organizationId,
-          name: 'Uncategorized',
+          name: "Uncategorized",
           systemSeeded: true,
           active: true,
         },
@@ -544,11 +544,11 @@ export async function seedDefaults(
       { upsert: true },
     ),
     ProjectType.updateOne(
-      { organizationId, name: 'Uncategorized' },
+      { organizationId, name: "Uncategorized" },
       {
         $setOnInsert: {
           organizationId,
-          name: 'Uncategorized',
+          name: "Uncategorized",
           systemSeeded: true,
           active: true,
         },

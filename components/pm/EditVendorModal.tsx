@@ -116,7 +116,10 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
           website: string;
           comments: string;
           phones: Partial<
-            Record<(typeof PHONE_KEYS)[number], { number?: string; smsOptIn?: boolean }>
+            Record<
+              (typeof PHONE_KEYS)[number],
+              { number?: string; smsOptIn?: boolean }
+            >
           >;
           address: Address;
           taxIdentityType: TaxIdentityType | null;
@@ -172,7 +175,11 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
       })
       .catch((e: Error) => {
         if (!cancelled) {
-          toast({ title: "Could not load vendor", description: e.message, variant: "error" });
+          toast({
+            title: "Could not load vendor",
+            description: e.message,
+            variant: "error",
+          });
         }
       })
       .finally(() => {
@@ -255,7 +262,7 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader title="Edit vendor" onClose={onClose} />
         {loading ? (
           <p className="text-sm text-fg-muted">Loading…</p>
@@ -519,9 +526,7 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
                     onChange={(e) =>
                       setForm({
                         ...form,
-                        taxIdentityType: e.target.value as
-                          | TaxIdentityType
-                          | "",
+                        taxIdentityType: e.target.value as TaxIdentityType | "",
                       })
                     }
                   >
@@ -556,9 +561,7 @@ export function EditVendorModal({ open, vendorId, onClose, onSaved }: Props) {
                 rows={3}
                 className="w-full rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg"
                 value={form.comments}
-                onChange={(e) =>
-                  setForm({ ...form, comments: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, comments: e.target.value })}
               />
             </section>
           </div>

@@ -1,7 +1,21 @@
-// Edit recurring check / bill / journal-entry modal. Phase 4 ships the
-// minimum viable editor; Phase 9's full RecurringTransaction surface adds
-// preview of next N postings, distribution editor across multiple
-// properties, etc.
+// Edit recurring check / bill / journal-entry modal.
+//
+// SCOPE. Each amount row carries its own `scopeType`/`scopeId`, matching the
+// per-line scope model the GL uses everywhere else (reports attribute a
+// property from `lines[].scopeId`, never the entry header — see
+// app/api/pm/financials/matrix/route.ts). The grid therefore mirrors
+// JournalEntryModal's paired Co./Prop. cell rather than inventing a
+// rule-level scope field the schema does not have.
+//
+// A rule whose rows span several properties posts one Bill per property at
+// run time (a Bill's `scope` is a single {type,id} and cannot represent two
+// properties) — hence the inline hint under the grid.
+//
+// `unitId` and `refNo` are hydrated and re-submitted untouched but not
+// rendered: nothing consumes them yet (postBillToLedger hardcodes
+// `unitId: null`, and neither IBillLine nor IJournalLine has a refNo), so an
+// input for them would be silently dropped at posting time. Round-tripping
+// them means a rule set up via the API keeps them.
 "use client";
 
 import * as React from "react";
@@ -16,6 +30,7 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { parseCurrencyToDollars } from "@/lib/pm/currency";
 import {
   RECURRING_DURATIONS,
@@ -44,13 +59,38 @@ interface BankOption {
   id: string;
   name: string;
 }
+interface PropertyOption {
+  id: string;
+  name: string;
+}
 
 interface AmountRow {
+  // Unique key for React; not sent to the API. Rows carry <select>s, so an
+  // index key would hand a removed row's DOM state to its successor.
+  key: string;
+  scopeType: "Property" | "Company";
+  scopeId: string;
   accountId: string;
   description: string;
   // Raw text input (dollars). Parsed/validated on submit via
   // parseCurrencyToDollars so "1,234.56" / "$1234.56" survive entry.
   amount: string;
+  // Round-tripped, not edited here. See the file header.
+  unitId: string | null;
+  refNo: string | null;
+}
+
+function newAmountRow(): AmountRow {
+  return {
+    key: Math.random().toString(36).slice(2, 10),
+    scopeType: "Company",
+    scopeId: "",
+    accountId: "",
+    description: "",
+    amount: "",
+    unitId: null,
+    refNo: null,
+  };
 }
 
 interface EditRecurringCheckModalProps {
@@ -73,42 +113,56 @@ export function EditRecurringCheckModal({
   const [owners, setOwners] = React.useState<OwnerOption[]>([]);
   const [accounts, setAccounts] = React.useState<AccountOption[]>([]);
   const [banks, setBanks] = React.useState<BankOption[]>([]);
+  const [properties, setProperties] = React.useState<PropertyOption[]>([]);
+  // Bulk-apply helper above the grid. Client-only; never persisted.
+  const [applyAllScopeId, setApplyAllScopeId] = React.useState("");
 
   const [type, setType] = React.useState<RecurringTransactionType>("Bill");
-  const [payeeType, setPayeeType] = React.useState<RecurringPayeeType>("Vendor");
+  const [payeeType, setPayeeType] =
+    React.useState<RecurringPayeeType>("Vendor");
   const [payeeId, setPayeeId] = React.useState("");
   const [bankAccountId, setBankAccountId] = React.useState("");
   const [memo, setMemo] = React.useState("");
-  const [frequency, setFrequency] = React.useState<RecurringFrequency>("Monthly");
+  const [frequency, setFrequency] =
+    React.useState<RecurringFrequency>("Monthly");
   const [nextDate, setNextDate] = React.useState(() =>
     new Date().toISOString().slice(0, 10),
   );
   const [postNDaysInAdvance, setPostNDaysInAdvance] = React.useState(5);
-  const [duration, setDuration] = React.useState<RecurringDuration>(
-    "Until cancelled",
-  );
+  const [duration, setDuration] =
+    React.useState<RecurringDuration>("Until cancelled");
   const [occurrenceCount, setOccurrenceCount] = React.useState(12);
   const [queueForPrinting, setQueueForPrinting] = React.useState(false);
   const [active, setActive] = React.useState(true);
-  const [amounts, setAmounts] = React.useState<AmountRow[]>([
-    { accountId: "", description: "", amount: "" },
+  const [amounts, setAmounts] = React.useState<AmountRow[]>(() => [
+    newAmountRow(),
   ]);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     fetch("/api/pm/vendors").then(async (r) => {
-      if (r.ok) setVendors((await r.json()) as VendorOption[]);
+      if (r.ok && !cancelled) setVendors((await r.json()) as VendorOption[]);
     });
     fetch("/api/pm/rental-owners").then(async (r) => {
-      if (r.ok) setOwners((await r.json()) as OwnerOption[]);
+      if (r.ok && !cancelled) setOwners((await r.json()) as OwnerOption[]);
     });
     fetch("/api/pm/chart-of-accounts").then(async (r) => {
-      if (r.ok) setAccounts((await r.json()) as AccountOption[]);
+      if (r.ok && !cancelled) setAccounts((await r.json()) as AccountOption[]);
     });
     fetch("/api/pm/bank-accounts").then(async (r) => {
-      if (r.ok) setBanks((await r.json()) as BankOption[]);
+      if (r.ok && !cancelled) setBanks((await r.json()) as BankOption[]);
     });
+    fetch("/api/pm/properties").then(async (r) => {
+      if (!r.ok || cancelled) return;
+      const rows = (await r.json()) as { id: string; propertyName: string }[];
+      if (cancelled) return;
+      setProperties(rows.map((p) => ({ id: p.id, name: p.propertyName })));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   React.useEffect(() => {
@@ -128,9 +182,13 @@ export function EditRecurringCheckModal({
         queueForPrinting: boolean;
         active: boolean;
         amounts: Array<{
+          scopeType?: "Property" | "Company" | null;
+          scopeId?: string | null;
           accountId: string;
           description: string;
           amount: number;
+          unitId?: string | null;
+          refNo?: string | null;
         }>;
       };
       setType(d.type);
@@ -145,19 +203,65 @@ export function EditRecurringCheckModal({
       setOccurrenceCount(d.occurrenceCount ?? 12);
       setQueueForPrinting(d.queueForPrinting);
       setActive(d.active);
+      setApplyAllScopeId("");
       setAmounts(
         d.amounts.map((a) => ({
+          ...newAmountRow(),
+          // Treat a row as Company unless it names a real property, so any
+          // legacy shape (missing field, Property with a null id) is total.
+          scopeType: a.scopeType === "Property" && a.scopeId ? "Property" : "Company",
+          scopeId: a.scopeType === "Property" && a.scopeId ? a.scopeId : "",
           accountId: a.accountId,
           description: a.description,
           // server returns cents; show dollars as editable text
           amount: String(a.amount / 100),
+          unitId: a.unitId ?? null,
+          // GET returns '' rather than null for an unset refNo; normalise so
+          // the submit path can send `undefined` (the validator types refNo as
+          // an optional string, not a nullable one).
+          refNo: a.refNo || null,
         })),
       );
     });
   }, [open, mode, recurringId]);
 
+  // Live total of the grid, in dollars. Unparseable rows contribute 0 rather
+  // than poisoning the sum with NaN.
+  const amountsTotal = React.useMemo(
+    () =>
+      amounts.reduce((sum, a) => sum + (parseCurrencyToDollars(a.amount) ?? 0), 0),
+    [amounts],
+  );
+
+  // Distinct scopes across rows that name an account — this is exactly how the
+  // poster groups a rule into separate bills, so the hint below the grid can
+  // never disagree with what actually posts.
+  const scopeGroupCount = React.useMemo(
+    () =>
+      new Set(
+        amounts
+          .filter((a) => a.accountId)
+          .map((a) =>
+            a.scopeType === "Property" && a.scopeId ? a.scopeId : "company",
+          ),
+      ).size,
+    [amounts],
+  );
+
   function addRow() {
-    setAmounts([...amounts, { accountId: "", description: "", amount: "" }]);
+    setAmounts([...amounts, newAmountRow()]);
+  }
+
+  /** Bulk-set every row's scope from the picker above the grid. */
+  function applyScopeToAllRows(propertyId: string) {
+    setApplyAllScopeId(propertyId);
+    setAmounts(
+      amounts.map((a) => ({
+        ...a,
+        scopeType: propertyId ? ("Property" as const) : ("Company" as const),
+        scopeId: propertyId,
+      })),
+    );
   }
   function removeRow(idx: number) {
     setAmounts(amounts.filter((_, i) => i !== idx));
@@ -207,20 +311,28 @@ export function EditRecurringCheckModal({
       toast({ title: "Payee is required for Check / Bill", variant: "error" });
       return;
     }
-    const accountRows = amounts.filter((a) => a.accountId);
-    if (accountRows.length === 0) {
-      toast({ title: "Add at least one line with an account", variant: "error" });
+    if (!amounts.some((a) => a.accountId)) {
+      toast({
+        title: "Add at least one line with an account",
+        variant: "error",
+      });
       return;
     }
     // Parse each currency input; reject non-numeric rather than coercing to NaN.
+    // Iterate over `amounts` (not a filtered copy) so the reported line number
+    // matches the row the user is looking at.
     const parsedAmounts: Array<{
-      scopeType: string;
+      scopeType: "Property" | "Company";
+      scopeId: string | null;
       accountId: string;
       description: string | undefined;
       amount: number;
+      unitId: string | null;
+      refNo: string | undefined;
     }> = [];
-    for (let i = 0; i < accountRows.length; i++) {
-      const a = accountRows[i]!;
+    for (let i = 0; i < amounts.length; i++) {
+      const a = amounts[i]!;
+      if (!a.accountId) continue;
       const dollars = parseCurrencyToDollars(a.amount);
       if (dollars === null) {
         toast({
@@ -229,11 +341,22 @@ export function EditRecurringCheckModal({
         });
         return;
       }
+      if (a.scopeType === "Property" && !a.scopeId) {
+        toast({
+          title: `Line ${i + 1}: choose a property for property-scoped lines`,
+          variant: "error",
+        });
+        return;
+      }
       parsedAmounts.push({
-        scopeType: "Company",
+        scopeType: a.scopeType,
+        // Must be null, never "" — the validator's scopeId is a 24-hex regex.
+        scopeId: a.scopeType === "Property" ? a.scopeId : null,
         accountId: a.accountId,
         description: a.description.trim() || undefined,
         amount: dollars, // dollars; server toCents() converts
+        unitId: a.scopeType === "Property" ? a.unitId : null,
+        refNo: a.refNo ?? undefined,
       });
     }
     setSaving(true);
@@ -249,8 +372,7 @@ export function EditRecurringCheckModal({
       nextDate: new Date(nextDate).toISOString(),
       postNDaysInAdvance,
       duration,
-      occurrenceCount:
-        duration === "End after N" ? occurrenceCount : null,
+      occurrenceCount: duration === "End after N" ? occurrenceCount : null,
       amounts: parsedAmounts,
       queueForPrinting,
       active,
@@ -272,7 +394,8 @@ export function EditRecurringCheckModal({
       return;
     }
     toast({
-      title: mode === "create" ? "Recurring rule created" : "Recurring rule updated",
+      title:
+        mode === "create" ? "Recurring rule created" : "Recurring rule updated",
       variant: "success",
     });
     onClose();
@@ -281,9 +404,11 @@ export function EditRecurringCheckModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-4xl">
         <DialogHeader
-          title={mode === "create" ? "New recurring rule" : "Edit recurring rule"}
+          title={
+            mode === "create" ? "New recurring rule" : "Edit recurring rule"
+          }
           onClose={onClose}
         />
         <div className="space-y-4">
@@ -457,66 +582,168 @@ export function EditRecurringCheckModal({
                 <Plus className="h-3.5 w-3.5" /> Add row
               </Button>
             </div>
-            <table className="w-full text-sm">
-              <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
-                <tr>
-                  <th className="py-1">Account</th>
-                  <th>Description</th>
-                  <th>Amount</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {amounts.map((a, i) => (
-                  <tr key={i} className="border-b border-border/40">
-                    <td className="w-56 py-1">
-                      <select
-                        className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
-                        value={a.accountId}
-                        onChange={(e) =>
-                          updateRow(i, "accountId", e.target.value)
-                        }
-                      >
-                        <option value="">Choose…</option>
-                        {accounts.map((acc) => (
-                          <option key={acc.id} value={acc.id}>
-                            {acc.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      <Input
-                        value={a.description}
-                        onChange={(e) =>
-                          updateRow(i, "description", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td className="w-28">
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={a.amount}
-                        onChange={(e) =>
-                          updateRow(i, "amount", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td className="w-8 text-right">
-                      <button
-                        type="button"
-                        onClick={() => removeRow(i)}
-                        className="text-fg-muted hover:text-error"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
+            <div className="flex flex-wrap items-center gap-2">
+              <Label
+                htmlFor="rt-apply-all"
+                className="text-xs uppercase tracking-widest text-fg-muted"
+              >
+                Apply to all rows
+              </Label>
+              <select
+                id="rt-apply-all"
+                className="rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
+                value={applyAllScopeId}
+                onChange={(e) => applyScopeToAllRows(e.target.value)}
+              >
+                <option value="">Company</option>
+                {properties.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
                 ))}
-              </tbody>
-            </table>
+              </select>
+            </div>
+            <div className="overflow-x-auto rounded border border-border">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
+                  <tr>
+                    <th className="px-2 py-1">Property or company</th>
+                    <th className="px-2">Account</th>
+                    <th className="px-2">Description</th>
+                    <th className="px-2 text-right">Amount</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {amounts.map((a, i) => (
+                    <tr key={a.key} className="border-b border-border/40">
+                      <td className="w-56 px-2 py-1">
+                        <div className="flex gap-1">
+                          <select
+                            aria-label={`Line ${i + 1} scope`}
+                            className="rounded border border-border bg-surface px-1 py-1 text-xs text-fg"
+                            value={a.scopeType}
+                            onChange={(e) => {
+                              const next = e.target.value as
+                                | "Property"
+                                | "Company";
+                              setAmounts(
+                                amounts.map((row, idx) =>
+                                  idx === i
+                                    ? {
+                                        ...row,
+                                        scopeType: next,
+                                        // Drop the property and its unit when
+                                        // switching back to Company so a stale
+                                        // id can never be submitted.
+                                        scopeId:
+                                          next === "Property" ? row.scopeId : "",
+                                        unitId:
+                                          next === "Property" ? row.unitId : null,
+                                      }
+                                    : row,
+                                ),
+                              );
+                            }}
+                          >
+                            <option value="Company">Co.</option>
+                            <option value="Property">Prop.</option>
+                          </select>
+                          <select
+                            aria-label={`Line ${i + 1} property`}
+                            className="min-w-0 flex-1 rounded border border-border bg-surface px-1 py-1 text-xs text-fg disabled:opacity-50"
+                            value={a.scopeId}
+                            disabled={a.scopeType !== "Property"}
+                            onChange={(e) =>
+                              updateRow(i, "scopeId", e.target.value)
+                            }
+                          >
+                            <option value="">—</option>
+                            {properties.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </td>
+                      <td className="w-56 px-2 py-1">
+                        <select
+                          aria-label={`Line ${i + 1} account`}
+                          className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
+                          value={a.accountId}
+                          onChange={(e) =>
+                            updateRow(i, "accountId", e.target.value)
+                          }
+                        >
+                          <option value="">Choose…</option>
+                          {accounts.map((acc) => (
+                            <option key={acc.id} value={acc.id}>
+                              {acc.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-2 py-1">
+                        <Input
+                          aria-label={`Line ${i + 1} description`}
+                          value={a.description}
+                          onChange={(e) =>
+                            updateRow(i, "description", e.target.value)
+                          }
+                        />
+                      </td>
+                      <td className="w-28 px-2 py-1">
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          aria-label={`Line ${i + 1} amount`}
+                          value={a.amount}
+                          onChange={(e) =>
+                            updateRow(i, "amount", e.target.value)
+                          }
+                        />
+                      </td>
+                      <td className="w-8 px-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => removeRow(i)}
+                          aria-label={`Remove line ${i + 1}`}
+                          className="text-fg-muted hover:text-error"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-surface">
+                    <td
+                      colSpan={3}
+                      className="px-2 py-2 text-right text-xs font-bold uppercase tracking-widest text-fg-muted"
+                    >
+                      Total
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      {/* convert={false}: this is the sum of the boxes above,
+                          which are typed and stored in the rule's own
+                          currency. Letting the USD/CAD display toggle rescale
+                          it would show a total that disagrees with its own
+                          rows — and with what actually posts. */}
+                      <CurrencyAmount value={amountsTotal} convert={false} />
+                    </td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {scopeGroupCount > 1 && type !== "Journal entry" && (
+              <p className="text-xs text-fg-muted">
+                This rule spans {scopeGroupCount} scopes — each posting
+                generates {scopeGroupCount} separate {type.toLowerCase()}s, one
+                per property.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-4 text-sm text-fg">

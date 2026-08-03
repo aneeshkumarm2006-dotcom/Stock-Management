@@ -14,39 +14,39 @@
 //   - Is idempotent (re-running on an already-promoted record is a no-op).
 //   - Writes ActivityLogEntry on each entity involved.
 //   - Throws PromotionError with a `status` field for the route handler.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { Prospect } from '@/lib/db/models/pm/Prospect';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { Prospect } from "@/lib/db/models/pm/Prospect";
 import {
   Applicant,
   buildDefaultApplicantChecklist,
   APPLICANT_DEFAULT_CHECKLIST,
-} from '@/lib/db/models/pm/Applicant';
-import { DraftLease } from '@/lib/db/models/pm/DraftLease';
-import { Lease } from '@/lib/db/models/pm/Lease';
-import { Tenant } from '@/lib/db/models/pm/Tenant';
-import { Property } from '@/lib/db/models/pm/Property';
-import { Unit } from '@/lib/db/models/pm/Unit';
-import { BankAccount } from '@/lib/db/models/pm/BankAccount';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import { logActivity } from '@/lib/pm/activity';
-import { assertWriteAllowed } from '@/lib/pm/lockedPeriod';
-import { canOverrideLockedPeriod } from '@/lib/pm/roles';
-import { computeLeaseStatus } from '@/lib/pm/leaseStatus';
-import { advanceRentDate } from '@/lib/pm/leaseRecurringPoster';
-import { rentCentsFromRateCents } from '@/lib/pm/rent';
+} from "@/lib/db/models/pm/Applicant";
+import { DraftLease } from "@/lib/db/models/pm/DraftLease";
+import { Lease } from "@/lib/db/models/pm/Lease";
+import { Tenant } from "@/lib/db/models/pm/Tenant";
+import { Property } from "@/lib/db/models/pm/Property";
+import { Unit } from "@/lib/db/models/pm/Unit";
+import { BankAccount } from "@/lib/db/models/pm/BankAccount";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { logActivity } from "@/lib/pm/activity";
+import { assertWriteAllowed } from "@/lib/pm/lockedPeriod";
+import { canOverrideLockedPeriod } from "@/lib/pm/roles";
+import { computeLeaseStatus } from "@/lib/pm/leaseStatus";
+import { advanceRentDate } from "@/lib/pm/leaseRecurringPoster";
+import { rentCentsFromRateCents } from "@/lib/pm/rent";
 import {
   deriveCurrentRentFromSchedule,
   type RentSchedulePeriodModel,
-} from '@/lib/validation/pm/rentSchedule';
-import type { PmContext } from '@/lib/auth/getCurrentUser';
+} from "@/lib/validation/pm/rentSchedule";
+import type { PmContext } from "@/lib/auth/getCurrentUser";
 
 export class PromotionError extends Error {
   readonly status: number;
   constructor(message: string, status = 400) {
     super(message);
-    this.name = 'PromotionError';
+    this.name = "PromotionError";
     this.status = status;
   }
 }
@@ -76,9 +76,9 @@ export async function convertProspectToApplicant(
     _id: new Types.ObjectId(prospectId),
     organizationId: orgId,
   });
-  if (!prospect) throw new PromotionError('Prospect not found', 404);
+  if (!prospect) throw new PromotionError("Prospect not found", 404);
 
-  if (prospect.status === 'Converted' && prospect.convertedToApplicantId) {
+  if (prospect.status === "Converted" && prospect.convertedToApplicantId) {
     return {
       applicantId: String(prospect.convertedToApplicantId),
       alreadyConverted: true,
@@ -94,7 +94,7 @@ export async function convertProspectToApplicant(
 
   const phones =
     prospect.phone && prospect.phone.length > 0
-      ? [{ number: prospect.phone, label: 'mobile' }]
+      ? [{ number: prospect.phone, label: "mobile" }]
       : [];
 
   const applicant = await Applicant.create({
@@ -103,7 +103,7 @@ export async function convertProspectToApplicant(
     lastName: prospect.lastName,
     applicationNumber,
     applicationReceivedAt: new Date(),
-    status: 'New',
+    status: "New",
     email: prospect.email,
     phones,
     propertyId: prospect.propertyId ?? null,
@@ -111,13 +111,13 @@ export async function convertProspectToApplicant(
     rentalHistory: [],
     employment: [],
     checklist: buildDefaultApplicantChecklist(),
-    screeningStatus: 'Not ordered',
+    screeningStatus: "Not ordered",
     emailLinkToOnlineApplication: false,
     sourceProspectId: prospect._id,
     customFields: new Map(),
   });
 
-  prospect.status = 'Converted';
+  prospect.status = "Converted";
   prospect.convertedToApplicantId = applicant._id;
   prospect.convertedAt = new Date();
   await prospect.save();
@@ -125,17 +125,17 @@ export async function convertProspectToApplicant(
   await Promise.all([
     logActivity({
       orgId: ctx.orgId,
-      parentType: 'Prospect',
+      parentType: "Prospect",
       parentId: prospect._id,
-      eventType: 'Prospect converted to applicant',
+      eventType: "Prospect converted to applicant",
       actorUserId: ctx.userId,
       payload: { applicantId: String(applicant._id), applicationNumber },
     }),
     logActivity({
       orgId: ctx.orgId,
-      parentType: 'Applicant',
+      parentType: "Applicant",
       parentId: applicant._id,
-      eventType: 'Applicant created (from Prospect)',
+      eventType: "Applicant created (from Prospect)",
       actorUserId: ctx.userId,
       payload: { prospectId: String(prospect._id) },
     }),
@@ -173,7 +173,7 @@ export async function convertApplicantToTenant(
     _id: new Types.ObjectId(applicantId),
     organizationId: orgId,
   });
-  if (!applicant) throw new PromotionError('Applicant not found', 404);
+  if (!applicant) throw new PromotionError("Applicant not found", 404);
 
   if (applicant.promotedToTenantId) {
     return {
@@ -183,23 +183,23 @@ export async function convertApplicantToTenant(
   }
 
   // [G-B-4] preconditions.
-  if (applicant.status !== 'Approved') {
+  if (applicant.status !== "Approved") {
     throw new PromotionError(
-      'Applicant must be Approved before promoting to a tenant ([G-B-4]).',
+      "Applicant must be Approved before promoting to a tenant ([G-B-4]).",
     );
   }
   if (!applicant.email) {
-    throw new PromotionError('Applicant email is required ([G-B-4]).');
+    throw new PromotionError("Applicant email is required ([G-B-4]).");
   }
   if (!applicant.propertyId || !applicant.unitId) {
     throw new PromotionError(
-      'Applicant must have a propertyId and unitId before promoting ([G-B-4]).',
+      "Applicant must have a propertyId and unitId before promoting ([G-B-4]).",
     );
   }
   const stage1Items = applicant.checklist.filter((i) => i.stage === 1);
   if (stage1Items.length === 0 || stage1Items.some((i) => !i.checked)) {
     throw new PromotionError(
-      'All Stage 1 checklist items must be checked before promoting ([G-B-4]).',
+      "All Stage 1 checklist items must be checked before promoting ([G-B-4]).",
     );
   }
 
@@ -226,16 +226,14 @@ export async function convertApplicantToTenant(
 
   applicant.promotedToTenantId = tenant._id;
   applicant.promotedAt = new Date();
-  applicant.status = 'Converted';
+  applicant.status = "Converted";
 
   // Auto-check Stage 3 item 1 ("Send draft lease for signature") with actor
   // = System per BR-LA-7's spirit (the system did the move).
   const stage3Item1 = applicant.checklist.find(
     (i) =>
       i.stage === 3 &&
-      i.label === APPLICANT_DEFAULT_CHECKLIST.find(
-        (d) => d.stage === 3,
-      )?.label,
+      i.label === APPLICANT_DEFAULT_CHECKLIST.find((d) => d.stage === 3)?.label,
   );
   if (stage3Item1 && !stage3Item1.checked) {
     stage3Item1.checked = true;
@@ -249,17 +247,17 @@ export async function convertApplicantToTenant(
     await Promise.all([
       logActivity({
         orgId: ctx.orgId,
-        parentType: 'Applicant',
+        parentType: "Applicant",
         parentId: applicant._id,
-        eventType: 'Applicant promoted to tenant',
+        eventType: "Applicant promoted to tenant",
         actorUserId: ctx.userId,
         payload: { tenantId: String(tenant._id) },
       }),
       logActivity({
         orgId: ctx.orgId,
-        parentType: 'Tenant',
+        parentType: "Tenant",
         parentId: tenant._id,
-        eventType: 'Tenant created (from Applicant)',
+        eventType: "Tenant created (from Applicant)",
         actorUserId: ctx.userId,
         payload: {
           applicantId: String(applicant._id),
@@ -322,9 +320,9 @@ export async function executeDraftLease(
     _id: new Types.ObjectId(draftLeaseId),
     organizationId: orgId,
   });
-  if (!draft) throw new PromotionError('Draft lease not found', 404);
+  if (!draft) throw new PromotionError("Draft lease not found", 404);
 
-  if (draft.executionStatus === 'Executed' && draft.promotedToLeaseId) {
+  if (draft.executionStatus === "Executed" && draft.promotedToLeaseId) {
     return {
       leaseId: String(draft.promotedToLeaseId),
       leaseNumber: 0,
@@ -333,16 +331,14 @@ export async function executeDraftLease(
       alreadyExecuted: true,
     };
   }
-  if (draft.executionStatus === 'Cancelled') {
+  if (draft.executionStatus === "Cancelled") {
     throw new PromotionError(
-      'Cancelled drafts must be reverted to Draft before execution.',
+      "Cancelled drafts must be reverted to Draft before execution.",
     );
   }
 
   // BR-LL-11 — every move-in charge must be paid before execution.
-  const unpaidMoveIn = (draft.moveInCharges ?? []).filter(
-    (c) => !c.paidAt,
-  );
+  const unpaidMoveIn = (draft.moveInCharges ?? []).filter((c) => !c.paidAt);
   if (unpaidMoveIn.length > 0) {
     throw new PromotionError(
       `All move-in charges must be paid before executing the lease (${unpaidMoveIn.length} unpaid).`,
@@ -359,17 +355,15 @@ export async function executeDraftLease(
   const hasApprovedApplicant = (draft.approvedApplicants ?? []).length > 0;
   if (!hasTenantRef && !hasApprovedApplicant) {
     throw new PromotionError(
-      'Cannot execute a lease with no tenants. Add a tenant (or an approved applicant) to the draft before executing.',
+      "Cannot execute a lease with no tenants. Add a tenant (or an approved applicant) to the draft before executing.",
     );
   }
 
   // Posting date defaults to today, but accepts an override (route gates
   // overrideLockedPeriod by role).
-  const txnDate = input.postingDate
-    ? new Date(input.postingDate)
-    : new Date();
+  const txnDate = input.postingDate ? new Date(input.postingDate) : new Date();
   if (Number.isNaN(txnDate.getTime())) {
-    throw new PromotionError('Invalid postingDate', 400);
+    throw new PromotionError("Invalid postingDate", 400);
   }
 
   // Locked-period gate (skippable only by FinancialAdministrator/Admin).
@@ -398,7 +392,7 @@ export async function executeDraftLease(
       depositTrustAccountId?: Types.ObjectId | null;
       propertyName: string;
     } | null>();
-  if (!property) throw new PromotionError('Property not found', 404);
+  if (!property) throw new PromotionError("Property not found", 404);
 
   const operatingBank = await BankAccount.findOne({
     _id: property.operatingAccountId,
@@ -408,10 +402,10 @@ export async function executeDraftLease(
     .lean<{ chartOfAccountId?: Types.ObjectId | null } | null>();
   const operatingCashCoaId =
     operatingBank?.chartOfAccountId ??
-    (await lookupChartByDefaultFor(orgId, 'Operating Cash'));
+    (await lookupChartByDefaultFor(orgId, "Operating Cash"));
   const securityDepositCoaId = await lookupChartByDefaultFor(
     orgId,
-    'Security Deposit Liability',
+    "Security Deposit Liability",
   );
 
   // Build the Lease snapshot from the Draft. Convert embedded ObjectIds via
@@ -422,7 +416,7 @@ export async function executeDraftLease(
   // unit's CURRENT sizeSqft (it may have changed since the draft was drafted).
   // The resolved amount feeds both the lease snapshot and the move-in JE below.
   let resolvedPrimaryRent = draftObj.primaryRent;
-  if (draftObj.primaryRent?.rentMethod === 'RatePerSqft') {
+  if (draftObj.primaryRent?.rentMethod === "RatePerSqft") {
     const unit = await Unit.findOne({
       _id: draftObj.unitId,
       organizationId: orgId,
@@ -464,7 +458,7 @@ export async function executeDraftLease(
       ...resolvedPrimaryRent,
       amount: derivedRent.amount,
       accountId: derivedRent.accountId,
-      rentMethod: 'Fixed',
+      rentMethod: "Fixed",
       ratePerSqftCents: 0,
       memo: derivedRent.memo,
     };
@@ -484,7 +478,8 @@ export async function executeDraftLease(
   // where the nightly poster could sweep the just-created lease and post month 1
   // before the cursor advanced.
   const rentCents = leasePrimaryRent?.amount ?? 0;
-  const rentAccountId = leasePrimaryRent?.accountId ?? draft.primaryRent.accountId;
+  const rentAccountId =
+    leasePrimaryRent?.accountId ?? draft.primaryRent.accountId;
   // §4 — first month's rent also includes the OPEX/Tax recovery splits, each
   // credited to its own income account so the recoveries report separately.
   const splitCharges = (leaseSplitCharges ?? []).filter(
@@ -533,7 +528,7 @@ export async function executeDraftLease(
       .filter((t) => t.tenantId)
       .map((t) => ({
         tenantId: t.tenantId as Types.ObjectId,
-        tenantType: t.tenantType ?? 'Individual',
+        tenantType: t.tenantType ?? "Individual",
         firstName: t.firstName,
         lastName: t.lastName,
         companyName: t.companyName,
@@ -544,7 +539,7 @@ export async function executeDraftLease(
       .filter((t) => t.tenantId)
       .map((t) => ({
         tenantId: t.tenantId as Types.ObjectId,
-        tenantType: t.tenantType ?? 'Individual',
+        tenantType: t.tenantType ?? "Individual",
         firstName: t.firstName,
         lastName: t.lastName,
         companyName: t.companyName,
@@ -606,16 +601,14 @@ export async function executeDraftLease(
   // fell through and the entry disappeared with no signal).
   if (totalIn > 0) {
     if (!operatingCashCoaId) {
-      moveInJournalWarning =
-        `Lease #${leaseNumber} was created, but its move-in funds were not posted to the ledger: no Operating Cash account is mapped for this property (or as an org default). Map one, then post a manual move-in journal entry.`;
+      moveInJournalWarning = `Lease #${leaseNumber} was created, but its move-in funds were not posted to the ledger: no Operating Cash account is mapped for this property (or as an org default). Map one, then post a manual move-in journal entry.`;
     } else if (depositCents > 0 && !securityDepositCoaId) {
-      moveInJournalWarning =
-        `Lease #${leaseNumber} was created, but its move-in funds were not posted: a security deposit was collected and no Security Deposit Liability account is mapped. Map one, then post a manual move-in journal entry.`;
+      moveInJournalWarning = `Lease #${leaseNumber} was created, but its move-in funds were not posted: a security deposit was collected and no Security Deposit Liability account is mapped. Map one, then post a manual move-in journal entry.`;
     } else {
       const lines: Array<Record<string, unknown>> = [];
       lines.push({
         accountId: operatingCashCoaId,
-        scopeType: 'Property',
+        scopeType: "Property",
         scopeId: lease.propertyId,
         unitId: lease.unitId,
         description: `Move-in funds received (lease #${leaseNumber})`,
@@ -625,10 +618,10 @@ export async function executeDraftLease(
       if (rentCents > 0) {
         lines.push({
           accountId: rentAccountId,
-          scopeType: 'Property',
+          scopeType: "Property",
           scopeId: lease.propertyId,
           unitId: lease.unitId,
-          description: 'First month rent income',
+          description: "First month rent income",
           debit: 0,
           credit: rentCents,
         });
@@ -636,10 +629,10 @@ export async function executeDraftLease(
       for (const c of splitCharges) {
         lines.push({
           accountId: c.accountId,
-          scopeType: 'Property',
+          scopeType: "Property",
           scopeId: lease.propertyId,
           unitId: lease.unitId,
-          description: c.memo || 'First month recovery income',
+          description: c.memo || "First month recovery income",
           debit: 0,
           credit: c.amount,
         });
@@ -647,19 +640,16 @@ export async function executeDraftLease(
       if (depositCents > 0 && securityDepositCoaId) {
         lines.push({
           accountId: securityDepositCoaId,
-          scopeType: 'Property',
+          scopeType: "Property",
           scopeId: lease.propertyId,
           unitId: lease.unitId,
-          description: 'Security deposit received',
+          description: "Security deposit received",
           debit: 0,
           credit: depositCents,
         });
       }
 
-      const totalDebit = lines.reduce(
-        (s, l) => s + (Number(l.debit) || 0),
-        0,
-      );
+      const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
       const totalCredit = lines.reduce(
         (s, l) => s + (Number(l.credit) || 0),
         0,
@@ -668,18 +658,17 @@ export async function executeDraftLease(
         const je = await JournalEntry.create({
           organizationId: orgId,
           date: txnDate,
-          scopeType: 'Property',
+          scopeType: "Property",
           scopeId: lease.propertyId,
           memo: `Move-in JE for lease #${leaseNumber} at ${property.propertyName}`,
           lines,
-          status: 'Posted',
+          status: "Posted",
           postedAt: txnDate,
           createdByUserId: new Types.ObjectId(ctx.userId),
         });
         journalEntryId = je._id;
       } else {
-        moveInJournalWarning =
-          `Lease #${leaseNumber} was created, but its move-in journal entry couldn't be balanced and was not posted. Review the rent/deposit accounts, then post a manual move-in journal entry.`;
+        moveInJournalWarning = `Lease #${leaseNumber} was created, but its move-in journal entry couldn't be balanced and was not posted. Review the rent/deposit accounts, then post a manual move-in journal entry.`;
       }
     }
   }
@@ -699,8 +688,8 @@ export async function executeDraftLease(
     ).catch((err: unknown) => {
       // Don't break the execute on a single applicant precondition fail —
       // log and continue so the lease still exists.
-      const msg = err instanceof Error ? err.message : 'unknown';
-      console.warn('executeDraftLease: applicant promotion failed', msg);
+      const msg = err instanceof Error ? err.message : "unknown";
+      console.warn("executeDraftLease: applicant promotion failed", msg);
       return null;
     });
     if (promo?.tenantId) {
@@ -715,11 +704,17 @@ export async function executeDraftLease(
       organizationId: orgId,
       _id: { $in: tenantIds },
     })
-      .select({ firstName: 1, lastName: 1, email: 1, tenantType: 1, companyName: 1 })
+      .select({
+        firstName: 1,
+        lastName: 1,
+        email: 1,
+        tenantType: 1,
+        companyName: 1,
+      })
       .lean();
     lease.tenants = tenants.map((t) => ({
       tenantId: t._id as Types.ObjectId,
-      tenantType: t.tenantType ?? 'Individual',
+      tenantType: t.tenantType ?? "Individual",
       firstName: t.firstName,
       lastName: t.lastName,
       companyName: t.companyName ?? undefined,
@@ -750,35 +745,35 @@ export async function executeDraftLease(
     },
     {
       $set: {
-        'checklist.$[s31].checked': true,
-        'checklist.$[s31].checkedAt': new Date(),
-        'checklist.$[s31].systemChecked': true,
-        'checklist.$[s31].checkedByUserId': null,
-        'checklist.$[s32].checked': true,
-        'checklist.$[s32].checkedAt': new Date(),
-        'checklist.$[s32].systemChecked': true,
-        'checklist.$[s32].checkedByUserId': null,
+        "checklist.$[s31].checked": true,
+        "checklist.$[s31].checkedAt": new Date(),
+        "checklist.$[s31].systemChecked": true,
+        "checklist.$[s31].checkedByUserId": null,
+        "checklist.$[s32].checked": true,
+        "checklist.$[s32].checkedAt": new Date(),
+        "checklist.$[s32].systemChecked": true,
+        "checklist.$[s32].checkedByUserId": null,
       },
     },
     {
       arrayFilters: [
         {
-          's31.stage': 3,
-          's31.label': APPLICANT_DEFAULT_CHECKLIST.filter(
-            (i) => i.stage === 3,
-          )[0]?.label ?? 'Send draft lease for signature',
+          "s31.stage": 3,
+          "s31.label":
+            APPLICANT_DEFAULT_CHECKLIST.filter((i) => i.stage === 3)[0]
+              ?.label ?? "Send draft lease for signature",
         },
         {
-          's32.stage': 3,
-          's32.label': APPLICANT_DEFAULT_CHECKLIST.filter(
-            (i) => i.stage === 3,
-          )[1]?.label ?? 'Collect security deposit + first month rent',
+          "s32.stage": 3,
+          "s32.label":
+            APPLICANT_DEFAULT_CHECKLIST.filter((i) => i.stage === 3)[1]
+              ?.label ?? "Collect security deposit + first month rent",
         },
       ],
     },
   );
 
-  draft.executionStatus = 'Executed';
+  draft.executionStatus = "Executed";
   draft.promotedToLeaseId = lease._id;
   draft.promotedAt = new Date();
   await draft.save();
@@ -786,9 +781,9 @@ export async function executeDraftLease(
   await Promise.all([
     logActivity({
       orgId: ctx.orgId,
-      parentType: 'DraftLease',
+      parentType: "DraftLease",
       parentId: draft._id,
-      eventType: 'Draft lease executed',
+      eventType: "Draft lease executed",
       actorUserId: ctx.userId,
       payload: {
         leaseId: String(lease._id),
@@ -798,9 +793,9 @@ export async function executeDraftLease(
     }),
     logActivity({
       orgId: ctx.orgId,
-      parentType: 'Lease',
+      parentType: "Lease",
       parentId: lease._id,
-      eventType: 'Lease created (from DraftLease)',
+      eventType: "Lease created (from DraftLease)",
       actorUserId: ctx.userId,
       payload: {
         leaseNumber,
@@ -817,4 +812,3 @@ export async function executeDraftLease(
     alreadyExecuted: false,
   };
 }
-

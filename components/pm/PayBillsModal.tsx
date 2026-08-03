@@ -16,11 +16,9 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { computeWarnings } from "@/lib/pm/warnings";
 import { WarningInline } from "@/components/pm/WarningBadge";
-import {
-  BILL_PAYMENT_METHODS,
-  type BillPaymentMethod,
-} from "@/types/pm";
+import { BILL_PAYMENT_METHODS, type BillPaymentMethod } from "@/types/pm";
 import { formatDateOnly } from "@/lib/utils/dateInput";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 
 interface BillRow {
   id: string;
@@ -57,7 +55,9 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
   const [bills, setBills] = React.useState<BillRow[]>([]);
   const [banks, setBanks] = React.useState<BankOption[]>([]);
   const [vendors, setVendors] = React.useState<VendorOption[]>([]);
-  const [selected, setSelected] = React.useState<Record<string, SelectedRow>>({});
+  const [selected, setSelected] = React.useState<Record<string, SelectedRow>>(
+    {},
+  );
   const [bankAccountId, setBankAccountId] = React.useState("");
   const [method, setMethod] = React.useState<BillPaymentMethod>("ACH");
   const [checkNumber, setCheckNumber] = React.useState("");
@@ -110,7 +110,8 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
   }, [banks, bankAccountId]);
 
   const vendorById = React.useMemo(
-    () => Object.fromEntries(vendors.map((v) => [v.id, v.displayName] as const)),
+    () =>
+      Object.fromEntries(vendors.map((v) => [v.id, v.displayName] as const)),
     [vendors],
   );
 
@@ -165,7 +166,9 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
         }),
       });
       if (!res.ok) {
-        const errBody = (await res.json().catch(() => ({}))) as { error?: string };
+        const errBody = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
         const msg = errBody.error ?? res.statusText;
         nextErrors[row.bill.id] = msg;
         failures.push(`${row.bill.id.slice(-6)} (${msg})`);
@@ -236,9 +239,7 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
                 id="pay-method"
                 className="w-full rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg"
                 value={method}
-                onChange={(e) =>
-                  setMethod(e.target.value as BillPaymentMethod)
-                }
+                onChange={(e) => setMethod(e.target.value as BillPaymentMethod)}
               >
                 {BILL_PAYMENT_METHODS.map((m) => (
                   <option key={m} value={m}>
@@ -298,7 +299,7 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
                       (rowError ? "bg-error/5" : "")
                     }
                   >
-                    <td className="py-1 w-8">
+                    <td className="w-8 py-1">
                       <input
                         type="checkbox"
                         checked={Boolean(sel)}
@@ -306,14 +307,14 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
                       />
                     </td>
                     <td className="text-fg">
-                      {b.vendorId ? vendorById[b.vendorId] ?? "—" : "—"}
+                      {b.vendorId ? (vendorById[b.vendorId] ?? "—") : "—"}
                     </td>
                     <td className="text-fg-muted">{b.refNo || "—"}</td>
                     <td className="text-fg-muted">
                       {formatDateOnly(b.invoiceDate)}
                     </td>
                     <td className="tabular-nums">
-                      ${(b.amount / 100).toFixed(2)}
+                      <CurrencyAmount cents={b.amount} />
                     </td>
                     <td className="w-32">
                       {sel ? (
@@ -349,10 +350,13 @@ export function PayBillsModal({ open, onClose, onSaved }: PayBillsModalProps) {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={5} className="py-2 text-right text-xs uppercase tracking-widest text-fg-muted">
+                <td
+                  colSpan={5}
+                  className="py-2 text-right text-xs uppercase tracking-widest text-fg-muted"
+                >
                   Total to post
                 </td>
-                <td className="tabular-nums font-bold text-fg">
+                <td className="font-bold tabular-nums text-fg">
                   ${(totalCents / 100).toFixed(2)}
                 </td>
               </tr>

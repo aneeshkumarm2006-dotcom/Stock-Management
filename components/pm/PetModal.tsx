@@ -19,7 +19,11 @@ interface PetModalProps {
   onClose: () => void;
   onSaved: () => void | Promise<void>;
   leaseId: string;
-  leaseTenants: Array<{ tenantId: string; firstName: string; lastName: string }>;
+  leaseTenants: Array<{
+    tenantId: string;
+    firstName: string;
+    lastName: string;
+  }>;
   /** When set, modal loads the pet and saves via PATCH. */
   editingId?: string;
 }

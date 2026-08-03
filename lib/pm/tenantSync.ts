@@ -17,10 +17,10 @@
 // consistent directory. The `$set` runs through `updateMany`, which bypasses
 // document validation hooks — that's intentional; we are syncing already-valid
 // fields off the canonical Tenant doc.
-import { Types, type Model } from 'mongoose';
-import { Lease } from '@/lib/db/models/pm/Lease';
-import { DraftLease } from '@/lib/db/models/pm/DraftLease';
-import type { TenantType } from '@/types/pm';
+import { Types, type Model } from "mongoose";
+import { Lease } from "@/lib/db/models/pm/Lease";
+import { DraftLease } from "@/lib/db/models/pm/DraftLease";
+import type { TenantType } from "@/types/pm";
 
 /** The minimal shape of a saved Tenant doc this helper needs. */
 export interface TenantSnapshotSource {
@@ -40,7 +40,7 @@ export interface TenantSyncResult {
 }
 
 // The two embedded arrays that carry tenant snapshots, on both collections.
-const REF_ARRAYS = ['tenants', 'cosigners'] as const;
+const REF_ARRAYS = ["tenants", "cosigners"] as const;
 
 /**
  * Re-stamp the identity snapshot for `tenant` across every Lease and DraftLease
@@ -59,11 +59,11 @@ export async function syncTenantSnapshots(
   // e.g. an Individual's snapshot must not retain an old companyName. The
   // display helper (tenantDisplayName) treats '' as absent.
   const snapshot = {
-    tenantType: (tenant.tenantType ?? 'Individual') as TenantType,
-    firstName: tenant.firstName ?? '',
-    lastName: tenant.lastName ?? '',
-    companyName: tenant.companyName ?? '',
-    email: tenant.email ?? '',
+    tenantType: (tenant.tenantType ?? "Individual") as TenantType,
+    firstName: tenant.firstName ?? "",
+    lastName: tenant.lastName ?? "",
+    companyName: tenant.companyName ?? "",
+    email: tenant.email ?? "",
   };
 
   // One updateMany per (collection, array) so each uses a single positional
@@ -86,7 +86,7 @@ export async function syncTenantSnapshots(
                 [`${field}.$[ref].email`]: snapshot.email,
               },
             },
-            { arrayFilters: [{ 'ref.tenantId': tenantId }] },
+            { arrayFilters: [{ "ref.tenantId": tenantId }] },
           )
           .then((r) => ({
             matchedCount: r.matchedCount ?? 0,

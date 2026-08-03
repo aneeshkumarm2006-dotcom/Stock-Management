@@ -20,6 +20,7 @@ import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { useToast } from "@/components/ui/toast";
+import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 
 interface PartsRow {
   qty: number;
@@ -148,7 +149,7 @@ export default function WorkOrderDetailPage() {
               {doc.priority}
             </span>
             <span className="text-fg-muted">
-              Bill: {doc.billStatus} · ${(doc.billTotal / 100).toFixed(2)}
+              Bill: {doc.billStatus} · <CurrencyAmount cents={doc.billTotal} />
             </span>
           </div>
         </CardHeader>
@@ -250,10 +251,10 @@ export default function WorkOrderDetailPage() {
                         <td className="text-fg-muted">{p.accountId}</td>
                         <td className="text-fg">{p.description}</td>
                         <td className="tabular-nums">
-                          ${(p.price / 100).toFixed(2)}
+                          <CurrencyAmount cents={p.price} />
                         </td>
                         <td className="tabular-nums font-bold text-fg">
-                          ${(p.total / 100).toFixed(2)}
+                          <CurrencyAmount cents={p.total} />
                         </td>
                       </tr>
                     ))}
@@ -264,7 +265,7 @@ export default function WorkOrderDetailPage() {
                         Bill total
                       </td>
                       <td className="tabular-nums font-bold text-fg">
-                        ${(doc.billTotal / 100).toFixed(2)}
+                        <CurrencyAmount cents={doc.billTotal} />
                       </td>
                     </tr>
                   </tfoot>

@@ -8,19 +8,16 @@
 // phases (lease welcome on lease execute, vendor invite on vendor portal,
 // etc). Real outbound SMTP is NOT wired — the helper persists the row
 // and logs activity; that is the entire Phase 6 surface.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { EmailMessage } from '@/lib/db/models/pm/EmailMessage';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { EmailMessage } from "@/lib/db/models/pm/EmailMessage";
 import {
   EmailThread,
   computeThreadGroupingKey,
-} from '@/lib/db/models/pm/EmailThread';
-import { logActivity } from '@/lib/pm/activity';
-import { sendEmail } from '@/lib/pm/emailTransport';
-import type {
-  EmailRecipientType,
-  EmailRelatedEntityType,
-} from '@/types/pm';
+} from "@/lib/db/models/pm/EmailThread";
+import { logActivity } from "@/lib/pm/activity";
+import { sendEmail } from "@/lib/pm/emailTransport";
+import type { EmailRecipientType, EmailRelatedEntityType } from "@/types/pm";
 
 export interface SystemEmailRecipient {
   type: EmailRecipientType;
@@ -51,7 +48,7 @@ export interface SystemEmailInput {
 }
 
 function toOid(v: string | Types.ObjectId): Types.ObjectId {
-  return typeof v === 'string' ? new Types.ObjectId(v) : v;
+  return typeof v === "string" ? new Types.ObjectId(v) : v;
 }
 
 function toOidOrNull(
@@ -78,12 +75,14 @@ export async function writeSystemEmail(
 
   // EmailThread upsert keyed by (subject, participants). Same shape as the
   // human-compose path so threads merge cleanly.
-  const groupingKey = computeThreadGroupingKey(
-    input.subject,
-    [input.fromMailbox, ...allRecipientEmails],
-  );
+  const groupingKey = computeThreadGroupingKey(input.subject, [
+    input.fromMailbox,
+    ...allRecipientEmails,
+  ]);
   const threadParticipants = Array.from(
-    new Set([input.fromMailbox, ...allRecipientEmails].map((e) => e.toLowerCase())),
+    new Set(
+      [input.fromMailbox, ...allRecipientEmails].map((e) => e.toLowerCase()),
+    ),
   );
   const thread = await EmailThread.findOneAndUpdate(
     { organizationId: orgOid, groupingKey },
@@ -136,9 +135,9 @@ export async function writeSystemEmail(
     })),
     senderUserId: toOid(input.senderUserId),
     senderDisplayName: input.senderDisplayName,
-    status: 'Sent',
+    status: "Sent",
     isSystemGenerated: true,
-    readReceiptStatus: 'Not tracked',
+    readReceiptStatus: "Not tracked",
     templateId: toOidOrNull(input.templateId),
     attachmentFileIds: (input.attachmentFileIds ?? []).map((id) => toOid(id)),
     threadId: thread._id,
@@ -160,16 +159,16 @@ export async function writeSystemEmail(
   if (!delivery.delivered && !delivery.skipped) {
     await EmailMessage.updateOne(
       { _id: message._id },
-      { $set: { status: 'Failed' } },
+      { $set: { status: "Failed" } },
     );
   }
 
-  const baseEventType = input.eventType ?? 'Email sent';
+  const baseEventType = input.eventType ?? "Email sent";
   const eventType =
-    !delivery.delivered && !delivery.skipped ? 'Email failed' : baseEventType;
+    !delivery.delivered && !delivery.skipped ? "Email failed" : baseEventType;
   await logActivity({
     orgId: orgOid,
-    parentType: 'EmailMessage',
+    parentType: "EmailMessage",
     parentId: message._id,
     eventType,
     actorUserId: toOid(input.senderUserId),

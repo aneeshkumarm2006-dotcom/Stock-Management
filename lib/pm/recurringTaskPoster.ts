@@ -5,13 +5,13 @@
 //
 // Reuses `advanceNextDate` from recurringPoster.ts so the date math stays
 // identical to the RecurringTransaction cadence engine.
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { RecurringTask } from '@/lib/db/models/pm/RecurringTask';
-import { Task } from '@/lib/db/models/pm/Task';
-import { nextTaskId } from '@/lib/pm/taskIdSequence';
-import { advanceNextDate } from '@/lib/pm/recurringPoster';
-import { logActivity } from '@/lib/pm/activity';
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { RecurringTask } from "@/lib/db/models/pm/RecurringTask";
+import { Task } from "@/lib/db/models/pm/Task";
+import { nextTaskId } from "@/lib/pm/taskIdSequence";
+import { advanceNextDate } from "@/lib/pm/recurringPoster";
+import { logActivity } from "@/lib/pm/activity";
 
 interface PostOneResult {
   recurringTaskId: string;
@@ -42,7 +42,7 @@ export async function runRecurringTaskPoster(
       results.push({
         recurringTaskId: String(rule._id),
         posted: false,
-        note: 'Already posted',
+        note: "Already posted",
       });
       continue;
     }
@@ -50,7 +50,7 @@ export async function runRecurringTaskPoster(
       results.push({
         recurringTaskId: String(rule._id),
         posted: false,
-        note: 'Not yet due',
+        note: "Not yet due",
       });
       continue;
     }
@@ -63,7 +63,7 @@ export async function runRecurringTaskPoster(
         taskId,
         title: rule.title,
         taskType: rule.taskType,
-        status: 'New',
+        status: "New",
         priority: rule.priority,
         dueDate: rule.nextDate,
         categoryId: rule.categoryId ?? null,
@@ -80,9 +80,9 @@ export async function runRecurringTaskPoster(
 
       await logActivity({
         orgId,
-        parentType: 'Task',
+        parentType: "Task",
         parentId: task._id,
-        eventType: 'Task generated from RecurringTask',
+        eventType: "Task generated from RecurringTask",
         actorUserId: rule.createdByUserId,
         payload: {
           recurringTaskId: String(rule._id),
@@ -96,8 +96,8 @@ export async function runRecurringTaskPoster(
       rule.nextDate = advanceNextDate(rule.nextDate, rule.cadence);
 
       if (
-        rule.duration === 'End after N' &&
-        typeof rule.occurrenceCount === 'number' &&
+        rule.duration === "End after N" &&
+        typeof rule.occurrenceCount === "number" &&
         rule.postedCount >= rule.occurrenceCount
       ) {
         rule.active = false;
@@ -115,7 +115,7 @@ export async function runRecurringTaskPoster(
       results.push({
         recurringTaskId: String(rule._id),
         posted: false,
-        note: err instanceof Error ? err.message : 'Posting failed',
+        note: err instanceof Error ? err.message : "Posting failed",
       });
     }
   }

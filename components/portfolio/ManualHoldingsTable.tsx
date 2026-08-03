@@ -4,6 +4,9 @@
 // shows cost, current value, P&L and a "value as-of" cell with a red staleness
 // dot (value not refreshed this calendar month) plus an "Update value" action.
 // The cash variant is leaner: just a single value, no P&L, no staleness.
+// Every money column renders in the DISPLAY currency so the row stays
+// internally consistent when the USD/CAD toggle flips; the "Cur" column keeps
+// the holding's native currency visible.
 import { MoreHorizontal, Pencil, Trash2, RefreshCw } from "lucide-react";
 import type { PortfolioRow } from "@/lib/hooks/usePortfolio";
 import type { Currency } from "@/lib/utils/convertCurrency";
@@ -43,9 +46,7 @@ export function ManualHoldingsTable({
             <TH>Held By</TH>
             <TH className="text-center">Cur</TH>
             {isFund && <TH className="text-right">Cost</TH>}
-            <TH className="text-right">
-              {isFund ? "Current Value" : "Value"}
-            </TH>
+            <TH className="text-right">{isFund ? "Current Value" : "Value"}</TH>
             {isFund && <TH className="text-right">P&amp;L</TH>}
             {isFund && <TH>Value As-Of</TH>}
             <TH className="w-10" aria-label="Actions" />
@@ -63,14 +64,22 @@ export function ManualHoldingsTable({
                 <TD className="max-w-[160px] truncate text-fg-muted">
                   {r.companyName ?? "—"}
                 </TD>
-                <TD className="text-center font-display text-[11px] font-bold text-fg">
+                <TD
+                  className="text-center font-display text-[11px] font-bold text-fg"
+                  title={`Held in ${r.nativeCurrency} — amounts shown in ${displayCurrency}`}
+                >
                   {r.nativeCurrency}
                 </TD>
                 {isFund && (
+                  // Funds enter portfolioMath with quantity 1 and avgBuyPrice =
+                  // costBasis, so metrics.invested IS the cost already converted
+                  // into the display currency. Keep the null guard: costBasis
+                  // allows 0, and only the native field distinguishes "unknown"
+                  // (—) from "genuinely zero" ($0.00).
                   <TD className="text-right font-display text-fg-muted">
                     {r.costBasis == null
                       ? "—"
-                      : formatCurrency(r.costBasis, r.nativeCurrency, {
+                      : formatCurrency(r.metrics.invested, displayCurrency, {
                           format: numberFormat,
                         })}
                   </TD>

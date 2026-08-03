@@ -25,8 +25,10 @@ import { formatCurrency } from "@/lib/utils/formatCurrency";
 import {
   useCompanies,
   useCashValue,
+  useCashByCompany,
   type ApiCompany,
 } from "@/lib/hooks/useCompanies";
+import { useFxSync } from "@/lib/hooks/useDashboard";
 import { CompanyFormDialog } from "./CompanyFormDialog";
 import { DeleteCompanyDialog } from "./DeleteCompanyDialog";
 
@@ -34,7 +36,14 @@ export function CompaniesCard() {
   const numberFormat = useSettingsStore((s) => s.numberFormat);
   const displayCurrency = useSettingsStore((s) => s.displayCurrency);
   const { data, isLoading, error, refetch } = useCompanies();
+  // This page is reachable without visiting the dashboard/portfolio, which are
+  // the only other places that populate the FX table. Without this, rates stay
+  // at the initial { USD: 1 } and convertCurrency soft-falls-back to the raw
+  // amount — every balance would silently render unconverted under the display
+  // currency's symbol. Query key is shared, so this dedupes elsewhere.
+  useFxSync();
   const cashValue = useCashValue();
+  const cashByCompany = useCashByCompany();
 
   const companies = data?.companies ?? [];
 
@@ -110,11 +119,23 @@ export function CompaniesCard() {
                 {companies.map((c) => (
                   <TR key={c.id} className="group">
                     <TD className="font-medium text-fg">{c.name}</TD>
-                    <TD className="text-right font-display">
+                    {/* Converted, so each row reads in the same currency as the
+                        "Total cash" footer below. Guard on the native balance so
+                        a genuinely empty account still shows the em-dash. */}
+                    <TD
+                      className="text-right font-display"
+                      title={
+                        c.cashBalance > 0
+                          ? `Held in ${c.cashCurrency} — shown in ${displayCurrency}`
+                          : undefined
+                      }
+                    >
                       {c.cashBalance > 0
-                        ? formatCurrency(c.cashBalance, c.cashCurrency, {
-                            format: numberFormat,
-                          })
+                        ? formatCurrency(
+                            cashByCompany.get(c.id) ?? c.cashBalance,
+                            displayCurrency,
+                            { format: numberFormat },
+                          )
                         : "—"}
                     </TD>
                     <TD className="text-right text-fg-muted">
