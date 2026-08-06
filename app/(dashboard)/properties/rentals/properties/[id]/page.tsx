@@ -38,6 +38,7 @@ import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { CustomFieldsRenderer } from "@/components/pm/CustomFieldsRenderer";
 import { PropertyVacancyWidget } from "@/components/pm/PropertyVacancyWidget";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
+import { useCompanyAccounts } from "@/components/pm/ScopePicker";
 import { MarketValueCard } from "@/components/pm/MarketValueCard";
 import { AssignLeaseModal } from "@/components/pm/AssignLeaseModal";
 import {
@@ -84,6 +85,9 @@ interface PropertyDetail {
   photo: string | null;
   images: GalleryImage[];
   propertyManagerUserId: string | null;
+  /** Parent legal entity; null = unassigned. */
+  companyAccountId: string | null;
+  companyName: string | null;
   rentalOwners: OwnerRef[];
   operatingAccount: BankRef | null;
   depositTrustAccount: BankRef | null;
@@ -140,6 +144,9 @@ export default function PropertyDetailPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [doc, setDoc] = React.useState<PropertyDetail | null>(null);
+  // `true` because this is a page, not a modal — the list stays loaded for as
+  // long as the page is mounted.
+  const companies = useCompanyAccounts(true);
   const [loading, setLoading] = React.useState(true);
   const [units, setUnits] = React.useState<UnitRow[]>([]);
   const [appliances, setAppliances] = React.useState<ApplianceRollupRow[]>([]);
@@ -317,6 +324,8 @@ export default function PropertyDetailPage() {
                   country: doc.address.country || "US",
                   // "" = inherit the org default (the pre-field behaviour).
                   currency: doc.currency ?? "",
+                  // "" = not assigned to any company.
+                  companyAccountId: doc.companyAccountId ?? "",
                   listingDescription: doc.listingDescription,
                 } as Record<string, unknown>}
                 fields={[
@@ -359,6 +368,28 @@ export default function PropertyDetailPage() {
                       v ? String(v) : "Organisation default",
                   },
                   {
+                    // The legal entity that owns this building. Editable here
+                    // (not only at creation) because ownership moves between
+                    // entities, and because it decides which company-wide costs
+                    // — mortgage, blanket insurance — this property carries.
+                    key: "companyAccountId",
+                    label: "Company",
+                    type: "select",
+                    options: [
+                      { value: "", label: "— Not assigned —" },
+                      ...companies.map((c) => ({
+                        value: c.id,
+                        label: c.name,
+                      })),
+                    ],
+                    display: (v) =>
+                      v
+                        ? (companies.find((c) => c.id === v)?.name ??
+                          doc.companyName ??
+                          "(unknown company)")
+                        : "— Not assigned —",
+                  },
+                  {
                     key: "listingDescription",
                     label: "Listing description",
                     type: "textarea",
@@ -372,6 +403,10 @@ export default function PropertyDetailPage() {
                   listingDescription: p.listingDescription,
                   // Empty string clears the override back to "inherit org".
                   currency: p.currency ? p.currency : null,
+                  // Empty string clears the company assignment.
+                  companyAccountId: p.companyAccountId
+                    ? p.companyAccountId
+                    : null,
                   address: {
                     line1: p.line1,
                     line2: p.line2,
