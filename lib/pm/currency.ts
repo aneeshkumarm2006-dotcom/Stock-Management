@@ -85,6 +85,25 @@ export function resolvePropertyCurrency(
 }
 
 /**
+ * The currency a company's own books are denominated in.
+ *
+ * Same contract as `resolvePropertyCurrency`, for `CompanyAccount.currency`. A
+ * company-scoped amount (a mortgage payment, a blanket insurance premium) has
+ * no property to inherit from, so before this existed it had no currency at
+ * all — which is why `convert={false}` is smeared across the company-scoped UI.
+ *
+ * This is also the gate on allocation: a company-level cost may only be split
+ * across properties resolving to the SAME currency, because the ledger never
+ * converts on write.
+ */
+export function resolveCompanyCurrency(
+  companyCurrency: PmCurrency | null | undefined,
+  orgDefaultCurrency: PmCurrency | null | undefined,
+): PmCurrency {
+  return companyCurrency ?? orgDefaultCurrency ?? "USD";
+}
+
+/**
  * Convert an integer-cents amount from its native currency into the display
  * currency, returning integer cents so callers keep the ledger's unit.
  *

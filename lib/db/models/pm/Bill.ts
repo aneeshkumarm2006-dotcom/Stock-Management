@@ -31,6 +31,19 @@ export interface IBillLine {
   description?: string;
   /** Integer cents. */
   amount: number;
+  /**
+   * Optional per-line scope override. Absent ⇒ the line inherits `Bill.scope`,
+   * which is every bill written before allocation existed.
+   *
+   * This is what lets ONE payable carry per-property expense. A blanket
+   * insurance premium is a single obligation to a single vendor, so the bill
+   * and its Accounts Payable credit stay on the company that owes it, while
+   * each debit lands on the building carrying that share. Without this the
+   * only way to spread a cost was to post N separate bills for one invoice —
+   * which the vendor would then appear to be owed N times.
+   */
+  scopeType?: BillScopeType | null;
+  scopeId?: Types.ObjectId | null;
 }
 
 export interface IBillScope {
@@ -80,6 +93,10 @@ const BillLineSchema = new Schema<IBillLine>(
     },
     description: { type: String, trim: true, maxlength: 500 },
     amount: { type: Number, required: true },
+    // No default — an absent value means "inherit Bill.scope", so every
+    // existing line keeps its current meaning with no migration.
+    scopeType: { type: String, enum: BILL_SCOPE_TYPES_DB, required: false },
+    scopeId: { type: Schema.Types.ObjectId, required: false },
   },
   { _id: true },
 );

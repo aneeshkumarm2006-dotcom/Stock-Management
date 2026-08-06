@@ -7,6 +7,7 @@ import { connectToDatabase } from '@/lib/db/mongoose';
 import { Property } from '@/lib/db/models/pm/Property';
 import { BankAccount } from '@/lib/db/models/pm/BankAccount';
 import { RentalOwner } from '@/lib/db/models/pm/RentalOwner';
+import { CompanyAccount } from '@/lib/db/models/pm/CompanyAccount';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -34,6 +35,9 @@ interface PropertyLeanLike {
   // the org default" (see lib/pm/currency.ts resolvePropertyCurrency).
   currency?: string | null;
   propertyManagerUserId?: unknown;
+  // Parent legal entity — drives "Group by → Company" and company-level
+  // cost allocation. Absent/null = unassigned.
+  companyAccountId?: unknown;
   rentalOwners?: Array<{ rentalOwnerId: unknown; ownershipPct: number }>;
   active: boolean;
   propertyReserve?: number;
@@ -44,7 +48,12 @@ interface PropertyLeanLike {
   warnings?: PmWarning[];
 }
 
-function listSerialize(p: PropertyLeanLike, ownerNames: Map<string, string>) {
+function listSerialize(
+  p: PropertyLeanLike,
+  ownerNames: Map<string, string>,
+  companyNames: Map<string, string>,
+) {
+  const companyAccountId = p.companyAccountId ? String(p.companyAccountId) : null;
   return {
     id: String(p._id),
     propertyName: p.propertyName,
@@ -54,6 +63,10 @@ function listSerialize(p: PropertyLeanLike, ownerNames: Map<string, string>) {
     currency: p.currency ?? null,
     propertyManagerUserId: p.propertyManagerUserId
       ? String(p.propertyManagerUserId)
+      : null,
+    companyAccountId,
+    companyName: companyAccountId
+      ? (companyNames.get(companyAccountId) ?? '(unknown company)')
       : null,
     ownerCount: p.rentalOwners?.length ?? 0,
     // Full owner list (id + resolved name) so the list can group by owner
@@ -80,6 +93,18 @@ async function ensureBankAccountInOrg(
 ): Promise<boolean> {
   if (!Types.ObjectId.isValid(id)) return false;
   const cnt = await BankAccount.countDocuments({
+    _id: new Types.ObjectId(id),
+    organizationId: new Types.ObjectId(orgId),
+  });
+  return cnt > 0;
+}
+
+async function ensureCompanyInOrg(
+  id: string,
+  orgId: string,
+): Promise<boolean> {
+  if (!Types.ObjectId.isValid(id)) return false;
+  const cnt = await CompanyAccount.countDocuments({
     _id: new Types.ObjectId(id),
     organizationId: new Types.ObjectId(orgId),
   });
@@ -155,7 +180,27 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json(rows.map((p) => listSerialize(p, ownerNames)));
+  // Same one-shot pattern for parent companies: collect the distinct ids, one
+  // $in, resolve names in the serializer. Keeps the list at 3 queries no matter
+  // how many properties or companies there are.
+  const companyIdSet = new Set<string>();
+  for (const p of rows) {
+    if (p.companyAccountId) companyIdSet.add(String(p.companyAccountId));
+  }
+  const companyNames = new Map<string, string>();
+  if (companyIdSet.size > 0) {
+    const companies = await CompanyAccount.find({
+      _id: { $in: Array.from(companyIdSet).map((s) => new Types.ObjectId(s)) },
+      organizationId: new Types.ObjectId(ctx.orgId),
+    })
+      .select({ name: 1 })
+      .lean();
+    for (const c of companies) companyNames.set(String(c._id), c.name ?? '');
+  }
+
+  return NextResponse.json(
+    rows.map((p) => listSerialize(p, ownerNames, companyNames)),
+  );
 }
 
 export async function POST(request: Request) {
@@ -208,6 +253,15 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  if (
+    parsed.data.companyAccountId &&
+    !(await ensureCompanyInOrg(parsed.data.companyAccountId, ctx.orgId))
+  ) {
+    return NextResponse.json(
+      { error: 'companyAccountId does not reference a company in this org' },
+      { status: 400 },
+    );
+  }
 
   const doc = await Property.create({
     organizationId: new Types.ObjectId(ctx.orgId),
@@ -218,6 +272,9 @@ export async function POST(request: Request) {
     photo: parsed.data.photo ? new Types.ObjectId(parsed.data.photo) : null,
     propertyManagerUserId: parsed.data.propertyManagerUserId
       ? new Types.ObjectId(parsed.data.propertyManagerUserId)
+      : null,
+    companyAccountId: parsed.data.companyAccountId
+      ? new Types.ObjectId(parsed.data.companyAccountId)
       : null,
     rentalOwners: (parsed.data.rentalOwners ?? []).map((j) => ({
       rentalOwnerId: new Types.ObjectId(j.rentalOwnerId),

@@ -17,12 +17,27 @@
 // page's non-default "Drafts" tab — so a correctly-firing rule looked to the
 // user like it had generated nothing at all.
 //
-// SCOPE. A rule's amount lines each carry their own Property/Company scope.
-// Since a Bill's scope is a single {type,id}, a rule spanning several
-// properties posts one Bill per property (`groupAmountsByScope`). Recurring
-// JEs balance per scope for the same reason. This all used to read
-// `amounts[0]` only, which silently dumped a whole multi-property rule onto
-// the first row's property.
+// SCOPE. A rule's amount lines each carry their own Property/Company scope,
+// and a Company scope may name a specific CompanyAccount. Since a Bill's scope
+// is a single {type,id}, a rule spanning several scopes posts one Bill per
+// scope (`groupByScope` from lib/pm/scope.ts). Recurring JEs balance per scope
+// for the same reason. This all used to read `amounts[0]` only, which silently
+// dumped a whole multi-property rule onto the first row's property.
+//
+// ALLOCATION. A company-scoped line may be split across that company's
+// properties (`expandRuleAmounts`). The expansion produces extra *lines inside
+// the same scope group* — never extra groups. That is deliberate and
+// load-bearing:
+//   - the bill count per period is unchanged, so the unique partial index on
+//     (org, recurringTransactionId, recurringPeriodDate, scope.id) cannot
+//     collide and no share can be lost to a swallowed duplicate-key error;
+//   - the JE count per period is unchanged, so the JournalEntry unique index —
+//     which has NO scope component — stays safe;
+//   - the payable stays whole: one invoice, one vendor, one debt, with the AP
+//     credit on the company that owes it, while each debit lands on the
+//     building carrying that share.
+// If you ever change this to post one artifact per allocated property, the
+// JournalEntry index must gain a scope component FIRST.
 //
 // CATCH-UP. `runRecurringPoster` posts exactly one period per rule per run by
 // default (the cron's contract). Pass `opts.throughDate` to walk a rule
@@ -36,10 +51,26 @@ import { connectToDatabase } from "@/lib/db/mongoose";
 import { RecurringTransaction } from "@/lib/db/models/pm/RecurringTransaction";
 import { Bill } from "@/lib/db/models/pm/Bill";
 import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
-import { Property } from "@/lib/db/models/pm/Property";
 import { assertWriteAllowed, LockedPeriodError } from "@/lib/pm/lockedPeriod";
 import { postBillToLedger } from "@/lib/pm/postBillToLedger";
 import { resolveBankCashAccountId } from "@/lib/pm/postBillPaymentToLedger";
+import {
+  groupByScope,
+  isNamedCompanyScope,
+  isPropertyScope,
+  normalizeScope,
+  scopeKey,
+  toBillScope,
+  toJournalLineScope,
+  type PmScope,
+} from "@/lib/pm/scope";
+import { resolveScopeLabels } from "@/lib/pm/scopeQuery";
+import { logActivity } from "@/lib/pm/activity";
+import { allocateCents } from "@/lib/pm/allocation";
+import {
+  createCompanyPropertyResolver,
+  membersToWeights,
+} from "@/lib/pm/companyProperties";
 import type { IRecurringTransaction } from "@/lib/db/models/pm/RecurringTransaction";
 import type { PmContext } from "@/lib/auth/getCurrentUser";
 import type { RecurringFrequency } from "@/types/pm";
@@ -101,6 +132,12 @@ interface PostOneResult {
   artifactIds?: string[];
   /** The rule's nextDate this result posted (or tried to post) against. */
   periodDate?: string;
+  /**
+   * Scopes whose artifact was rejected as an already-posted duplicate. Empty
+   * on a clean run. Reported rather than swallowed so a scope whose money
+   * never posted can't look like a success.
+   */
+  skippedScopes?: SkippedScope[];
   note?: string;
 }
 
@@ -208,28 +245,44 @@ export function enumeratePeriods(input: {
  * Company-scoped rows (and a rule with no rows at all) still contribute a
  * `null` scope, because Global and Per-bank-account policies match regardless
  * of property.
+ *
+ * Takes EXPANDED lines, so an allocated share is checked against the property
+ * it actually lands on. That is stricter than before — a company-level
+ * insurance line used to slip past a Per-property lock because it carried no
+ * property id — and it is correct: the poster is all-or-nothing by design, so
+ * a rule that would write into a locked property now stalls instead of
+ * posting a partial period and advancing the cursor past it.
  */
 async function firstLockedScope(
   orgId: string,
   txnDate: Date,
-  amounts: AmountLine[],
+  lines: PostingLine[],
   ctx: PmContext,
 ): Promise<string | null> {
-  const groups = groupAmountsByScope(amounts);
-  const scopes: Array<Types.ObjectId | null> =
-    groups.length > 0 ? groups.map((g) => g.scopePropertyId) : [null];
+  const seen = new Map<string, PmScope>();
+  for (const line of lines) {
+    for (const scope of [line.groupScope, line.lineScope]) {
+      seen.set(scopeKey(scope), scope);
+    }
+  }
+  const scopes: PmScope[] =
+    seen.size > 0
+      ? Array.from(seen.values())
+      : [{ type: "Company", id: null }];
+
   for (const scope of scopes) {
+    const propertyId = isPropertyScope(scope) ? String(scope.id) : null;
     try {
       await assertWriteAllowed({
         orgId,
         txnDate: new Date(txnDate),
-        scopePropertyId: scope ? String(scope) : null,
+        scopePropertyId: propertyId,
         ctx,
       });
     } catch (err) {
       if (err instanceof LockedPeriodError) {
-        return scope
-          ? `Locked period (property ${String(scope)}): ${err.policyMessage}`
+        return propertyId
+          ? `Locked period (property ${propertyId}): ${err.policyMessage}`
           : `Locked period: ${err.policyMessage}`;
       }
       throw err;
@@ -262,58 +315,230 @@ function isDuplicateKeyError(err: unknown): boolean {
 }
 
 /**
- * Group a rule's amount lines by the scope they post to.
+ * One posting line, after any allocation has been expanded.
+ *
+ * `groupScope` is the scope the artifact (Bill / JE credit leg) is grouped and
+ * created under — always the ORIGINAL amount-line scope. `lineScope` is where
+ * this particular debit lands, which for an allocated share is a property
+ * inside that company. Keeping the two separate is what lets one payable carry
+ * per-property expense.
+ */
+export interface PostingLine {
+  groupScope: PmScope;
+  lineScope: PmScope;
+  accountId: Types.ObjectId;
+  unitId: Types.ObjectId | null;
+  description?: string;
+  refNo?: string;
+  /** Integer cents. */
+  amount: number;
+  /** Set when this line came from splitting a company-level amount. */
+  allocatedFromCompanyId?: string;
+}
+
+export interface ExpandedRuleAmounts {
+  lines: PostingLine[];
+  /** Human-readable notes for the dry-run preview and the run result. */
+  notes: string[];
+}
+
+function amountLineScope(line: AmountLine): PmScope {
+  return normalizeScope({ scopeType: line.scopeType, scopeId: line.scopeId });
+}
+
+/**
+ * Expand a rule's amount lines, splitting any allocated company line across
+ * that company's eligible properties.
+ *
+ * Every caller that needs to know what a rule will post MUST go through here —
+ * the pre-claim lock gate, the artifact writer and the catch-up preview — or
+ * the preview would show something different from what posts.
+ *
+ * Money is never dropped. If a company has no eligible properties (none
+ * assigned, or all of them book in a different currency) the line posts whole
+ * at company scope, exactly as it does today, and the reason is recorded.
+ */
+export async function expandRuleAmounts(input: {
+  rule: Pick<IRecurringTransaction, "amounts">;
+  resolve: ReturnType<typeof createCompanyPropertyResolver>;
+}): Promise<ExpandedRuleAmounts> {
+  const out: PostingLine[] = [];
+  const notes: string[] = [];
+
+  for (const line of input.rule.amounts ?? []) {
+    const scope = amountLineScope(line);
+    const base: Omit<PostingLine, "lineScope"> = {
+      groupScope: scope,
+      accountId: line.accountId,
+      unitId: (line.unitId as Types.ObjectId | null) ?? null,
+      description: line.description,
+      refNo: line.refNo,
+      amount: line.amount ?? 0,
+    };
+
+    const wantsSplit =
+      line.allocation?.mode === "CompanyProperties" &&
+      isNamedCompanyScope(scope);
+
+    if (!wantsSplit) {
+      out.push({ ...base, lineScope: scope });
+      continue;
+    }
+
+    const set = await input.resolve(
+      String(scope.id),
+      line.allocation?.basis ?? "Equal",
+      (line.allocation?.weights ?? []).map((w) => ({
+        propertyId: String(w.propertyId),
+        weight: w.weight,
+      })),
+    );
+
+    if (!set || !set.allocatable) {
+      notes.push(
+        set
+          ? `"${line.description ?? "line"}" was not split: ${set.companyName} has no eligible ${set.currency} properties. Posted at company level.`
+          : `"${line.description ?? "line"}" was not split: the company no longer exists. Posted at company level.`,
+      );
+      out.push({ ...base, lineScope: scope });
+      continue;
+    }
+
+    if (set.excluded.length > 0) {
+      const names = set.excluded
+        .filter((e) => e.reason === "CURRENCY_MISMATCH")
+        .map((e) => `${e.propertyName} (${e.currency})`);
+      if (names.length > 0) {
+        notes.push(
+          `${set.companyName} books in ${set.currency}; excluded from the split: ${names.join(", ")}.`,
+        );
+      }
+    }
+
+    const shares = allocateCents(base.amount, membersToWeights(set.members));
+    const nameById = new Map(
+      set.members.map((m) => [m.propertyId, m.propertyName]),
+    );
+    for (const share of shares) {
+      // A zero share would make an all-zero bill, which Bill.pre('validate')
+      // rejects outright. Dropping it costs nothing: allocateCents is
+      // exactly-summing, so the remaining shares still total the source.
+      if (share.cents === 0) continue;
+      out.push({
+        ...base,
+        lineScope: { type: "Property", id: share.key },
+        amount: share.cents,
+        description: base.description
+          ? `${base.description} — allocated from ${set.companyName}`
+          : `Allocated from ${set.companyName} (${nameById.get(share.key) ?? ""})`,
+        allocatedFromCompanyId: set.companyAccountId,
+      });
+    }
+  }
+
+  return { lines: out, notes };
+}
+
+/**
+ * Group posting lines by the scope their artifact is created under.
  *
  * A row counts as Property-scoped only when it names a real property; anything
- * else falls to Company. This one predicate drives bill splitting, the JE's
- * balancing legs, the locked-period gate and the list's scope label, so those
- * four can never disagree about where a rule posts.
+ * else falls to Company, and a Company scope may name a CompanyAccount. This
+ * one predicate drives bill splitting, the JE's balancing legs, the
+ * locked-period gate and the list's scope label, so those four can never
+ * disagree about where a rule posts.
  */
-export function groupAmountsByScope(
-  amounts: AmountLine[],
-): Array<{ scopePropertyId: Types.ObjectId | null; lines: AmountLine[] }> {
-  const groups = new Map<
-    string,
-    { scopePropertyId: Types.ObjectId | null; lines: AmountLine[] }
-  >();
-  for (const line of amounts) {
-    const isProperty = line.scopeType === "Property" && line.scopeId;
-    const key = isProperty ? String(line.scopeId) : "company";
-    let group = groups.get(key);
-    if (!group) {
-      group = {
-        scopePropertyId: isProperty
-          ? (line.scopeId as Types.ObjectId)
-          : null,
-        lines: [],
-      };
-      groups.set(key, group);
-    }
-    group.lines.push(line);
+export function groupPostingLines(lines: PostingLine[]) {
+  return groupByScope(lines, (l) => ({
+    scopeType: l.groupScope.type,
+    scopeId: l.groupScope.id,
+  }));
+}
+
+/**
+ * Undo a partially-posted period.
+ *
+ * The bills alone are not enough. `postBillToLedger` writes a **Posted**
+ * JournalEntry before its bill id is recorded, so deleting only the bills left
+ * every earlier group's JE orphaned in the ledger — and because the claim is
+ * then released and the period re-posts, the expense was counted twice while
+ * the run reported "Posting failed", which reads to a human as *nothing
+ * happened*. Deleting both keeps the compensation symmetric.
+ *
+ * Hard delete is right here and reversal is not: these rows are seconds old,
+ * nothing has read them, and a reversing pair for a JE nobody saw would just
+ * pollute the ledger. The activity entry makes the compensation visible.
+ */
+async function rollbackPeriod(
+  billIds: Types.ObjectId[],
+  journalEntryIds: Types.ObjectId[],
+  rule: IRecurringTransaction,
+  periodDate: Date,
+): Promise<void> {
+  if (billIds.length === 0 && journalEntryIds.length === 0) return;
+  if (billIds.length > 0) {
+    await Bill.deleteMany({
+      _id: { $in: billIds },
+      organizationId: rule.organizationId,
+    });
   }
-  return Array.from(groups.values());
+  if (journalEntryIds.length > 0) {
+    await JournalEntry.deleteMany({
+      _id: { $in: journalEntryIds },
+      organizationId: rule.organizationId,
+    });
+  }
+  try {
+    await logActivity({
+      orgId: String(rule.organizationId),
+      parentType: "RecurringTransaction",
+      parentId: rule._id,
+      eventType: "Recurring poster — partial period rolled back",
+      actorUserId: null,
+      payload: {
+        periodDate: periodDate.toISOString(),
+        deletedBillIds: billIds.map(String),
+        deletedJournalEntryIds: journalEntryIds.map(String),
+      },
+    });
+  } catch {
+    // Never let audit logging mask the original posting failure.
+  }
+}
+
+export interface SkippedScope {
+  scopeKey: string;
+  cents: number;
+  reason: string;
+}
+
+export interface PostArtifactResult {
+  kind: "Bill" | "JournalEntry";
+  ids: Types.ObjectId[];
+  /** Scopes a duplicate-key rejected. Surfaced, never swallowed. */
+  skippedScopes: SkippedScope[];
+  notes: string[];
 }
 
 async function postArtifact(
   rule: IRecurringTransaction,
   ctx: PmContext,
   periodDate: Date,
-): Promise<{ kind: "Bill" | "JournalEntry"; ids: Types.ObjectId[] } | null> {
-  const groups = groupAmountsByScope(rule.amounts ?? []);
+  expanded: ExpandedRuleAmounts,
+): Promise<PostArtifactResult | null> {
+  const groups = groupPostingLines(expanded.lines);
   if (groups.length === 0) return null;
+  const skippedScopes: SkippedScope[] = [];
 
   if (rule.type === "Bill" || rule.type === "Check") {
-    // A Bill's `scope` is a single {type,id} and postBillToLedger stamps that
-    // one scope onto every JE line — a bill physically cannot represent two
-    // properties. So a rule split across properties posts one bill per
-    // property, which is also what makes each property's share land in its own
-    // Financials column.
+    // A Bill's `scope` is a single {type,id}, so a rule spanning several scopes
+    // posts one bill per scope — that is what makes each scope's share land in
+    // its own Financials column. An ALLOCATED line does not add a group: it
+    // stays inside its company's bill and only its per-line scope differs, so
+    // the vendor still gets exactly one payable.
     const created: Types.ObjectId[] = [];
+    const createdJeIds: Types.ObjectId[] = [];
     for (const group of groups) {
-      // Each group carries its own unique key (rule, period, scope), so a
-      // duplicate here means only THIS scope was already posted — skip it and
-      // keep going. Aborting the whole period would discard groups that
-      // legitimately posted.
       let bill;
       try {
         bill = await Bill.create({
@@ -322,14 +547,21 @@ async function postArtifact(
           invoiceDate: periodDate,
           status: "Due",
           memo: rule.memo,
-          lines: group.lines.map((a) => ({
+          lines: group.items.map((a) => ({
             accountId: a.accountId,
             description: a.description,
             amount: a.amount,
+            // Only an allocated share differs from the bill's own scope.
+            ...(scopeKey(a.lineScope) === group.key
+              ? {}
+              : {
+                  scopeType: a.lineScope.type,
+                  scopeId: a.lineScope.id
+                    ? new Types.ObjectId(String(a.lineScope.id))
+                    : null,
+                }),
           })),
-          scope: group.scopePropertyId
-            ? { type: "Property", id: group.scopePropertyId }
-            : { type: "Company", id: null },
+          scope: toBillScope(group.scope),
           createdBy:
             rule.type === "Check" ? "Recurring check" : "Recurring bill",
           createdByUserId: rule.createdByUserId,
@@ -337,13 +569,24 @@ async function postArtifact(
           recurringPeriodDate: periodDate,
         });
       } catch (err) {
-        if (isDuplicateKeyError(err)) continue;
+        if (isDuplicateKeyError(err)) {
+          // Each group carries its own unique key (rule, period, scope.id), so
+          // a duplicate means only THIS scope was already posted. Skipping it
+          // and continuing is right — aborting would discard groups that
+          // legitimately posted — but it must be REPORTED. Before, this
+          // `continue` was silent: no result row, no log, and the run still
+          // read as a success while one scope's money never posted.
+          skippedScopes.push({
+            scopeKey: group.key,
+            cents: group.items.reduce((s, a) => s + a.amount, 0),
+            reason: "Already posted for this period",
+          });
+          continue;
+        }
         // Roll back this period's earlier groups: no transactions in this
         // codebase, so compensate by hand. Leaving them would double up when
         // the released claim retries.
-        if (created.length > 0) {
-          await Bill.deleteMany({ _id: { $in: created } });
-        }
+        await rollbackPeriod(created, createdJeIds, rule, periodDate);
         throw err;
       }
 
@@ -358,7 +601,7 @@ async function postArtifact(
             invoiceDate: bill.invoiceDate,
             memo: bill.memo,
             vendorId: bill.vendorId,
-            scopePropertyId: group.scopePropertyId,
+            scope: group.scope,
             lines: bill.lines,
             attachmentFileId: bill.attachmentFileId,
           },
@@ -366,15 +609,16 @@ async function postArtifact(
         bill.journalEntryId = journalEntryId;
         await bill.save();
         created.push(bill._id);
+        createdJeIds.push(journalEntryId);
       } catch (err) {
         // A bill must never survive as posted-but-unledgered. Drop this one
         // plus every earlier group in the period, then let the caller release
         // the claim so the rule retries cleanly.
-        await Bill.deleteMany({ _id: { $in: [...created, bill._id] } });
+        await rollbackPeriod([...created, bill._id], createdJeIds, rule, periodDate);
         throw err;
       }
     }
-    return { kind: "Bill", ids: created };
+    return { kind: "Bill", ids: created, skippedScopes, notes: expanded.notes };
   }
 
   if (rule.type === "Journal entry") {
@@ -397,32 +641,52 @@ async function postArtifact(
       return null;
     }
 
-    const debits = rule.amounts.map((a) => ({
-      accountId: a.accountId,
-      scopeType: a.scopeType === "Property" && a.scopeId ? "Property" : "Company",
-      scopeId: a.scopeType === "Property" && a.scopeId ? a.scopeId : null,
-      unitId: a.unitId ?? null,
-      description: a.description,
-      debit: a.amount,
-      credit: 0,
-    }));
-    const credits = groups.map((group) => ({
-      accountId: cashAccountId,
-      scopeType: group.scopePropertyId ? "Property" : "Company",
-      scopeId: group.scopePropertyId,
-      unitId: null,
-      description: rule.memo ?? "Recurring journal entry",
-      debit: 0,
-      credit: group.lines.reduce((s, a) => s + a.amount, 0),
-    }));
+    // Debits carry each line's OWN scope, so an allocated share lands on its
+    // property. Credits are per GROUP — the cash leaves the company that owes
+    // the money, not the buildings it was apportioned to.
+    const debits = expanded.lines.map((a) => {
+      const { scopeType, scopeId } = toJournalLineScope(a.lineScope);
+      return {
+        accountId: a.accountId,
+        scopeType,
+        scopeId: scopeId ? new Types.ObjectId(scopeId) : null,
+        unitId: a.unitId ?? null,
+        description: a.description,
+        debit: a.amount,
+        credit: 0,
+      };
+    });
+    const credits = groups.map((group) => {
+      const { scopeType, scopeId } = toJournalLineScope(group.scope);
+      return {
+        accountId: cashAccountId,
+        scopeType,
+        scopeId: scopeId ? new Types.ObjectId(scopeId) : null,
+        unitId: null,
+        description: rule.memo ?? "Recurring journal entry",
+        debit: 0,
+        credit: group.items.reduce((s, a) => s + a.amount, 0),
+      };
+    });
     if (credits.every((c) => c.credit === 0)) return null;
 
+    // Allocation is the first thing in this module that can make debits and
+    // credits diverge (a buggy split). allocateCents is exactly-summing, so
+    // this should never fire — which is exactly why it is worth having, since
+    // an unbalanced JE would corrupt the ledger silently.
+    const totalDebits = debits.reduce((s, l) => s + l.debit, 0);
+    const totalCredits = credits.reduce((s, l) => s + l.credit, 0);
+    if (totalDebits !== totalCredits) {
+      throw new Error(
+        `Recurring JE would not balance: debits ${totalDebits} vs credits ${totalCredits}`,
+      );
+    }
+
     // Header scope is advisory (reports read line scope) but drives the GL
-    // index, so name the property when the whole entry sits on exactly one.
-    const singleProperty =
-      groups.length === 1 && groups[0]!.scopePropertyId
-        ? groups[0]!.scopePropertyId
-        : null;
+    // index, so name the scope when the whole entry sits on exactly one.
+    const headerScope: PmScope =
+      groups.length === 1 ? groups[0]!.scope : { type: "Company", id: null };
+    const header = toJournalLineScope(headerScope);
 
     // The Bill path gets its lock check inside postBillToLedger; this branch
     // has none of its own, so assert here too — across EVERY scope the entry
@@ -431,7 +695,7 @@ async function postArtifact(
     const lockNote = await firstLockedScope(
       String(rule.organizationId),
       periodDate,
-      rule.amounts ?? [],
+      expanded.lines,
       ctx,
     );
     if (lockNote) throw new Error(lockNote);
@@ -439,8 +703,8 @@ async function postArtifact(
     const je = await JournalEntry.create({
       organizationId: rule.organizationId,
       date: periodDate,
-      scopeType: singleProperty ? "Property" : "Company",
-      scopeId: singleProperty,
+      scopeType: header.scopeType,
+      scopeId: header.scopeId ? new Types.ObjectId(header.scopeId) : null,
       memo: rule.memo ?? "Recurring journal entry",
       lines: [...debits, ...credits],
       // Was "Draft" — every report hard-filters status:'Posted', so recurring
@@ -451,7 +715,12 @@ async function postArtifact(
       recurringTransactionId: rule._id,
       recurringPeriodDate: periodDate,
     });
-    return { kind: "JournalEntry", ids: [je._id] };
+    return {
+      kind: "JournalEntry",
+      ids: [je._id],
+      skippedScopes,
+      notes: expanded.notes,
+    };
   }
   return null;
 }
@@ -485,6 +754,10 @@ export async function runRecurringPoster(
   const orgObjectId = new Types.ObjectId(orgId);
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
+
+  // Memoized for the whole run: a 24-period catch-up over several rules on the
+  // same company would otherwise re-query its properties on every period.
+  const resolveCompany = createCompanyPropertyResolver(orgId);
 
   const throughDate = opts.throughDate ? endOfDay(opts.throughDate) : null;
   // One period per run is the cron's contract; a catch-up caller opts into
@@ -574,6 +847,11 @@ export async function runRecurringPoster(
         break;
       }
 
+      // Expand allocations ONCE per period, then use the same lines for the
+      // lock gate and the artifact. Two different expansions would let the gate
+      // approve scopes the writer never touches (or worse, miss ones it does).
+      const expanded = await expandRuleAmounts({ rule, resolve: resolveCompany });
+
       // Locked-period gate. Check EVERY distinct scope the rule touches, not
       // just the first row's: a partial post would advance the claim and
       // permanently lose the locked property's share of this period. So it is
@@ -581,7 +859,7 @@ export async function runRecurringPoster(
       const lockError = await firstLockedScope(
         orgId,
         periodDate,
-        rule.amounts ?? [],
+        expanded.lines,
         ctx,
       );
       if (lockError) {
@@ -667,6 +945,7 @@ export async function runRecurringPoster(
           claim,
           { ...ctx, userId: resolveActorUserId(opts, claim, orgObjectId) },
           periodDate,
+          expanded,
         );
         if (!artifact) {
           // Unsupported type / missing accounts — release the claim so a later
@@ -681,12 +960,23 @@ export async function runRecurringPoster(
           break;
         }
 
+        // A duplicate-suppressed scope used to vanish without a trace — no
+        // result row, no log, and the run still reported success. Surface it.
+        const skippedNote = artifact.skippedScopes.length
+          ? `${artifact.skippedScopes.length} scope(s) already posted for this period and were skipped.`
+          : null;
+        const allNotes = [...artifact.notes, skippedNote].filter(
+          (n): n is string => Boolean(n),
+        );
+
         results.push({
           recurringTransactionId: String(rule._id),
           posted: true,
           artifactKind: artifact.kind,
           artifactIds: artifact.ids.map(String),
           periodDate: periodDate.toISOString(),
+          skippedScopes: artifact.skippedScopes,
+          note: allNotes.length > 0 ? allNotes.join(" ") : undefined,
         });
         periodsPosted += 1;
         totalPosts += 1;
@@ -748,11 +1038,21 @@ export interface PlannedPeriod {
   periodDate: string;
   /** Total for the period, in cents, across all scopes. */
   amountCents: number;
-  /** One entry per artifact this period would generate. */
+  /**
+   * One entry per posting LINE, not per artifact — an allocated company amount
+   * shows up as one row per property with that property's own cents, which is
+   * the whole point of a dry run for a split.
+   *
+   * `propertyName` carries the company name for company-scoped rows, so the
+   * column reads "Property or company". `allocatedFrom*` is set only on shares
+   * produced by a split, letting the UI nest them under their parent.
+   */
   scopes: Array<{
     propertyId: string | null;
     propertyName: string;
     amountCents: number;
+    allocatedFromCompanyId?: string | null;
+    allocatedFromCompanyName?: string | null;
   }>;
   status: "will-post" | "locked" | "unsupported" | "possible-duplicate";
   note?: string;
@@ -820,27 +1120,27 @@ export async function planRecurringCatchUp(
   }
   const rules = await RecurringTransaction.find(filter).sort({ nextDate: 1 });
 
-  // Resolve every referenced property name up front, one query for the run.
-  const propertyIds = Array.from(
-    new Set(
-      rules.flatMap((r) =>
-        groupAmountsByScope(r.amounts ?? [])
-          .map((g) => g.scopePropertyId)
-          .filter((id): id is Types.ObjectId => Boolean(id))
-          .map(String),
-      ),
-    ),
-  );
-  const propertyNames = new Map<string, string>();
-  if (propertyIds.length > 0) {
-    const props = await Property.find({
-      _id: { $in: propertyIds.map((id) => new Types.ObjectId(id)) },
-      organizationId: orgObjectId,
-    })
-      .select({ propertyName: 1 })
-      .lean<{ _id: Types.ObjectId; propertyName: string }[]>();
-    for (const p of props) propertyNames.set(String(p._id), p.propertyName);
+  // The preview must expand allocations exactly as the writer does, or it
+  // promises one line and posts four.
+  const resolveCompany = createCompanyPropertyResolver(orgId);
+  const expandedByRule = new Map<string, ExpandedRuleAmounts>();
+  for (const rule of rules) {
+    expandedByRule.set(
+      String(rule._id),
+      await expandRuleAmounts({ rule, resolve: resolveCompany }),
+    );
   }
+
+  // Resolve every referenced scope label up front — properties AND companies.
+  const labels = await resolveScopeLabels(
+    Array.from(expandedByRule.values()).flatMap((e) =>
+      e.lines.flatMap((l) => [
+        { scopeType: l.groupScope.type, scopeId: l.groupScope.id },
+        { scopeType: l.lineScope.type, scopeId: l.lineScope.id },
+      ]),
+    ),
+    orgId,
+  );
 
   const plan: PlannedPeriod[] = [];
   const rulesWithWork = new Set<string>();
@@ -871,14 +1171,25 @@ export async function planRecurringCatchUp(
       if (periods.length === 0) continue;
     }
 
-    const groups = groupAmountsByScope(rule.amounts ?? []);
-    const scopes = groups.map((g) => ({
-      propertyId: g.scopePropertyId ? String(g.scopePropertyId) : null,
-      propertyName: g.scopePropertyId
-        ? (propertyNames.get(String(g.scopePropertyId)) ?? "Unknown property")
-        : "Company",
-      amountCents: g.lines.reduce((s, a) => s + a.amount, 0),
-    }));
+    const expanded =
+      expandedByRule.get(String(rule._id)) ?? { lines: [], notes: [] };
+    const groups = groupPostingLines(expanded.lines);
+
+    // One row per posting line, so an allocated share shows the property it
+    // actually lands on with its own cents. `allocatedFrom` lets the UI nest
+    // the shares under the company they came from.
+    const scopes = expanded.lines.map((l) => {
+      const lineKey = scopeKey(l.lineScope);
+      return {
+        propertyId: isPropertyScope(l.lineScope) ? String(l.lineScope.id) : null,
+        propertyName: labels.get(lineKey)?.label ?? "Company",
+        amountCents: l.amount,
+        allocatedFromCompanyId: l.allocatedFromCompanyId ?? null,
+        allocatedFromCompanyName: l.allocatedFromCompanyId
+          ? (labels.get(scopeKey(l.groupScope))?.label ?? null)
+          : null,
+      };
+    });
     const amountCents = scopes.reduce((s, g) => s + g.amountCents, 0);
     const warnings = (rule.warnings ?? []).map((w) =>
       typeof w === "string" ? w : (w as { code?: string }).code ?? "Warning",
@@ -909,7 +1220,7 @@ export async function planRecurringCatchUp(
       const lockNote = await firstLockedScope(
         orgId,
         periodDate,
-        rule.amounts ?? [],
+        expanded.lines,
         previewCtx,
       );
       if (lockNote) {
@@ -923,6 +1234,11 @@ export async function planRecurringCatchUp(
       if (dup) {
         row.status = "possible-duplicate";
         row.note = dup;
+      }
+      // Surface why a line did not split (mixed currency, no properties
+      // assigned) on the same screen the user approves the catch-up from.
+      if (expanded.notes.length > 0) {
+        row.note = [row.note, ...expanded.notes].filter(Boolean).join(" ");
       }
       plan.push(row);
     }

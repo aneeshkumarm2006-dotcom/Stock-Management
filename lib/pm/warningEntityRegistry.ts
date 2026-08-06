@@ -13,6 +13,7 @@ import { LockedPeriodPolicy } from "@/lib/db/models/pm/LockedPeriodPolicy";
 import { ApprovalRule } from "@/lib/db/models/pm/ApprovalRule";
 import { PmFile } from "@/lib/db/models/pm/PmFile";
 import { RecurringTransaction } from "@/lib/db/models/pm/RecurringTransaction";
+import { CompanyAccount } from "@/lib/db/models/pm/CompanyAccount";
 import type { WarningableType } from "@/lib/pm/warnings";
 
 export const WARNING_ENTITY_MODELS: Record<WarningableType, Model<unknown>> = {
@@ -28,4 +29,5 @@ export const WARNING_ENTITY_MODELS: Record<WarningableType, Model<unknown>> = {
   ApprovalRule: ApprovalRule as unknown as Model<unknown>,
   PmFile: PmFile as unknown as Model<unknown>,
   RecurringTransaction: RecurringTransaction as unknown as Model<unknown>,
+  CompanyAccount: CompanyAccount as unknown as Model<unknown>,
 };

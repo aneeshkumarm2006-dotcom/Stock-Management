@@ -8,6 +8,7 @@ import { BankAccount } from "@/lib/db/models/pm/BankAccount";
 import { Bill } from "@/lib/db/models/pm/Bill";
 import { BillPayment } from "@/lib/db/models/pm/BillPayment";
 import { assertWriteAllowed, LockedPeriodError } from "@/lib/pm/lockedPeriod";
+import { scopeFromBillScope, toJournalLineScope } from "@/lib/pm/scope";
 import type { PmContext } from "@/lib/auth/getCurrentUser";
 
 export interface PostBillPaymentToLedgerInput {
@@ -90,12 +91,12 @@ export async function postBillPaymentToLedger(
     );
   }
 
-  const scopeType: "Property" | "Company" =
-    bill.scope?.type === "Property" && bill.scope.id ? "Property" : "Company";
-  const scopeId =
-    scopeType === "Property" && bill.scope.id
-      ? new Types.ObjectId(String(bill.scope.id))
-      : null;
+  // The payment carries the bill's own scope, including a named company —
+  // paying off a Greene mortgage moves cash out of Greene's books, not out of
+  // an anonymous company bucket.
+  const paymentScope = scopeFromBillScope(bill.scope);
+  const { scopeType, scopeId: scopeIdRaw } = toJournalLineScope(paymentScope);
+  const scopeId = scopeIdRaw ? new Types.ObjectId(scopeIdRaw) : null;
 
   const je = await JournalEntry.create({
     organizationId: orgObjectId,

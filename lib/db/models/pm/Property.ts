@@ -100,6 +100,20 @@ export interface IProperty {
    *  to images[0] when none is chosen explicitly). */
   images: Types.ObjectId[];
   propertyManagerUserId?: Types.ObjectId | null;
+  /**
+   * The legal entity (CompanyAccount) that owns this building.
+   *
+   * Distinct from `rentalOwners[]`: those are the people/entities that hold an
+   * ownership PERCENTAGE and receive distributions, whereas this is the single
+   * parent company whose books the property rolls up into. It is what makes
+   * "all properties for each company" answerable — company-wide costs
+   * (mortgage, blanket insurance) are scoped to the company, and an insurance
+   * line can be split across exactly this set.
+   *
+   * `null` means unassigned; the property simply never participates in a
+   * company-level split. Never inferred from the property name.
+   */
+  companyAccountId?: Types.ObjectId | null;
   rentalOwners: IPropertyOwnerJunction[];
   operatingAccountId?: Types.ObjectId | null;
   depositTrustAccountId?: Types.ObjectId | null;
@@ -204,6 +218,11 @@ const PropertySchema = new Schema<IProperty>(
       ref: 'User',
       default: null,
     },
+    companyAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmCompanyAccount',
+      default: null,
+    },
     rentalOwners: { type: [OwnerJunctionSchema], default: [] },
     operatingAccountId: {
       type: Schema.Types.ObjectId,
@@ -249,6 +268,9 @@ const PropertySchema = new Schema<IProperty>(
 
 PropertySchema.index({ organizationId: 1, active: 1, propertyName: 1 });
 PropertySchema.index({ organizationId: 1, 'rentalOwners.rentalOwnerId': 1 });
+// "Every active property belonging to company X" — the allocation lookup, run
+// once per company per recurring period.
+PropertySchema.index({ organizationId: 1, companyAccountId: 1, active: 1 });
 
 // NOTE: The previous pre('save') hook enforcing ownership-sum=100%,
 // subtype-class gating, and management-fee-agreement XOR has been removed.

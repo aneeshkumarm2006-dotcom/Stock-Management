@@ -1,6 +1,7 @@
-// CompanyAccount routes (PDR §3.28). One row per org (auto-seeded). GET
-// returns the list (typically one entry); POST is admin-only and rarely used.
-// Full Company financials surface lands in Phase 9.
+// CompanyAccount routes (PDR §3.28). An org is auto-seeded with one row named
+// after the organization; POST (admin-only) adds the other legal entities that
+// own its buildings. GET returns the list, sorted by name — it is the source
+// for every "Property or company" scope picker.
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
@@ -12,6 +13,7 @@ import {
 import { logActivity } from '@/lib/pm/activity';
 import { canManageOrg } from '@/lib/pm/roles';
 import { seedCompanyAccount } from '@/lib/pm/seed';
+import { companyAccountCreateSchema } from '@/lib/validation/pm/companyAccount';
 import { serializeCompanyAccount } from './serialize';
 
 export const runtime = 'nodejs';
@@ -50,18 +52,36 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const name = typeof (body as Record<string, unknown>)?.name === 'string'
-    ? String((body as Record<string, unknown>).name)
-    : null;
-  if (!name) {
-    return NextResponse.json({ error: 'name required' }, { status: 400 });
+  const parsed = companyAccountCreateSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid input', issues: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    );
   }
 
   await connectToDatabase();
-  const doc = await CompanyAccount.create({
-    organizationId: new Types.ObjectId(ctx.orgId),
-    name,
-  });
+  let doc;
+  try {
+    doc = await CompanyAccount.create({
+      organizationId: new Types.ObjectId(ctx.orgId),
+      name: parsed.data.name.trim(),
+      defaultCashAccountId: parsed.data.defaultCashAccountId
+        ? new Types.ObjectId(parsed.data.defaultCashAccountId)
+        : null,
+      currency: parsed.data.currency ?? undefined,
+    });
+  } catch (err) {
+    // {organizationId, name} is unique — two same-named companies would be
+    // indistinguishable in every scope dropdown.
+    if ((err as { code?: number })?.code === 11000) {
+      return NextResponse.json(
+        { error: 'A company with that name already exists.' },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 
   await logActivity({
     orgId: ctx.orgId,

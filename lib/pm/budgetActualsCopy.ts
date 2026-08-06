@@ -13,11 +13,37 @@ import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
 import { Budget } from "@/lib/db/models/pm/Budget";
 import type { FiscalMonth } from "@/types/pm";
 import { FISCAL_MONTH_INDEX } from "@/types/pm";
+import { normalizeScope, type PmScope } from "@/lib/pm/scope";
 
 export interface BudgetLineSeed {
   accountId: Types.ObjectId;
   category: "Income" | "Expense";
   monthlyAmounts: number[]; // length 12, cents
+}
+
+/**
+ * Does a posted GL line belong to this budget's scope?
+ *
+ * The dual-read on the Company branch is deliberate: Company-scoped lines
+ * written before named companies existed carry `scopeId: null`, they mean "the
+ * organization's own books", and they are never backfilled (rewriting GL
+ * history has no reversal key). So a named company's budget reads its own rows
+ * plus that legacy bucket, and stays comparable across the boundary.
+ */
+function scopeMatchesLine(
+  scope: PmScope,
+  line: { scopeType?: string | null; scopeId?: Types.ObjectId | null },
+): boolean {
+  const lineScope = normalizeScope(line);
+  if (scope.type === "Property") {
+    return (
+      lineScope.type === "Property" &&
+      String(lineScope.id) === String(scope.id)
+    );
+  }
+  if (lineScope.type !== "Company") return false;
+  if (!scope.id) return lineScope.id === null;
+  return lineScope.id === null || String(lineScope.id) === String(scope.id);
 }
 
 /** Compute the inclusive [start, end] window for a fiscal year given the
@@ -54,15 +80,22 @@ function fiscalMonthIndex(d: Date, fiscalYearStart: FiscalMonth): number {
  *  ChartOfAccount.type — lines on non-Income/non-Expense accounts are
  *  filtered out (e.g. cash, AR, AP transfers).
  *
- *  Scope filtering:
- *    - When `propertyId` is provided, only lines tagged
- *      scopeType='Property' && scopeId===propertyId contribute.
- *    - When `propertyId` is null, every Posted JE line in the org
- *      contributes (Company-scope budget).
+ *  Scope filtering (see `scopeMatchesLine` below):
+ *    - Property scope → only that property's lines contribute.
+ *    - A NAMED company scope → only that company's lines contribute, plus the
+ *      legacy `scopeId: null` Company rows written before named companies
+ *      existed (those mean "the organization's own books" and were never
+ *      backfilled).
+ *    - The legacy unnamed company scope → Company-scoped lines only.
+ *
+ *  Before this took a `PmScope` it took a bare `scopePropertyId`, and a null
+ *  meant "no filter at all" — so a Company budget silently copied every line in
+ *  the org, including every property's. With more than one company that goes
+ *  from imprecise to actively wrong.
  */
 export async function copyPriorFyActuals(opts: {
   orgId: Types.ObjectId;
-  scopePropertyId: Types.ObjectId | null;
+  scope: PmScope;
   fiscalYear: number;
   fiscalYearStart: FiscalMonth;
 }): Promise<BudgetLineSeed[]> {
@@ -112,11 +145,7 @@ export async function copyPriorFyActuals(opts: {
       const acctType = accountTypeById.get(acctIdStr);
       if (!acctType) continue; // skip non-income/expense lines
 
-      // Scope filter for property-budget copies.
-      if (opts.scopePropertyId) {
-        if (line.scopeType !== "Property") continue;
-        if (String(line.scopeId) !== String(opts.scopePropertyId)) continue;
-      }
+      if (!scopeMatchesLine(opts.scope, line)) continue;
 
       const category: "Income" | "Expense" =
         acctType === "Income" ? "Income" : "Expense";

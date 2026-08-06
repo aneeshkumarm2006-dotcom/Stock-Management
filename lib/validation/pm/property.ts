@@ -52,6 +52,10 @@ const baseFields = {
   photo: objectIdString.nullable().optional(),
   images: z.array(objectIdString).max(100).optional(),
   propertyManagerUserId: objectIdString.nullable().optional(),
+  // The legal entity that owns this building. `null` clears the assignment.
+  // Like the valuation overrides below, this MUST also be re-listed in
+  // propertyUpdateSchema or zod strips it and the PATCH silently drops it.
+  companyAccountId: objectIdString.nullable().optional(),
   rentalOwners: z.array(ownerJunctionSchema).optional(),
   operatingAccountId: objectIdString.nullable().optional(),
   depositTrustAccountId: objectIdString.nullable().optional(),
@@ -93,6 +97,7 @@ export const propertyUpdateSchema = z
     photo: baseFields.photo,
     images: baseFields.images,
     propertyManagerUserId: baseFields.propertyManagerUserId,
+    companyAccountId: baseFields.companyAccountId,
     rentalOwners: baseFields.rentalOwners,
     operatingAccountId: baseFields.operatingAccountId.optional(),
     depositTrustAccountId: baseFields.depositTrustAccountId,

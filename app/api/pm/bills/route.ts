@@ -7,12 +7,14 @@ import { connectToDatabase } from '@/lib/db/mongoose';
 import { Bill } from '@/lib/db/models/pm/Bill';
 import { Vendor } from '@/lib/db/models/pm/Vendor';
 import { Property } from '@/lib/db/models/pm/Property';
+import { CompanyAccount } from '@/lib/db/models/pm/CompanyAccount';
 import {
   getPmContext,
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { billCreateSchema } from '@/lib/validation/pm/bill';
 import { toCents } from '@/lib/pm/currency';
+import { scopeFromBillScope } from '@/lib/pm/scope';
 import { logActivity } from '@/lib/pm/activity';
 import {
   postBillToLedger,
@@ -127,6 +129,22 @@ export async function POST(request: Request) {
       );
     }
   }
+  // Symmetric check for a named company. A Company scope may still be `null`
+  // (the org's own books), but when it names a CompanyAccount that row must
+  // belong to this org — otherwise an id from another tenant would be stored
+  // unvalidated and then stamped onto GL lines.
+  if (parsed.data.scope?.type === 'Company' && parsed.data.scope.id) {
+    const exists = await CompanyAccount.countDocuments({
+      _id: new Types.ObjectId(parsed.data.scope.id),
+      organizationId: orgObjectId,
+    });
+    if (!exists) {
+      return NextResponse.json(
+        { error: 'scope.id does not reference a company in this org' },
+        { status: 400 },
+      );
+    }
+  }
 
   const linesCents = parsed.data.lines.map((l) => ({
     accountId: new Types.ObjectId(l.accountId),
@@ -181,10 +199,9 @@ export async function POST(request: Request) {
           invoiceDate,
           memo: parsed.data.memo,
           vendorId: bill.vendorId,
-          scopePropertyId:
-            scope.type === 'Property' && scope.id
-              ? new Types.ObjectId(scope.id)
-              : null,
+          // Full scope, so a bill recorded against a named company stamps that
+          // company on its GL lines instead of a bare null.
+          scope: scopeFromBillScope(scope),
           lines: linesCents,
           attachmentFileId: bill.attachmentFileId,
         },

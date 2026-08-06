@@ -22,15 +22,11 @@ import type {
 import { BUDGET_DEFAULT_AMOUNTS, FISCAL_MONTHS } from "@/types/pm";
 import { computeWarnings } from "@/lib/pm/warnings";
 import { WarningInline } from "@/components/pm/WarningBadge";
+import { ScopePicker, useCompanyAccounts } from "@/components/pm/ScopePicker";
 
 interface PropertyOption {
   id: string;
   propertyName: string;
-}
-
-interface CompanyAccountOption {
-  id: string;
-  name: string;
 }
 
 interface BudgetSummary {
@@ -59,9 +55,13 @@ export function AddBudgetModal({
   const isEdit = Boolean(editingId);
   const { toast } = useToast();
   const thisYear = new Date().getFullYear();
-  const [companyAccounts, setCompanyAccounts] = React.useState<
-    CompanyAccountOption[]
-  >([]);
+  // Shared with every other scope picker, including the clear-on-close that
+  // stops a stale catalog flashing on reopen (ADD-012).
+  const companyAccounts = useCompanyAccounts(open);
+  const propertyOptions = React.useMemo(
+    () => properties.map((p) => ({ id: p.id, name: p.propertyName })),
+    [properties],
+  );
   const [existingBudgets, setExistingBudgets] = React.useState<BudgetSummary[]>(
     [],
   );
@@ -80,10 +80,6 @@ export function AddBudgetModal({
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    fetch("/api/pm/company-accounts").then(async (r) => {
-      if (!r.ok || cancelled) return;
-      setCompanyAccounts((await r.json()) as CompanyAccountOption[]);
-    });
     fetch("/api/pm/budgets?includeArchived=1").then(async (r) => {
       if (!r.ok || cancelled) return;
       const list = (await r.json()) as Array<{
@@ -107,9 +103,9 @@ export function AddBudgetModal({
       setFiscalYearStart("January");
       setDefaultAmounts("Zero");
       setCopySourceBudgetId("");
-      // Drop the fetched option lists so a stale catalog from a previous open
+      // Drop the fetched option list so a stale catalog from a previous open
       // can't flash before the refetch resolves on the next open (ADD-012).
-      setCompanyAccounts([]);
+      // Companies are cleared by useCompanyAccounts.
       setExistingBudgets([]);
     }
   }, [open, thisYear]);
@@ -221,59 +217,23 @@ export function AddBudgetModal({
 
         <div className="space-y-3">
           <div>
-            <Label>Scope</Label>
-            <div className="flex gap-3 text-sm">
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="radio"
-                  checked={scopeType === "Property"}
-                  disabled={isEdit}
-                  onChange={() => {
-                    setScopeType("Property");
-                    setScopeId("");
-                  }}
-                />
-                Property
-              </label>
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="radio"
-                  checked={scopeType === "Company"}
-                  disabled={isEdit}
-                  onChange={() => {
-                    setScopeType("Company");
-                    setScopeId("");
-                  }}
-                />
-                Company
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="scope-id">
-              {scopeType === "Property" ? "Property" : "Company account"}
-            </Label>
-            <select
+            <Label htmlFor="scope-id">Property or company</Label>
+            <ScopePicker
               id="scope-id"
-              className="h-9 w-full rounded-md border border-border bg-bg-elevated px-2 text-sm disabled:opacity-60"
-              value={scopeId}
+              scopeType={scopeType}
+              scopeId={scopeId}
               disabled={isEdit}
-              onChange={(e) => setScopeId(e.target.value)}
-            >
-              <option value="">Select…</option>
-              {scopeType === "Property"
-                ? properties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.propertyName}
-                    </option>
-                  ))
-                : companyAccounts.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-            </select>
+              placeholder="Select…"
+              // A budget must name its target; the legacy unnamed-company
+              // bucket is not a valid budget scope.
+              allowUnnamedCompany={false}
+              properties={propertyOptions}
+              companies={companyAccounts}
+              onChange={(next) => {
+                setScopeType(next.scopeType as BudgetScopeType);
+                setScopeId(next.scopeId);
+              }}
+            />
           </div>
 
           <div>

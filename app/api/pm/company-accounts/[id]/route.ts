@@ -12,6 +12,7 @@ import { companyAccountUpdateSchema } from '@/lib/validation/pm/companyAccount';
 import { logActivity } from '@/lib/pm/activity';
 import { canManageOrg } from '@/lib/pm/roles';
 import { serializeCompanyAccount } from '../serialize';
+import type { PmCurrency } from '@/types/pm';
 
 export const runtime = 'nodejs';
 
@@ -65,14 +66,27 @@ export async function PATCH(
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  if (parsed.data.name !== undefined) doc.name = parsed.data.name;
+  if (parsed.data.name !== undefined) doc.name = parsed.data.name.trim();
   if (parsed.data.defaultCashAccountId !== undefined) {
     doc.defaultCashAccountId = parsed.data.defaultCashAccountId
       ? new Types.ObjectId(parsed.data.defaultCashAccountId)
       : null;
   }
+  if (parsed.data.currency !== undefined) {
+    doc.currency = (parsed.data.currency as PmCurrency | null) ?? undefined;
+  }
   if (parsed.data.active !== undefined) doc.active = parsed.data.active;
-  await doc.save();
+  try {
+    await doc.save();
+  } catch (err) {
+    if ((err as { code?: number })?.code === 11000) {
+      return NextResponse.json(
+        { error: 'A company with that name already exists.' },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 
   await logActivity({
     orgId: ctx.orgId,
@@ -82,7 +96,11 @@ export async function PATCH(
     actorUserId: ctx.userId,
   });
 
-  return NextResponse.json({ ok: true });
+  // Symmetric with POST — the caller gets the saved row back rather than a
+  // bare {ok:true} it would have to re-fetch.
+  return NextResponse.json(
+    serializeCompanyAccount(doc.toObject() as unknown as Record<string, unknown>),
+  );
 }
 
 export async function DELETE(

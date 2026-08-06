@@ -133,6 +133,16 @@ export function scheduleApiToRows(
   }));
 }
 
+/** A recovery charge the lease is posting RIGHT NOW (from its saved
+ *  `splitRentCharges`), so the editor can warn when the schedule about to be
+ *  saved would silently stop it. `kind` is resolved by the parent, which
+ *  already matches splits to rows by memo/account name. */
+export interface PostingRecovery {
+  kind: "opex" | "tax";
+  label: string;
+  monthlyCents: number;
+}
+
 interface Props {
   rows: ScheduleRow[];
   onRowsChange: (rows: ScheduleRow[]) => void;
@@ -140,6 +150,9 @@ interface Props {
   defaultSizeSqft?: number | null;
   /** Combined GST/QST rate (e.g. 14.975) for the live "with tax" preview. */
   salesTaxRatePct?: number | null;
+  /** What the lease posts today, for the "this schedule drops a live recovery"
+   *  guard. Omit on the create flow — a new lease posts nothing yet. */
+  currentPostingRecoveries?: PostingRecovery[];
 }
 
 const selectCls = "w-full rounded border bg-background px-2 py-1.5 text-sm";
@@ -150,6 +163,7 @@ export function LeaseTermScheduleEditor({
   incomeAccounts,
   defaultSizeSqft,
   salesTaxRatePct,
+  currentPostingRecoveries,
 }: Props) {
   const fmt = usePmMoneyFormatter();
   const update = (key: string, patch: Partial<ScheduleRow>) =>
@@ -166,9 +180,27 @@ export function LeaseTermScheduleEditor({
     (r) => r.kind === "Term" && r.startDate && r.endDate,
   );
   const todayKey = new Date().toISOString().slice(0, 10);
-  const noCurrentTerm =
-    terms.length > 0 &&
-    !terms.some((r) => r.startDate <= todayKey && todayKey <= r.endDate);
+  const currentTerm = terms.find(
+    (r) => r.startDate <= todayKey && todayKey <= r.endDate,
+  );
+  const noCurrentTerm = terms.length > 0 && !currentTerm;
+
+  // A schedule SUPERSEDES the lease's existing OPEX/Tax split charges: only the
+  // current Term row's amounts post, and only when that row also names an
+  // income account. So a term entered with the recovery column left blank
+  // silently stops a recovery that was posting the month before — the failure
+  // that dropped three leases' Tax Recovery out of the ledger. Compare what
+  // posts today against what this schedule would post and say so up front.
+  const droppedRecoveries = (currentPostingRecoveries ?? []).filter((rec) => {
+    if (!currentTerm || rec.monthlyCents <= 0) return false;
+    const amount =
+      rec.kind === "opex"
+        ? Number(currentTerm.opexAmount) || 0
+        : Number(currentTerm.taxAmount) || 0;
+    const accountId =
+      rec.kind === "opex" ? currentTerm.opexAccountId : currentTerm.taxAccountId;
+    return !(amount > 0 && accountId);
+  });
 
   return (
     <div className="space-y-3">
@@ -185,6 +217,26 @@ export function LeaseTermScheduleEditor({
           posts only from the term period active on the due date, so nothing
           will post until a period covers the current date. Add or extend a term
           period, or remove the schedule to go back to the revenue rows above.
+        </p>
+      )}
+
+      {droppedRecoveries.length > 0 && currentTerm && (
+        <p className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-fg">
+          <span className="font-medium">
+            This schedule would stop a recovery that is posting today.
+          </span>{" "}
+          {droppedRecoveries
+            .map((r) => `${r.label} (${fmt(r.monthlyCents)}/mo)`)
+            .join(" and ")}{" "}
+          {droppedRecoveries.length > 1 ? "are" : "is"} on this lease now, but
+          the term period covering today (&ldquo;
+          {currentTerm.label || "unnamed"}&rdquo;) has no amount and account for{" "}
+          {droppedRecoveries.length > 1 ? "them" : "it"}. Once a schedule
+          exists it drives posting entirely, so saving as-is drops{" "}
+          {droppedRecoveries.length > 1 ? "those charges" : "that charge"} from
+          next month&apos;s rent. Fill in both the amount and the account on
+          that row to keep {droppedRecoveries.length > 1 ? "them" : "it"}{" "}
+          posting.
         </p>
       )}
 

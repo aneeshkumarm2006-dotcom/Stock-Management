@@ -4,15 +4,21 @@ import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { RecurringTransaction } from '@/lib/db/models/pm/RecurringTransaction';
-import { Property } from '@/lib/db/models/pm/Property';
 import {
   getPmContext,
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { recurringTransactionCreateSchema } from '@/lib/validation/pm/recurringTransaction';
-import { toCents } from '@/lib/pm/currency';
+import { mapAmountLineToDb } from './serialize';
 import { logActivity } from '@/lib/pm/activity';
 import { computeWarnings } from '@/lib/pm/warnings';
+import {
+  isPropertyScope,
+  normalizeScope,
+  scopeKey,
+  scopeKeyOf,
+} from '@/lib/pm/scope';
+import { resolveScopeLabels } from '@/lib/pm/scopeQuery';
 
 export const runtime = 'nodejs';
 
@@ -32,8 +38,9 @@ interface RtLeanLike {
   lastPostedDate?: Date | null;
   amounts?: Array<{
     scopeType?: string | null;
-    scopeId?: unknown;
+    scopeId?: Types.ObjectId | string | null;
     amount?: number;
+    allocation?: { mode?: string } | null;
   }>;
 }
 
@@ -46,23 +53,34 @@ interface RtLeanLike {
  */
 function summariseScope(
   amounts: RtLeanLike['amounts'],
-  propertyNames: Map<string, string>,
+  labels: Map<string, { label: string }>,
 ):
-  | { type: 'Company' }
+  | { type: 'Company'; companyAccountId: string | null; companyName: string | null; split: boolean }
   | { type: 'Property'; propertyId: string; propertyName: string }
   | { type: 'Multiple'; count: number } {
-  const keys = new Set(
-    (amounts ?? []).map((a) =>
-      a.scopeType === 'Property' && a.scopeId ? String(a.scopeId) : 'company',
-    ),
-  );
+  const rows = amounts ?? [];
+  // Keyed through the shared scope module so two different companies are two
+  // different scopes here, exactly as the poster sees them.
+  const keys = new Set(rows.map((a) => scopeKeyOf(a)));
   if (keys.size > 1) return { type: 'Multiple', count: keys.size };
-  const only = Array.from(keys)[0];
-  if (!only || only === 'company') return { type: 'Company' };
+
+  const first = rows[0];
+  const scope = normalizeScope(first ?? {});
+  const key = scopeKey(scope);
+
+  if (isPropertyScope(scope)) {
+    return {
+      type: 'Property',
+      propertyId: String(scope.id),
+      propertyName: labels.get(key)?.label ?? 'Unknown property',
+    };
+  }
   return {
-    type: 'Property',
-    propertyId: only,
-    propertyName: propertyNames.get(only) ?? 'Unknown property',
+    type: 'Company',
+    companyAccountId: scope.id ? String(scope.id) : null,
+    // null id keeps rendering the literal "Company", exactly as before.
+    companyName: scope.id ? (labels.get(key)?.label ?? 'Unknown company') : null,
+    split: rows.some((a) => a.allocation?.mode === 'CompanyProperties'),
   };
 }
 
@@ -83,32 +101,18 @@ export async function GET(request: Request) {
     .sort({ nextDate: 1 })
     .lean<RtLeanLike[]>();
 
-  // Resolve every referenced property name in one query rather than per row.
-  const propertyIds = Array.from(
-    new Set(
-      rows.flatMap((r) =>
-        (r.amounts ?? [])
-          .filter((a) => a.scopeType === 'Property' && a.scopeId)
-          .map((a) => String(a.scopeId)),
-      ),
-    ),
+  // Resolve every referenced scope label — properties AND companies — in one
+  // batched pass rather than per row.
+  const labels = await resolveScopeLabels(
+    rows.flatMap((r) => r.amounts ?? []),
+    ctx.orgId,
   );
-  const propertyNames = new Map<string, string>();
-  if (propertyIds.length > 0) {
-    const props = await Property.find({
-      _id: { $in: propertyIds.map((id) => new Types.ObjectId(id)) },
-      organizationId: new Types.ObjectId(ctx.orgId),
-    })
-      .select({ propertyName: 1 })
-      .lean<{ _id: Types.ObjectId; propertyName: string }[]>();
-    for (const p of props) propertyNames.set(String(p._id), p.propertyName);
-  }
 
   return NextResponse.json(
     rows.map((r) => ({
       id: String(r._id),
       type: r.type,
-      scope: summariseScope(r.amounts, propertyNames),
+      scope: summariseScope(r.amounts, labels),
       amount: (r.amounts ?? []).reduce((s, a) => s + (a.amount ?? 0), 0),
       payee: r.payee
         ? { type: r.payee.type, id: String(r.payee.id) }
@@ -180,15 +184,7 @@ export async function POST(request: Request) {
     postNDaysInAdvance: parsed.data.postNDaysInAdvance,
     duration: parsed.data.duration,
     occurrenceCount: parsed.data.occurrenceCount ?? null,
-    amounts: (parsed.data.amounts ?? []).map((a) => ({
-      scopeType: a.scopeType,
-      scopeId: a.scopeId ? new Types.ObjectId(a.scopeId) : null,
-      unitId: a.unitId ? new Types.ObjectId(a.unitId) : null,
-      accountId: a.accountId ? new Types.ObjectId(a.accountId) : null,
-      description: a.description,
-      refNo: a.refNo,
-      amount: toCents(a.amount ?? 0),
-    })),
+    amounts: (parsed.data.amounts ?? []).map(mapAmountLineToDb),
     queueForPrinting: parsed.data.queueForPrinting ?? false,
     active: parsed.data.active ?? true,
     createdByUserId: new Types.ObjectId(ctx.userId),

@@ -26,6 +26,7 @@ import {
   copyPriorFyActuals,
   type BudgetLineSeed,
 } from '@/lib/pm/budgetActualsCopy';
+import { normalizeScope } from '@/lib/pm/scope';
 import type { FiscalMonth } from '@/types/pm';
 
 export const runtime = 'nodejs';
@@ -145,19 +146,30 @@ export async function POST(request: Request) {
     ? new Types.ObjectId(parsed.data.scopeId)
     : null;
 
-  // Pre-check the per-property uniqueness so we can return a nice 409 (only
-  // possible when a scope is actually picked).
-  if (parsed.data.scopeType === 'Property' && scopeObjectId) {
+  // Pre-check uniqueness so we can return a nice 409 (only possible when a
+  // scope is actually picked).
+  //
+  // The DB-level unique index carries `partialFilterExpression: {scopeType:
+  // 'Property'}`, so Company budgets have no backstop — this app-layer check is
+  // the only thing stopping two "Greene company FY2026" budgets, which with
+  // named companies is now a reachable mistake rather than a theoretical one.
+  // Widening the index itself is deliberately out of scope: it is a unique
+  // index on a live collection, and a build that fails against a pre-existing
+  // duplicate would fail silently under this project's autoIndex setup.
+  if (scopeObjectId) {
+    const scopeType = parsed.data.scopeType ?? 'Property';
     const existing = await Budget.findOne({
       organizationId: orgObjectId,
-      scopeType: 'Property',
+      scopeType,
       scopeId: scopeObjectId,
       fiscalYear: parsed.data.fiscalYear,
     }).lean<{ _id: Types.ObjectId } | null>();
     if (existing) {
       return NextResponse.json(
         {
-          error: `A budget for FY${parsed.data.fiscalYear} already exists on this property (BR-AC-11).`,
+          error: `A budget for FY${parsed.data.fiscalYear} already exists on this ${
+            scopeType === 'Property' ? 'property' : 'company'
+          } (BR-AC-11).`,
         },
         { status: 409 },
       );
@@ -182,8 +194,12 @@ export async function POST(request: Request) {
   if (parsed.data.defaultAmounts === 'Copy previous FY actuals') {
     seedLines = await copyPriorFyActuals({
       orgId: orgObjectId,
-      scopePropertyId:
-        parsed.data.scopeType === 'Property' ? scopeObjectId : null,
+      // Pass the full scope, not just a property id: a Company budget must copy
+      // ITS company's actuals, not every line in the org.
+      scope: normalizeScope({
+        scopeType: parsed.data.scopeType ?? 'Property',
+        scopeId: scopeObjectId,
+      }),
       fiscalYear: parsed.data.fiscalYear,
       fiscalYearStart: parsed.data.fiscalYearStart as FiscalMonth,
     });

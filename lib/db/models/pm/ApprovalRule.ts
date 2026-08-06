@@ -101,6 +101,15 @@ ApprovalRuleSchema.index(
 // checks moved to computeWarnings (RULE_MISSING_SCOPE, RULE_MISSING_APPROVERS).
 // Company-scope normalisation (must not carry scopeId) still applies — we
 // just null it on save to keep the row consistent rather than rejecting.
+//
+// DELIBERATE ASYMMETRY WITH THE LEDGER SCOPE. Everywhere else in the PM module
+// `scopeType: 'Company'` may now name a CompanyAccount (see lib/pm/scope.ts).
+// Here it means THE ORGANIZATION — an approval rule is an authorization axis,
+// not a reporting one, and per-company approval thresholds are a separate
+// product decision. `lib/pm/approvalRules.ts` looks up the literal
+// `{scopeType:'Company', scopeId: null}` fallback, and the unique index above
+// permits exactly one active Company rule per org, so this normalisation is
+// load-bearing. Do NOT route this through `toJournalLineScope`.
 ApprovalRuleSchema.pre('validate', function (next) {
   if (this.scopeType === 'Company' && this.scopeId) {
     this.scopeId = null;

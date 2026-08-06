@@ -39,6 +39,7 @@ import {
   scheduleApiToRows,
   scheduleRowsToPayload,
   type ScheduleRow,
+  type PostingRecovery,
 } from "@/components/pm/LeaseTermScheduleEditor";
 
 interface AccountOption {
@@ -166,6 +167,13 @@ export function EditLeaseModal({
   // drives GL posting by date; primaryRent above stays synced to the current
   // period server-side.
   const [scheduleRows, setScheduleRows] = React.useState<ScheduleRow[]>([]);
+  // Snapshot of the recoveries the lease posts AS LOADED — the baseline for the
+  // editor's "this schedule would stop a live recovery" guard. Kept separate
+  // from `rentRows` because those are the user's in-flight edits, not what the
+  // ledger is actually charging.
+  const [postingRecoveries, setPostingRecoveries] = React.useState<
+    PostingRecovery[]
+  >([]);
   const [proportionateSharePct, setProportionateSharePct] = React.useState("");
   const [salesTaxRatePct, setSalesTaxRatePct] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -295,6 +303,28 @@ export function EditLeaseModal({
             rate: split ? rateFor(split.amount) : "0",
             accountId: split?.accountId ?? seededAccount?.id ?? "",
           };
+        }),
+      );
+
+      // Same memo/account matching as the rows above, but frozen as the
+      // as-loaded baseline the schedule editor compares against.
+      setPostingRecoveries(
+        RENT_ROW_DEFS.filter((d) => d.key !== "base").flatMap((d) => {
+          const split =
+            lease.splitRentCharges.find((c) => c.memo === d.label) ??
+            lease.splitRentCharges.find(
+              (c) =>
+                income.find((a) => a.id === c.accountId)?.name ===
+                d.defaultAccountName,
+            );
+          if (!split || split.amount <= 0) return [];
+          return [
+            {
+              kind: d.key as "opex" | "tax",
+              label: d.label,
+              monthlyCents: split.amount,
+            },
+          ];
         }),
       );
       setLoading(false);
@@ -528,7 +558,9 @@ export function EditLeaseModal({
               />
               <p className="mt-1 text-xs text-fg-muted">
                 Rent posts from this date forward. Clear it to stop
-                auto-posting.
+                auto-posting. Every change in this dialog applies from this date
+                on — months already posted keep the amount they were charged, so
+                Accounting → Financials will not move for them.
               </p>
             </div>
 
@@ -668,6 +700,7 @@ export function EditLeaseModal({
                 incomeAccounts={accounts}
                 defaultSizeSqft={unitSqft}
                 salesTaxRatePct={Number(salesTaxRatePct) || null}
+                currentPostingRecoveries={postingRecoveries}
               />
             </div>
           </div>

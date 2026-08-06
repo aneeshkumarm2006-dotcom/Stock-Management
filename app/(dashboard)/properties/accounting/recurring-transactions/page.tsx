@@ -14,7 +14,14 @@ import { RecurringCatchUpModal } from "@/components/pm/RecurringCatchUpModal";
 
 /** Collapsed per-line scope; see summariseScope in the list route. */
 type RtScope =
-  | { type: "Company" }
+  | {
+      type: "Company";
+      /** null for rows written before companies were nameable. */
+      companyAccountId: string | null;
+      companyName: string | null;
+      /** At least one line splits across the company's buildings. */
+      split?: boolean;
+    }
   | { type: "Property"; propertyId: string; propertyName: string }
   | { type: "Multiple"; count: number };
 
@@ -123,7 +130,9 @@ export default function RecurringTransactionsPage() {
             <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
               <tr>
                 <th className="py-2">Type</th>
-                <th>Property</th>
+                {/* Matches the phrase the amounts grid already uses, now that
+                    the cell can hold a company name. */}
+                <th>Property or company</th>
                 <th className="px-4 text-right">Amount</th>
                 <th>Frequency</th>
                 <th>Next date</th>
@@ -158,11 +167,29 @@ export default function RecurringTransactionsPage() {
                 <tr key={r.id} className="border-b border-border/40">
                   <td className="py-2 text-fg">{r.type}</td>
                   <td className="text-fg-muted">
-                    {r.scope?.type === "Property"
-                      ? r.scope.propertyName
-                      : r.scope?.type === "Multiple"
-                        ? `Multiple (${r.scope.count})`
-                        : "Company"}
+                    {r.scope?.type === "Property" ? (
+                      r.scope.propertyName
+                    ) : r.scope?.type === "Multiple" ? (
+                      `Multiple (${r.scope.count})`
+                    ) : r.scope?.companyName ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {r.scope.companyName}
+                        {/* "Immeubles Greene Inc." and "IMMEUBLES GREENE I" are
+                            otherwise indistinguishable in a text column, and
+                            confusing them puts a whole mortgage on one
+                            building. */}
+                        <span className="rounded bg-surface-high px-1 text-[10px] uppercase tracking-widest text-fg-muted">
+                          Co.
+                        </span>
+                        {r.scope.split ? (
+                          <span className="rounded bg-surface-high px-1 text-[10px] uppercase tracking-widest text-fg-muted">
+                            Split
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : (
+                      "Company"
+                    )}
                   </td>
                   <td className="px-4 text-right text-fg-muted tabular-nums">
                     {/* convert={false}: a rule's amount is stored in the

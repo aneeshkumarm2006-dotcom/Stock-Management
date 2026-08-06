@@ -10,6 +10,23 @@ import {
 
 const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid id');
 
+/** Split a company-scoped amount across that company's properties. */
+const allocationSchema = z.object({
+  mode: z.enum(['None', 'CompanyProperties']).default('None'),
+  basis: z.enum(['Equal', 'Manual']).default('Equal'),
+  weights: z
+    .array(
+      z.object({
+        propertyId: objectIdSchema,
+        weight: z.number().min(0),
+      }),
+    )
+    // Generous but finite: an org with 200 buildings under one company is
+    // already past the point where a manual weight table is the right tool.
+    .max(200)
+    .optional(),
+});
+
 const amountLineSchema = z.object({
   scopeType: z.enum(['Property', 'Company']).default('Company'),
   scopeId: objectIdSchema.nullable().optional(),
@@ -19,6 +36,9 @@ const amountLineSchema = z.object({
   refNo: z.string().max(60).optional(),
   /** Dollars at the API boundary; route converts to cents. */
   amount: z.number().optional(),
+  // Zod strips unknown keys, so this MUST be declared or both the create and
+  // update routes would silently drop the allocation the user just configured.
+  allocation: allocationSchema.nullable().optional(),
 });
 
 // payee no longer required at the schema level — RECURRING_MISSING_PAYEE

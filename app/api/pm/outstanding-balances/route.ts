@@ -49,8 +49,28 @@ import type { PmCurrency } from '@/types/pm';
 export const runtime = 'nodejs';
 
 interface AggRow {
-  _id: { propertyId: Types.ObjectId | null; unitId: Types.ObjectId | null };
+  _id: {
+    scopeType: string | null;
+    propertyId: Types.ObjectId | null;
+    unitId: Types.ObjectId | null;
+  };
   balanceCents: number;
+}
+
+/**
+ * AR is inherently per-property — a tenant owes a building, not a management
+ * company. But this aggregation groups on the raw `lines.scopeId`, which is
+ * only safe while every Company-scoped line carries `scopeId: null`. Once a
+ * Company line names a real CompanyAccount, that id would flow through here and
+ * masquerade as a property. So `scopeType` is part of the group key and this
+ * predicate is the single place that decides which rows are real properties.
+ *
+ * Company-scoped AR is NOT dropped — that would silently change `totals`, a
+ * client-visible figure. It is surfaced under its own label with a null
+ * propertyId and grouped under "Other".
+ */
+function isPropertyRow(r: AggRow): boolean {
+  return r._id.scopeType === 'Property' && r._id.propertyId != null;
 }
 
 interface Row {
@@ -113,6 +133,7 @@ export async function GET() {
     {
       $group: {
         _id: {
+          scopeType: '$lines.scopeType',
           propertyId: '$lines.scopeId',
           unitId: '$lines.unitId',
         },
@@ -133,13 +154,12 @@ export async function GET() {
 
   // 3. Fetch every property referenced by the aggregation — we need each one's
   //    country to build the per-country groups (not just the top 5).
+  // Only genuine Property scopes get looked up as properties.
+  const propKeyOf = (r: AggRow): string | null =>
+    isPropertyRow(r) ? String(r._id.propertyId) : null;
+
   const allPropIds = Array.from(
-    new Set(
-      agg
-        .map((r) => r._id.propertyId)
-        .filter((p): p is Types.ObjectId => p instanceof Types.ObjectId)
-        .map((p) => String(p)),
-    ),
+    new Set(agg.map(propKeyOf).filter((s): s is string => s !== null)),
   ).map((s) => new Types.ObjectId(s));
 
   const [props, org] = await Promise.all([
@@ -163,7 +183,7 @@ export async function GET() {
   // A property with no `currency` set inherits the org default — the same
   // interpretation those amounts had before the field existed.
   const currencyForRow = (r: AggRow): PmCurrency => {
-    const pKey = r._id.propertyId ? String(r._id.propertyId) : null;
+    const pKey = propKeyOf(r);
     const prop = pKey ? propById.get(pKey) : null;
     return resolvePropertyCurrency(
       (prop as { currency?: PmCurrency | null } | null)?.currency,
@@ -177,7 +197,7 @@ export async function GET() {
   );
 
   const countryForRow = (r: AggRow): string => {
-    const pKey = r._id.propertyId ? String(r._id.propertyId) : null;
+    const pKey = propKeyOf(r);
     const prop = pKey ? propById.get(pKey) : null;
     if (!prop) return OTHER;
     return normalizeCountry(
@@ -244,12 +264,16 @@ export async function GET() {
   }
 
   const toRow = (row: AggRow): Row => {
-    const pKey = row._id.propertyId ? String(row._id.propertyId) : null;
+    const pKey = propKeyOf(row);
     const uKey = row._id.unitId ? String(row._id.unitId) : null;
     const prop = pKey ? propById.get(pKey) : null;
     const unit = uKey ? unitById.get(uKey) : null;
     const lease = uKey ? leaseByUnit.get(uKey) : null;
-    const propertyName = prop?.propertyName ?? 'Unknown property';
+    const propertyName = prop?.propertyName
+      ? prop.propertyName
+      : isPropertyRow(row)
+        ? 'Unknown property'
+        : 'Company (unallocated)';
     const subType = prop?.propertySubType ? ` (${prop.propertySubType})` : '';
     const unitLabel = unit?.unitId ? ` - ${unit.unitId}` : '';
     return {

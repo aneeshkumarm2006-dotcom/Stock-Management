@@ -38,6 +38,34 @@ export const RECURRING_PAYEE_TYPES_DB: RecurringPayeeType[] = [
 /** DECISIONS.md [G-S-26] — memo cap matches JE precedent (256). */
 export const RECURRING_TRANSACTION_MEMO_MAX = 256;
 
+export const RECURRING_ALLOCATION_MODES = ['None', 'CompanyProperties'] as const;
+export const RECURRING_ALLOCATION_BASES = ['Equal', 'Manual'] as const;
+
+export type RecurringAllocationMode =
+  (typeof RECURRING_ALLOCATION_MODES)[number];
+export type RecurringAllocationBasis =
+  (typeof RECURRING_ALLOCATION_BASES)[number];
+
+/**
+ * Split a company-level amount across that company's properties.
+ *
+ * PER LINE, not per rule — a mortgage and an insurance premium can sit on the
+ * same rule and must diverge: mortgage interest belongs above NOI and stays on
+ * the company, while insurance is an operating expense each building should
+ * carry its share of.
+ *
+ * Stored as a subdocument rather than a boolean so basis and manual weights fit
+ * without a later migration. `null`/absent/`mode:'None'` all mean "do not
+ * allocate", which is why every row written before this existed behaves
+ * identically with no backfill.
+ */
+export interface IRecurringLineAllocation {
+  mode: RecurringAllocationMode;
+  basis: RecurringAllocationBasis;
+  /** Only consulted when basis='Manual'. */
+  weights: Array<{ propertyId: Types.ObjectId; weight: number }>;
+}
+
 export interface IRecurringAmountLine {
   scopeType: 'Property' | 'Company';
   scopeId?: Types.ObjectId | null;
@@ -47,6 +75,7 @@ export interface IRecurringAmountLine {
   refNo?: string;
   /** Integer cents. */
   amount: number;
+  allocation?: IRecurringLineAllocation | null;
 }
 
 export interface IRecurringPayee {
@@ -80,6 +109,40 @@ export interface IRecurringTransaction {
   updatedAt: Date;
 }
 
+const AllocationWeightSchema = new Schema<{
+  propertyId: Types.ObjectId;
+  weight: number;
+}>(
+  {
+    propertyId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmProperty',
+      required: true,
+    },
+    weight: { type: Number, required: true, min: 0 },
+  },
+  { _id: false },
+);
+
+const RecurringLineAllocationSchema = new Schema<IRecurringLineAllocation>(
+  {
+    mode: {
+      type: String,
+      enum: RECURRING_ALLOCATION_MODES as unknown as string[],
+      required: true,
+      default: 'None',
+    },
+    basis: {
+      type: String,
+      enum: RECURRING_ALLOCATION_BASES as unknown as string[],
+      required: true,
+      default: 'Equal',
+    },
+    weights: { type: [AllocationWeightSchema], default: [] },
+  },
+  { _id: false },
+);
+
 const RecurringAmountLineSchema = new Schema<IRecurringAmountLine>(
   {
     scopeType: {
@@ -98,6 +161,8 @@ const RecurringAmountLineSchema = new Schema<IRecurringAmountLine>(
     description: { type: String, trim: true, maxlength: 500 },
     refNo: { type: String, trim: true, maxlength: 60 },
     amount: { type: Number, required: true },
+    // `null` = don't allocate, which is what every pre-existing row is.
+    allocation: { type: RecurringLineAllocationSchema, default: null },
   },
   { _id: true },
 );

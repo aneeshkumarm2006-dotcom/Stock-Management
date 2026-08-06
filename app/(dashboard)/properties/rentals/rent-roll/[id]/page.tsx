@@ -588,6 +588,20 @@ export default function LeaseDetailPage() {
                   it comes due — use <em>Post recurring due now</em> to post any
                   due charges immediately without waiting for the sweep.
                 </p>
+                {/* Edits here are forward-looking: the amounts above are what
+                    WILL be charged, while Accounting → Financials reports what
+                    already WAS. Saying so on the card stops the recurring
+                    "I changed the rent but Financials didn't move" question. */}
+                <p className="mt-1 text-xs text-fg-muted">
+                  Amounts shown are what will be charged from the next due date
+                  {data.primaryRent.nextDueDate
+                    ? ` (${formatDateOnly(data.primaryRent.nextDueDate)})`
+                    : ""}
+                  . Editing rent or the lease terms never changes a month that
+                  has already posted, so <strong>Accounting → Financials</strong>{" "}
+                  keeps showing the old figure for those months — it reports the
+                  ledger, not the current lease setup.
+                </p>
               </CardContent>
             </Card>
 

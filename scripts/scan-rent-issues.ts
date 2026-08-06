@@ -106,10 +106,18 @@ async function main() {
   const thisMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 
   // Build a set of "propertyId|YYYY-MM" that have ANY income posting.
+  // `scopeType` must be checked, not just truthiness of scopeId: a Company-
+  // scoped line can now carry a CompanyAccount id, and treating that as a
+  // property id would make this diagnostic report phantom coverage.
   const coveredPropMonth = new Set<string>();
   for (const j of posted) {
     for (const l of j.lines ?? []) {
-      if (incomeIds.has(String(l.accountId)) && (l.credit ?? 0) > 0 && l.scopeId) {
+      if (
+        incomeIds.has(String(l.accountId)) &&
+        (l.credit ?? 0) > 0 &&
+        l.scopeType === 'Property' &&
+        l.scopeId
+      ) {
         coveredPropMonth.add(`${String(l.scopeId)}|${ym(j.date)}`);
       }
     }

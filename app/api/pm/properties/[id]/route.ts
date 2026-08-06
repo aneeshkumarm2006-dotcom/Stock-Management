@@ -10,6 +10,7 @@ import { Property } from '@/lib/db/models/pm/Property';
 import { BankAccount } from '@/lib/db/models/pm/BankAccount';
 import { RentalOwner } from '@/lib/db/models/pm/RentalOwner';
 import { PmFile } from '@/lib/db/models/pm/PmFile';
+import { CompanyAccount } from '@/lib/db/models/pm/CompanyAccount';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -57,6 +58,15 @@ export async function GET(
         : `${o.firstName} ${o.lastName}`.trim();
     ownerMap.set(String(o._id), name);
   }
+
+  const company = doc.companyAccountId
+    ? await CompanyAccount.findOne({
+        _id: doc.companyAccountId,
+        organizationId: doc.organizationId,
+      })
+        .select({ name: 1 })
+        .lean<{ name?: string } | null>()
+    : null;
 
   const bankIds = [doc.operatingAccountId, doc.depositTrustAccountId].filter(
     Boolean,
@@ -138,6 +148,10 @@ export async function GET(
     images,
     propertyManagerUserId: doc.propertyManagerUserId
       ? String(doc.propertyManagerUserId)
+      : null,
+    companyAccountId: doc.companyAccountId ? String(doc.companyAccountId) : null,
+    companyName: doc.companyAccountId
+      ? (company?.name ?? '(unknown company)')
       : null,
     rentalOwners: doc.rentalOwners.map((j) => ({
       rentalOwnerId: String(j.rentalOwnerId),
@@ -267,6 +281,7 @@ export async function PATCH(
     operatingAccountId,
     depositTrustAccountId,
     propertyManagerUserId,
+    companyAccountId,
     photo,
     images,
     customFields,
@@ -308,6 +323,23 @@ export async function PATCH(
   if (propertyManagerUserId !== undefined) {
     doc.propertyManagerUserId = propertyManagerUserId
       ? new Types.ObjectId(propertyManagerUserId)
+      : null;
+  }
+  if (companyAccountId !== undefined) {
+    if (companyAccountId) {
+      const owned = await CompanyAccount.countDocuments({
+        _id: new Types.ObjectId(companyAccountId),
+        organizationId: new Types.ObjectId(ctx.orgId),
+      });
+      if (!owned) {
+        return NextResponse.json(
+          { error: 'companyAccountId does not reference a company in this org' },
+          { status: 400 },
+        );
+      }
+    }
+    doc.companyAccountId = companyAccountId
+      ? new Types.ObjectId(companyAccountId)
       : null;
   }
   if (photo !== undefined) {

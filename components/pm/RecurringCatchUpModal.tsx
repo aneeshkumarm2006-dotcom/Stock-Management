@@ -32,10 +32,17 @@ interface PlannedPeriod {
   frequency: string;
   periodDate: string;
   amountCents: number;
+  /**
+   * One entry per posting LINE. An allocated company amount appears as one
+   * entry per building with its own cents — seeing the split before it posts
+   * is the entire point of the dry run.
+   */
   scopes: Array<{
     propertyId: string | null;
     propertyName: string;
     amountCents: number;
+    allocatedFromCompanyId?: string | null;
+    allocatedFromCompanyName?: string | null;
   }>;
   status: "will-post" | "locked" | "unsupported" | "possible-duplicate";
   note?: string;
@@ -284,7 +291,7 @@ export function RecurringCatchUpModal({
                     <tr>
                       <th className="px-2 py-2">Date</th>
                       <th className="px-2">Rule</th>
-                      <th className="px-2">Property</th>
+                      <th className="px-2">Property or company</th>
                       <th className="px-2 text-right">Amount</th>
                       <th className="px-2">Status</th>
                     </tr>
@@ -309,7 +316,30 @@ export function RecurringCatchUpModal({
                           )}
                         </td>
                         <td className="px-2 py-1">
-                          {p.scopes.map((s) => s.propertyName).join(", ")}
+                          {/* Allocated shares render as indented children of
+                              the company they came from, so a split is
+                              legible before it posts rather than after. */}
+                          {p.scopes.map((s, si) => (
+                            <div
+                              key={`${s.propertyId ?? "co"}-${si}`}
+                              className={
+                                s.allocatedFromCompanyName
+                                  ? "pl-3 text-xs text-fg-muted"
+                                  : undefined
+                              }
+                            >
+                              {s.allocatedFromCompanyName ? "↳ " : ""}
+                              {s.propertyName}
+                              {s.allocatedFromCompanyName ? (
+                                <span className="ml-1">
+                                  <CurrencyAmount
+                                    cents={s.amountCents}
+                                    convert={false}
+                                  />
+                                </span>
+                              ) : null}
+                            </div>
+                          ))}
                         </td>
                         <td className="px-2 py-1 text-right">
                           <CurrencyAmount cents={p.amountCents} convert={false} />

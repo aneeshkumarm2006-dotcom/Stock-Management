@@ -8,6 +8,7 @@ import { PageHead } from "@/components/layout/PageHead";
 
 const TABS: { href: string; label: string }[] = [
   { href: "/settings/pm", label: "Organization" },
+  { href: "/settings/pm/companies", label: "Companies" },
   { href: "/settings/pm/custom-fields", label: "Custom fields" },
   { href: "/settings/pm/file-categories", label: "File categories" },
   { href: "/settings/pm/vendor-categories", label: "Vendor categories" },

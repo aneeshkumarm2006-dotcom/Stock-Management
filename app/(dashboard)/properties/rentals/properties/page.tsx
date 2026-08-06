@@ -22,6 +22,7 @@ import {
   PropertyOwnershipEditor,
   type OwnershipRow,
 } from "@/components/pm/PropertyOwnershipEditor";
+import { useCompanyAccounts } from "@/components/pm/ScopePicker";
 import type {
   PmCurrency,
   PropertyClass,
@@ -56,6 +57,9 @@ interface PropertyRow {
   /** Native booking currency; null = inherit the org default. */
   currency: PmCurrency | null;
   propertyManagerUserId: string | null;
+  /** Parent legal entity; null = unassigned. */
+  companyAccountId: string | null;
+  companyName: string | null;
   ownerCount: number;
   owners: Array<{
     rentalOwnerId: string;
@@ -71,7 +75,7 @@ interface PropertyRow {
   warnings: PmWarning[];
 }
 
-type PropertyGroupBy = "none" | "owner" | "country";
+type PropertyGroupBy = "none" | "owner" | "country" | "company";
 
 const RES_SUBTYPES: ResidentialSubType[] = [
   "Single-Family",
@@ -150,13 +154,34 @@ export default function PropertiesListPage() {
     return rows;
   }, [rows, filterActive]);
 
-  // Group the visible rows by owner entity or by country. "none" is a single
-  // unlabeled group. A property with multiple owners appears under each owner.
+  // Group the visible rows by owner entity, country, or parent company. "none"
+  // is a single unlabeled group. A property with multiple owners appears under
+  // each owner; company is 1:1, so it doesn't fan out.
   const groups = React.useMemo<
     Array<{ key: string; label: string; rows: PropertyRow[] }>
   >(() => {
     if (groupBy === "none") {
       return [{ key: "all", label: "", rows: filtered }];
+    }
+    if (groupBy === "company") {
+      const m = new Map<string, { label: string; rows: PropertyRow[] }>();
+      for (const p of filtered) {
+        const key = p.companyAccountId ?? "__unassigned";
+        const g = m.get(key) ?? {
+          label: p.companyName ?? "Unassigned",
+          rows: [],
+        };
+        g.rows.push(p);
+        m.set(key, g);
+      }
+      return Array.from(m.entries())
+        .map(([key, v]) => ({ key, label: v.label, rows: v.rows }))
+        .sort((a, b) => {
+          // Unassigned pins last, matching the Unowned bucket below.
+          if (a.key === "__unassigned") return 1;
+          if (b.key === "__unassigned") return -1;
+          return a.label.localeCompare(b.label);
+        });
     }
     if (groupBy === "country") {
       const m = new Map<string, PropertyRow[]>();
@@ -306,6 +331,7 @@ export default function PropertiesListPage() {
               [
                 ["none", "None"],
                 ["owner", "Owner"],
+                ["company", "Company"],
                 ["country", "Country"],
               ] as Array<[PropertyGroupBy, string]>
             ).map(([value, label]) => (
@@ -462,6 +488,8 @@ function AddPropertyModal({
   const [depositTrustAccountId, setDepositTrustAccountId] = React.useState("");
   const [propertyReserve, setPropertyReserve] = React.useState(0);
   const [owners, setOwners] = React.useState<OwnershipRow[]>([]);
+  const [companyAccountId, setCompanyAccountId] = React.useState("");
+  const companies = useCompanyAccounts(open);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
@@ -514,6 +542,7 @@ function AddPropertyModal({
     setDepositTrustAccountId("");
     setPropertyReserve(0);
     setOwners([]);
+    setCompanyAccountId("");
   }
 
   async function save() {
@@ -537,6 +566,7 @@ function AddPropertyModal({
         depositTrustAccountId: depositTrustAccountId || null,
         propertyReserve: Number.isFinite(propertyReserve) ? propertyReserve : 0,
         rentalOwners: owners,
+        companyAccountId: companyAccountId || null,
       }),
     });
     setSaving(false);
@@ -671,6 +701,30 @@ function AddPropertyModal({
                 }
               />
             </div>
+          </div>
+
+          {/* Kept visually separate from ownership: rental owners are people
+              with percentages who receive distributions, whereas this is the
+              single legal parent whose books the building rolls up into. */}
+          <div>
+            <Label htmlFor="prop-company">Company</Label>
+            <select
+              id="prop-company"
+              className="h-9 w-full rounded-md border border-border bg-bg-elevated px-2 text-sm"
+              value={companyAccountId}
+              onChange={(e) => setCompanyAccountId(e.target.value)}
+            >
+              <option value="">— Not assigned —</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-fg-muted">
+              The legal entity that owns this building. Used to group mortgage
+              and insurance costs.
+            </p>
           </div>
 
           <PropertyOwnershipEditor value={owners} onChange={setOwners} />

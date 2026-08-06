@@ -358,10 +358,14 @@ const ACCOUNT_GROUPS: AccountGroupSeed[] = [
 ];
 
 /**
- * Idempotent CompanyAccount seeding (Phase 2). One row per org, name derived
- * from the org's slug to match the Buildium pattern (`<slug>.managebuilding.com`
- * — we don't append the suffix in MVP but the name is a stable handle).
- * Public so the company-accounts route can backfill orgs that pre-date Phase 2.
+ * Idempotent seeding of an org's FIRST CompanyAccount, named after the org.
+ *
+ * An org may go on to own several legal entities, each added through POST
+ * /api/pm/company-accounts. This seeder only ever creates the first one: the
+ * filter matches on `{organizationId, name}` so a second, differently-named
+ * company can coexist, and `$setOnInsert` means re-running never renames an
+ * existing row. Callers gate on "does this org have ANY company yet" before
+ * invoking it — see GET /api/pm/company-accounts.
  */
 export async function seedCompanyAccount(
   organizationId: Types.ObjectId,
@@ -369,7 +373,7 @@ export async function seedCompanyAccount(
   const org = await Organization.findById(organizationId).lean();
   const name = org?.name ?? org?.slug ?? "Company";
   await CompanyAccount.updateOne(
-    { organizationId },
+    { organizationId, name },
     {
       $setOnInsert: {
         organizationId,

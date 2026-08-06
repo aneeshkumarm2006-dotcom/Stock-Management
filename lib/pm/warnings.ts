@@ -32,7 +32,8 @@ export type WarningableType =
   | "LockedPeriodPolicy"
   | "ApprovalRule"
   | "PmFile"
-  | "RecurringTransaction";
+  | "RecurringTransaction"
+  | "CompanyAccount";
 
 export const WARNINGABLE_TYPES: WarningableType[] = [
   "Property",
@@ -46,6 +47,7 @@ export const WARNINGABLE_TYPES: WarningableType[] = [
   "ApprovalRule",
   "PmFile",
   "RecurringTransaction",
+  "CompanyAccount",
 ];
 
 export const WARNING_CODES = {
@@ -102,6 +104,10 @@ export const WARNING_CODES = {
   },
   RecurringTransaction: {
     RECURRING_MISSING_PAYEE: "RECURRING_MISSING_PAYEE",
+    RECURRING_ALLOCATION_NEEDS_COMPANY: "RECURRING_ALLOCATION_NEEDS_COMPANY",
+  },
+  CompanyAccount: {
+    COMPANY_MISSING_NAME: "COMPANY_MISSING_NAME",
   },
 } as const;
 
@@ -180,6 +186,11 @@ export const WARNING_MESSAGES: Record<string, MessageBuilder> = {
   // RecurringTransaction
   RECURRING_MISSING_PAYEE: () =>
     "Type is Check/Bill but no payee is selected — when this recurrence fires, the generated transaction will fail to post (BR-AC-9). Edit the recurrence to add a payee.",
+  RECURRING_ALLOCATION_NEEDS_COMPANY: () =>
+    "A line is set to split across a company's buildings but does not name a company — the amount will post whole instead of being split. Pick a company on that line, or turn the split off.",
+  // CompanyAccount
+  COMPANY_MISSING_NAME: () =>
+    'Company name is blank — it will show as "Untitled" in the Property-or-company list. Edit to add a name.',
 };
 
 export function getWarningMessage(
@@ -378,6 +389,20 @@ export function computeWarnings(
         if (!payee || fkBlank(payee.id))
           out.push(mk("RECURRING_MISSING_PAYEE"));
       }
+      // "Split across the company's buildings" only means something on a line
+      // that actually names a company. Checked here rather than as a hard
+      // validator so an in-progress edit isn't blocked mid-typing.
+      const amounts = (entity.amounts ?? []) as Array<Record<string, unknown>>;
+      const strandedSplit = amounts.some((a) => {
+        const alloc = a.allocation as { mode?: string } | null | undefined;
+        if (alloc?.mode !== "CompanyProperties") return false;
+        return a.scopeType !== "Company" || fkBlank(a.scopeId);
+      });
+      if (strandedSplit) out.push(mk("RECURRING_ALLOCATION_NEEDS_COMPANY"));
+      break;
+    }
+    case "CompanyAccount": {
+      if (strBlank(entity.name)) out.push(mk("COMPANY_MISSING_NAME"));
       break;
     }
   }

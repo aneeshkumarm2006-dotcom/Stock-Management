@@ -29,6 +29,12 @@ interface BillLine {
   accountId: string;
   description: string;
   amount: number;
+  /**
+   * Set only when this line was allocated away from the bill's own scope —
+   * i.e. this is one building's share of a company-wide cost. The bill stays
+   * one payable; only the expense is apportioned.
+   */
+  scopeLabel?: string | null;
 }
 interface BillDetail {
   id: string;
@@ -39,6 +45,8 @@ interface BillDetail {
   refNo: string;
   amount: number;
   scope: { type: string; id: string | null } | null;
+  /** Resolved property/company name for `scope`; null when unresolvable. */
+  scopeLabel: string | null;
   unitId: string | null;
   lines: BillLine[];
   paidDate: string | null;
@@ -199,9 +207,10 @@ export default function BillDetailPage() {
             <CardContent>
               <dl className="grid gap-3 md:grid-cols-2">
                 <Field
-                  label="Scope"
+                  label="Property or company"
                   value={
-                    doc.scope ? `${doc.scope.type} ${doc.scope.id ?? ""}` : "—"
+                    doc.scopeLabel ??
+                    (doc.scope ? doc.scope.type : "—")
                   }
                 />
                 <Field
@@ -232,6 +241,7 @@ export default function BillDetailPage() {
                     <tr>
                       <th className="py-2">Account</th>
                       <th>Description</th>
+                      <th>Property</th>
                       <th>Amount</th>
                     </tr>
                   </thead>
@@ -240,6 +250,7 @@ export default function BillDetailPage() {
                       <tr key={i} className="border-b border-border/40">
                         <td className="py-2 text-fg-muted">{l.accountId}</td>
                         <td className="text-fg">{l.description}</td>
+                        <td className="text-fg-muted">{l.scopeLabel ?? "—"}</td>
                         <td className="tabular-nums font-bold text-fg">
                           <CurrencyAmount cents={l.amount} />
                         </td>
@@ -248,7 +259,7 @@ export default function BillDetailPage() {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={2} className="py-2 text-right text-xs uppercase tracking-widest text-fg-muted">
+                      <td colSpan={3} className="py-2 text-right text-xs uppercase tracking-widest text-fg-muted">
                         Total
                       </td>
                       <td className="tabular-nums font-bold text-fg">

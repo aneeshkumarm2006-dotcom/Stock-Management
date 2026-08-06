@@ -21,6 +21,13 @@ import { BillPayment } from '@/lib/db/models/pm/BillPayment';
 import { reverseJournalEntry } from '@/lib/pm/reverseJournalEntry';
 import { repostBillJournalEntry } from '@/lib/pm/repostBillJournalEntry';
 import { assertWriteAllowed } from '@/lib/pm/lockedPeriod';
+import {
+  isPropertyScope,
+  normalizeScope,
+  scopeFromBillScope,
+  scopeKey,
+} from '@/lib/pm/scope';
+import { resolveScopeLabels } from '@/lib/pm/scopeQuery';
 
 export const runtime = 'nodejs';
 
@@ -42,6 +49,20 @@ export async function GET(
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  // Resolve the bill's scope and every per-line override in one batched pass,
+  // so the detail page shows "Immeubles Greene Inc." rather than a raw ObjectId
+  // — and so an allocated bill can show which building each line landed on.
+  const scopeLabels = await resolveScopeLabels(
+    [
+      scopeFromBillScope(doc.scope),
+      ...(doc.lines ?? []).map((l) =>
+        normalizeScope({ scopeType: l.scopeType, scopeId: l.scopeId }),
+      ),
+    ],
+    ctx.orgId,
+  );
+  const billScope = scopeFromBillScope(doc.scope);
+
   return NextResponse.json({
     id: String(doc._id),
     vendorId: doc.vendorId ? String(doc.vendorId) : null,
@@ -53,12 +74,25 @@ export async function GET(
     scope: doc.scope
       ? { type: doc.scope.type, id: doc.scope.id ? String(doc.scope.id) : null }
       : null,
+    scopeLabel: scopeLabels.get(scopeKey(billScope))?.label ?? null,
     unitId: doc.unitId ? String(doc.unitId) : null,
-    lines: (doc.lines ?? []).map((l) => ({
-      accountId: String(l.accountId),
-      description: l.description ?? '',
-      amount: l.amount,
-    })),
+    lines: (doc.lines ?? []).map((l) => {
+      const lineScope = normalizeScope({
+        scopeType: l.scopeType,
+        scopeId: l.scopeId,
+      });
+      const overridden = scopeKey(lineScope) !== scopeKey(billScope);
+      return {
+        accountId: String(l.accountId),
+        description: l.description ?? '',
+        amount: l.amount,
+        // Only present when this line was allocated away from the bill's own
+        // scope; otherwise the bill-level label already says it.
+        scopeLabel: overridden
+          ? (scopeLabels.get(scopeKey(lineScope))?.label ?? null)
+          : null,
+      };
+    }),
     paidDate: doc.paidDate ?? null,
     approverUserIds: (doc.approverUserIds ?? []).map((u) => String(u)),
     journalEntryId: doc.journalEntryId ? String(doc.journalEntryId) : null,
@@ -181,8 +215,7 @@ export async function PATCH(
           invoiceDate: doc.invoiceDate,
           memo: doc.memo,
           vendorId: doc.vendorId,
-          scopePropertyId:
-            doc.scope?.type === 'Property' && doc.scope.id ? doc.scope.id : null,
+          scope: scopeFromBillScope(doc.scope),
           lines: doc.lines,
           attachmentFileId: doc.attachmentFileId,
         },
@@ -259,10 +292,10 @@ export async function PATCH(
           organizationId: new Types.ObjectId(ctx.orgId),
         })
       : null;
-    const newScopePropertyId =
-      doc.scope?.type === 'Property' && doc.scope.id
-        ? String(doc.scope.id)
-        : null;
+    const newScope = scopeFromBillScope(doc.scope);
+    const newScopePropertyId = isPropertyScope(newScope)
+      ? String(newScope.id)
+      : null;
 
     // Lock-gate BOTH the old JE's date (the reversal) and the new invoiceDate
     // (the re-post) up front, before any write, so a lock failure leaves
@@ -305,7 +338,7 @@ export async function PATCH(
           invoiceDate: doc.invoiceDate,
           memo: doc.memo,
           vendorId: doc.vendorId,
-          scopePropertyId: newScopePropertyId,
+          scope: newScope,
           lines: doc.lines, // already cents
           attachmentFileId: doc.attachmentFileId,
         },

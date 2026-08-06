@@ -3,13 +3,19 @@
 // SCOPE. Each amount row carries its own `scopeType`/`scopeId`, matching the
 // per-line scope model the GL uses everywhere else (reports attribute a
 // property from `lines[].scopeId`, never the entry header — see
-// app/api/pm/financials/matrix/route.ts). The grid therefore mirrors
-// JournalEntryModal's paired Co./Prop. cell rather than inventing a
-// rule-level scope field the schema does not have.
+// app/api/pm/financials/matrix/route.ts). A row targets a property OR a named
+// company, picked through the shared <ScopePicker>.
 //
-// A rule whose rows span several properties posts one Bill per property at
-// run time (a Bill's `scope` is a single {type,id} and cannot represent two
-// properties) — hence the inline hint under the grid.
+// A rule whose rows span several scopes posts one Bill per scope at run time
+// (a Bill's `scope` is a single {type,id} and cannot represent two) — hence the
+// inline hint under the grid.
+//
+// SPLIT. A row on a named company can be split across that company's
+// buildings, for costs like a blanket insurance premium that covers all of
+// them. The split does NOT create extra bills: the payable stays whole on the
+// company and only the expense lines carry each building's share, so the vendor
+// still gets one invoice. Excluded buildings (those booking in another
+// currency) are named on screen — the ledger never converts on write.
 //
 // `unitId` and `refNo` are hydrated and re-submitted untouched but not
 // rendered: nothing consumes them yet (postBillToLedger hardcodes
@@ -31,7 +37,10 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { ScopePicker, useCompanyAccounts } from "@/components/pm/ScopePicker";
 import { parseCurrencyToDollars } from "@/lib/pm/currency";
+import { scopeFromInput, scopeKeyOf } from "@/lib/pm/scope";
+import { allocateCents } from "@/lib/pm/allocation";
 import {
   RECURRING_DURATIONS,
   RECURRING_FREQUENCIES,
@@ -75,9 +84,121 @@ interface AmountRow {
   // Raw text input (dollars). Parsed/validated on submit via
   // parseCurrencyToDollars so "1,234.56" / "$1234.56" survive entry.
   amount: string;
+  /** Split this amount across the named company's buildings. */
+  split: boolean;
   // Round-tripped, not edited here. See the file header.
   unitId: string | null;
   refNo: string | null;
+}
+
+/** GET /api/pm/company-accounts/[id]/properties */
+interface CompanyPropertySet {
+  companyAccountId: string;
+  companyName: string;
+  currency: string;
+  members: Array<{ propertyId: string; propertyName: string; weight: number }>;
+  excluded: Array<{
+    propertyId: string;
+    propertyName: string;
+    currency: string;
+    reason: string;
+  }>;
+  allocatable: boolean;
+}
+
+/**
+ * The "split this across the company's buildings" control.
+ *
+ * Shows the resulting shares before anything is saved, computed with the same
+ * largest-remainder helper the poster uses, so the pennies on screen are the
+ * pennies that post. Properties excluded for booking in another currency are
+ * named rather than silently omitted — the ledger never converts on write, so
+ * a CAD premium simply cannot be apportioned onto a USD building.
+ */
+function SplitRow({
+  index,
+  row,
+  set,
+  onToggle,
+}: {
+  index: number;
+  row: AmountRow;
+  set?: CompanyPropertySet;
+  onToggle: (v: boolean) => void;
+}) {
+  const dollars = parseCurrencyToDollars(row.amount) ?? 0;
+  const shares = React.useMemo(() => {
+    if (!set || set.members.length === 0) return [];
+    return allocateCents(
+      Math.round(dollars * 100),
+      set.members.map((m) => ({ key: m.propertyId, weight: m.weight })),
+    );
+  }, [set, dollars]);
+
+  const nameById = React.useMemo(
+    () => new Map((set?.members ?? []).map((m) => [m.propertyId, m.propertyName])),
+    [set],
+  );
+
+  const excludedForCurrency = (set?.excluded ?? []).filter(
+    (e) => e.reason === "CURRENCY_MISMATCH",
+  );
+
+  const memberCount = set?.members.length ?? 0;
+  const disabled = !set || memberCount === 0 || memberCount === 1;
+
+  let hint: string;
+  if (!set) hint = "Loading buildings…";
+  else if (memberCount === 0) {
+    hint = `No ${set.currency} buildings are assigned to ${set.companyName} yet.`;
+  } else if (memberCount === 1) {
+    hint = `Only one building is assigned to ${set.companyName} — a split would be the same as choosing that building.`;
+  } else {
+    hint = `${memberCount} buildings, split evenly · ${set.currency}`;
+  }
+
+  return (
+    <div className="space-y-1 pl-1 text-xs">
+      <label className="flex items-center gap-2 text-fg">
+        <input
+          type="checkbox"
+          checked={row.split && !disabled}
+          disabled={disabled}
+          aria-label={`Line ${index + 1} split across company properties`}
+          onChange={(e) => onToggle(e.target.checked)}
+        />
+        <span>
+          Split this amount across {set?.companyName ?? "this company"}
+          &rsquo;s buildings
+        </span>
+      </label>
+      <p className="pl-6 text-fg-muted">{hint}</p>
+      {row.split && !disabled && shares.length > 0 ? (
+        <p className="pl-6 text-fg-muted">
+          {shares
+            .map(
+              (s) =>
+                `${nameById.get(s.key) ?? "?"} ${(s.cents / 100).toFixed(2)}`,
+            )
+            .join(" · ")}
+        </p>
+      ) : null}
+      {excludedForCurrency.length > 0 ? (
+        <p className="pl-6 text-warning">
+          {set!.companyName} books in {set!.currency}; excluded from the split:{" "}
+          {excludedForCurrency
+            .map((e) => `${e.propertyName} (${e.currency})`)
+            .join(", ")}
+          . Add a separate rule for those.
+        </p>
+      ) : null}
+      {row.split && !disabled ? (
+        <p className="pl-6 text-fg-muted">
+          One bill to the payee; each building carries its share.
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function newAmountRow(): AmountRow {
@@ -88,6 +209,7 @@ function newAmountRow(): AmountRow {
     accountId: "",
     description: "",
     amount: "",
+    split: false,
     unitId: null,
     refNo: null,
   };
@@ -114,8 +236,18 @@ export function EditRecurringCheckModal({
   const [accounts, setAccounts] = React.useState<AccountOption[]>([]);
   const [banks, setBanks] = React.useState<BankOption[]>([]);
   const [properties, setProperties] = React.useState<PropertyOption[]>([]);
+  const companies = useCompanyAccounts(open);
+  // Split previews, keyed by company id. Fetched lazily the first time a row
+  // names a company so the modal's five parallel fetches don't grow with the
+  // number of companies in the org.
+  const [companySets, setCompanySets] = React.useState<
+    Record<string, CompanyPropertySet>
+  >({});
   // Bulk-apply helper above the grid. Client-only; never persisted.
-  const [applyAllScopeId, setApplyAllScopeId] = React.useState("");
+  const [applyAll, setApplyAll] = React.useState<{
+    scopeType: "Property" | "Company";
+    scopeId: string;
+  }>({ scopeType: "Company", scopeId: "" });
 
   const [type, setType] = React.useState<RecurringTransactionType>("Bill");
   const [payeeType, setPayeeType] =
@@ -187,6 +319,7 @@ export function EditRecurringCheckModal({
           accountId: string;
           description: string;
           amount: number;
+          allocation?: { mode?: string } | null;
           unitId?: string | null;
           refNo?: string | null;
         }>;
@@ -203,27 +336,72 @@ export function EditRecurringCheckModal({
       setOccurrenceCount(d.occurrenceCount ?? 12);
       setQueueForPrinting(d.queueForPrinting);
       setActive(d.active);
-      setApplyAllScopeId("");
+      setApplyAll({ scopeType: "Company", scopeId: "" });
       setAmounts(
-        d.amounts.map((a) => ({
+        d.amounts.map((a) => {
+          // Normalise through the same predicate the server uses, so a legacy
+          // shape (missing field, Property with a null id) degrades exactly as
+          // it does everywhere else. Crucially this PRESERVES a Company row's
+          // scopeId: dropping it used to mean opening a rule that named a
+          // company and pressing Save silently reverted it to the unnamed
+          // bucket.
+          const scope = scopeFromInput(a.scopeType, a.scopeId);
+          return {
           ...newAmountRow(),
-          // Treat a row as Company unless it names a real property, so any
-          // legacy shape (missing field, Property with a null id) is total.
-          scopeType: a.scopeType === "Property" && a.scopeId ? "Property" : "Company",
-          scopeId: a.scopeType === "Property" && a.scopeId ? a.scopeId : "",
+          scopeType: scope.type,
+          scopeId: scope.id ? String(scope.id) : "",
           accountId: a.accountId,
           description: a.description,
           // server returns cents; show dollars as editable text
           amount: String(a.amount / 100),
+          split: a.allocation?.mode === "CompanyProperties",
           unitId: a.unitId ?? null,
           // GET returns '' rather than null for an unset refNo; normalise so
           // the submit path can send `undefined` (the validator types refNo as
           // an optional string, not a nullable one).
           refNo: a.refNo || null,
-        })),
+          };
+        }),
       );
     });
   }, [open, mode, recurringId]);
+
+  // Lazily load the split preview for every company named on a row.
+  React.useEffect(() => {
+    if (!open) return;
+    const wanted = Array.from(
+      new Set(
+        amounts
+          .filter((a) => a.scopeType === "Company" && a.scopeId)
+          .map((a) => a.scopeId),
+      ),
+    ).filter((id) => !companySets[id]);
+    if (wanted.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      wanted.map(async (id) => {
+        const r = await fetch(`/api/pm/company-accounts/${id}/properties`);
+        if (!r.ok) return null;
+        return (await r.json()) as CompanyPropertySet;
+      }),
+    ).then((sets) => {
+      if (cancelled) return;
+      const next: Record<string, CompanyPropertySet> = {};
+      for (const s of sets) if (s) next[s.companyAccountId] = s;
+      if (Object.keys(next).length > 0) {
+        setCompanySets((prev) => ({ ...prev, ...next }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, amounts, companySets]);
+
+  // Same clear-on-close reasoning as the company list: a stale preview from a
+  // previous open would show the wrong buildings for a moment.
+  React.useEffect(() => {
+    if (!open) setCompanySets({});
+  }, [open]);
 
   // Live total of the grid, in dollars. Unparseable rows contribute 0 rather
   // than poisoning the sum with NaN.
@@ -241,9 +419,7 @@ export function EditRecurringCheckModal({
       new Set(
         amounts
           .filter((a) => a.accountId)
-          .map((a) =>
-            a.scopeType === "Property" && a.scopeId ? a.scopeId : "company",
-          ),
+          .map((a) => scopeKeyOf({ scopeType: a.scopeType, scopeId: a.scopeId })),
       ).size,
     [amounts],
   );
@@ -253,13 +429,19 @@ export function EditRecurringCheckModal({
   }
 
   /** Bulk-set every row's scope from the picker above the grid. */
-  function applyScopeToAllRows(propertyId: string) {
-    setApplyAllScopeId(propertyId);
+  function applyScopeToAllRows(next: {
+    scopeType: "Property" | "Company";
+    scopeId: string;
+  }) {
+    setApplyAll(next);
     setAmounts(
       amounts.map((a) => ({
         ...a,
-        scopeType: propertyId ? ("Property" as const) : ("Company" as const),
-        scopeId: propertyId,
+        scopeType: next.scopeType,
+        scopeId: next.scopeId,
+        // A split only means something on a named company.
+        split:
+          a.split && next.scopeType === "Company" && Boolean(next.scopeId),
       })),
     );
   }
@@ -327,6 +509,7 @@ export function EditRecurringCheckModal({
       accountId: string;
       description: string | undefined;
       amount: number;
+      allocation: { mode: "CompanyProperties"; basis: "Equal" } | null;
       unitId: string | null;
       refNo: string | undefined;
     }> = [];
@@ -343,7 +526,7 @@ export function EditRecurringCheckModal({
       }
       if (a.scopeType === "Property" && !a.scopeId) {
         toast({
-          title: `Line ${i + 1}: choose a property for property-scoped lines`,
+          title: `Line ${i + 1}: choose a property or company`,
           variant: "error",
         });
         return;
@@ -351,10 +534,16 @@ export function EditRecurringCheckModal({
       parsedAmounts.push({
         scopeType: a.scopeType,
         // Must be null, never "" — the validator's scopeId is a 24-hex regex.
-        scopeId: a.scopeType === "Property" ? a.scopeId : null,
+        // A Company scopeId is now PRESERVED: nulling it here is what used to
+        // silently discard the company on every save.
+        scopeId: a.scopeId || null,
         accountId: a.accountId,
         description: a.description.trim() || undefined,
         amount: dollars, // dollars; server toCents() converts
+        allocation:
+          a.split && a.scopeType === "Company" && a.scopeId
+            ? { mode: "CompanyProperties", basis: "Equal" }
+            : null,
         unitId: a.scopeType === "Property" ? a.unitId : null,
         refNo: a.refNo ?? undefined,
       });
@@ -589,19 +778,18 @@ export function EditRecurringCheckModal({
               >
                 Apply to all rows
               </Label>
-              <select
-                id="rt-apply-all"
-                className="rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
-                value={applyAllScopeId}
-                onChange={(e) => applyScopeToAllRows(e.target.value)}
-              >
-                <option value="">Company</option>
-                {properties.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <div className="min-w-[220px]">
+                <ScopePicker
+                  id="rt-apply-all"
+                  scopeType={applyAll.scopeType}
+                  scopeId={applyAll.scopeId}
+                  properties={properties}
+                  companies={companies}
+                  placeholder="Choose…"
+                  className="rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
+                  onChange={applyScopeToAllRows}
+                />
+              </div>
             </div>
             <div className="overflow-x-auto rounded border border-border">
               <table className="w-full min-w-[640px] text-sm">
@@ -616,56 +804,46 @@ export function EditRecurringCheckModal({
                 </thead>
                 <tbody>
                   {amounts.map((a, i) => (
-                    <tr key={a.key} className="border-b border-border/40">
+                    <React.Fragment key={a.key}>
+                    <tr className="border-b border-border/40">
                       <td className="w-56 px-2 py-1">
-                        <div className="flex gap-1">
-                          <select
-                            aria-label={`Line ${i + 1} scope`}
-                            className="rounded border border-border bg-surface px-1 py-1 text-xs text-fg"
-                            value={a.scopeType}
-                            onChange={(e) => {
-                              const next = e.target.value as
-                                | "Property"
-                                | "Company";
-                              setAmounts(
-                                amounts.map((row, idx) =>
-                                  idx === i
-                                    ? {
-                                        ...row,
-                                        scopeType: next,
-                                        // Drop the property and its unit when
-                                        // switching back to Company so a stale
-                                        // id can never be submitted.
-                                        scopeId:
-                                          next === "Property" ? row.scopeId : "",
-                                        unitId:
-                                          next === "Property" ? row.unitId : null,
-                                      }
-                                    : row,
-                                ),
-                              );
-                            }}
-                          >
-                            <option value="Company">Co.</option>
-                            <option value="Property">Prop.</option>
-                          </select>
-                          <select
-                            aria-label={`Line ${i + 1} property`}
-                            className="min-w-0 flex-1 rounded border border-border bg-surface px-1 py-1 text-xs text-fg disabled:opacity-50"
-                            value={a.scopeId}
-                            disabled={a.scopeType !== "Property"}
-                            onChange={(e) =>
-                              updateRow(i, "scopeId", e.target.value)
-                            }
-                          >
-                            <option value="">—</option>
-                            {properties.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        {/* One merged select instead of a Co./Prop. toggle
+                            plus a disabled property dropdown: it removes a
+                            control from a 224px cell rather than adding one,
+                            and makes "Property with no property" unreachable. */}
+                        <ScopePicker
+                          aria-label={`Line ${i + 1} property or company`}
+                          className="w-full rounded border border-border bg-surface px-1 py-1 text-xs text-fg"
+                          scopeType={a.scopeType}
+                          scopeId={a.scopeId}
+                          properties={properties}
+                          companies={companies}
+                          onChange={(next) => {
+                            setAmounts(
+                              amounts.map((row, idx) =>
+                                idx === i
+                                  ? {
+                                      ...row,
+                                      scopeType: next.scopeType,
+                                      scopeId: next.scopeId,
+                                      // Drop the unit when this stops being a
+                                      // property so a stale id can't be sent.
+                                      unitId:
+                                        next.scopeType === "Property"
+                                          ? row.unitId
+                                          : null,
+                                      // A split only means something on a
+                                      // named company.
+                                      split:
+                                        row.split &&
+                                        next.scopeType === "Company" &&
+                                        Boolean(next.scopeId),
+                                    }
+                                  : row,
+                              ),
+                            );
+                          }}
+                        />
                       </td>
                       <td className="w-56 px-2 py-1">
                         <select
@@ -716,6 +894,22 @@ export function EditRecurringCheckModal({
                         </button>
                       </td>
                     </tr>
+                    {/* Rendered ONLY when this row names a company, which is
+                        zero rows on any rule that existed before this shipped —
+                        so nothing already set up changes appearance. */}
+                    {a.scopeType === "Company" && a.scopeId ? (
+                      <tr className="border-b border-border/40 bg-surface/40">
+                        <td colSpan={5} className="px-2 py-1.5">
+                          <SplitRow
+                            index={i}
+                            row={a}
+                            set={companySets[a.scopeId]}
+                            onToggle={(v) => updateRow(i, "split", v)}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
+                    </React.Fragment>
                   ))}
                   <tr className="bg-surface">
                     <td
@@ -739,9 +933,10 @@ export function EditRecurringCheckModal({
             </div>
             {scopeGroupCount > 1 && type !== "Journal entry" && (
               <p className="text-xs text-fg-muted">
-                This rule spans {scopeGroupCount} scopes — each posting
-                generates {scopeGroupCount} separate {type.toLowerCase()}s, one
-                per property.
+                This rule posts to {scopeGroupCount} different places — each run
+                creates {scopeGroupCount} separate {type.toLowerCase()}s, one
+                for each. A split line does not add one: it stays on its
+                company&rsquo;s {type.toLowerCase()}.
               </p>
             )}
           </div>

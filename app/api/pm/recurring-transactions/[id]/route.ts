@@ -9,7 +9,8 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { recurringTransactionUpdateSchema } from '@/lib/validation/pm/recurringTransaction';
-import { toCents } from '@/lib/pm/currency';
+import { mapAmountLineToDb, serializeAmountLine } from '../serialize';
+import { computeWarnings, mergeWarnings } from '@/lib/pm/warnings';
 import { logActivity } from '@/lib/pm/activity';
 
 export const runtime = 'nodejs';
@@ -49,15 +50,7 @@ export async function GET(
       typeof doc.occurrenceCount === 'number'
         ? Math.max(0, doc.occurrenceCount - doc.postedCount)
         : null,
-    amounts: (doc.amounts ?? []).map((a) => ({
-      scopeType: a.scopeType,
-      scopeId: a.scopeId ? String(a.scopeId) : null,
-      unitId: a.unitId ? String(a.unitId) : null,
-      accountId: String(a.accountId),
-      description: a.description ?? '',
-      refNo: a.refNo ?? '',
-      amount: a.amount,
-    })),
+    amounts: (doc.amounts ?? []).map(serializeAmountLine),
     queueForPrinting: doc.queueForPrinting,
     active: doc.active,
     postedCount: doc.postedCount,
@@ -127,19 +120,19 @@ export async function PATCH(
     }
   }
   if (amounts !== undefined) {
-    doc.amounts = amounts.map((a) => ({
-      scopeType: a.scopeType,
-      scopeId: a.scopeId ? new Types.ObjectId(a.scopeId) : null,
-      unitId: a.unitId ? new Types.ObjectId(a.unitId) : null,
-      accountId: a.accountId
-        ? new Types.ObjectId(a.accountId)
-        : (null as unknown as Types.ObjectId),
-      description: a.description,
-      refNo: a.refNo,
-      amount: toCents(a.amount ?? 0),
-    }));
+    doc.amounts = amounts.map(
+      mapAmountLineToDb,
+    ) as unknown as typeof doc.amounts;
   }
 
+  await doc.save();
+
+  // Re-stamp warnings: an edit can introduce (or clear) an allocation that
+  // targets a company with no eligible properties, and the poster reads these.
+  doc.warnings = mergeWarnings(
+    doc.warnings ?? [],
+    computeWarnings(doc.toObject(), 'RecurringTransaction'),
+  );
   await doc.save();
 
   await logActivity({
