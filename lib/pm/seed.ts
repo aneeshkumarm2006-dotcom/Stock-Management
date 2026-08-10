@@ -29,7 +29,7 @@ import type {
  * idempotent seed when the org is behind — instead of the old "seeded count
  * is 0" backfill, which never fired for orgs that already had the ~16 rows.
  */
-export const CHART_SEED_VERSION = 2;
+export const CHART_SEED_VERSION = 3;
 
 interface SystemAccountSeed {
   name: string;
@@ -310,6 +310,28 @@ const ACCOUNT_GROUPS: AccountGroupSeed[] = [
       ],
       "Operating Expense",
       "Operating activities",
+    ),
+  },
+  {
+    // The balance-sheet side of a mortgage. The payment's interest portion is
+    // an expense ("Mortgage Interest" below, which already existed and must not
+    // be renamed — every historical posting points at it); the principal
+    // portion is a DEBIT here, reducing what is owed.
+    //
+    // A group with one leaf rather than a bare leaf: a second building means a
+    // second loan, and "Mortgage Payable — <address>" siblings are the obvious
+    // next step. No `defaultFor` role is assigned on purpose — BR-AC-5 permits
+    // one account per role per org, which would cap the org at a single
+    // mortgage-payable account org-wide. Each loan names its own account via
+    // `RecurringTransaction.mortgage.principalAccountId`.
+    name: "Long-term Liabilities",
+    type: "Long-term Liability",
+    defaultFor: null,
+    cashFlowClassification: "Financing activities",
+    children: leaves(
+      ["Mortgage Payable"],
+      "Long-term Liability",
+      "Financing activities",
     ),
   },
   {

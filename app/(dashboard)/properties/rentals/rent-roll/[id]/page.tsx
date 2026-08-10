@@ -31,6 +31,7 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CommunicationsTab } from "@/components/pm/CommunicationsTab";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { PmNativeCurrency } from "@/components/pm/PmCurrencyProvider";
 import { EvictionToggleDialog } from "@/components/pm/EvictionToggleDialog";
 import { RentersInsuranceModal } from "@/components/pm/RentersInsuranceModal";
 import { PetModal } from "@/components/pm/PetModal";
@@ -42,12 +43,15 @@ import {
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
 import { formatDateOnly } from "@/lib/utils/dateInput";
-import type { TenantType } from "@/types/pm";
+import type { PmCurrency, TenantType } from "@/types/pm";
 
 interface LeaseDetail {
   id: string;
   leaseNumber: number;
   propertyId: string;
+  /** Booking currency of this lease's property — covers every amount on the
+   *  page. Resolved server-side, so always concrete. */
+  currency: PmCurrency;
   unitId: string;
   tenants: Array<{
     tenantId: string;
@@ -211,7 +215,13 @@ export default function LeaseDetailPage() {
     await load();
   }
 
+  // Every amount on this page — rent, OPEX/tax splits, deposits, charges,
+  // insurance liability, and the Lease terms tab (which formats through
+  // usePmMoneyFormatter, not CurrencyAmount) — belongs to this one lease's
+  // property. `renderNative` declares that once here so none of them is
+  // FX-converted into a figure that matches no document the tenant holds.
   return (
+    <PmNativeCurrency currency={data.currency} renderNative>
     <div className="space-y-4">
       <div className="flex items-center gap-2 flex-wrap">
         <Link href="/properties/rentals/rent-roll">
@@ -220,6 +230,12 @@ export default function LeaseDetailPage() {
           </Button>
         </Link>
         <h1 className="text-xl font-semibold">Lease #{data.leaseNumber}</h1>
+        <Badge
+          variant="outline"
+          title="Currency this lease is billed in — the currency of its property. Amounts below do not change with the display-currency switch."
+        >
+          {data.currency}
+        </Badge>
         <Badge
           variant={
             data.status === "Active"
@@ -775,5 +791,6 @@ export default function LeaseDetailPage() {
         onSaved={load}
       />
     </div>
+    </PmNativeCurrency>
   );
 }

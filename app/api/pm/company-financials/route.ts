@@ -8,6 +8,17 @@
 //   - netIncomeCents over the requested window (cash- or accrual-mode)
 //   - propertyRollup[] (per-Property income / expense / net)
 //   - monthlyBalances[] (chart series — net by month within the window)
+//
+// CURRENCY. Every `*Cents` scalar below sums across properties, so in an org
+// running both a Montreal building (CAD) and a Florida one (USD) it adds unlike
+// units and the result carries no valid label. Those fields are kept for
+// backwards compatibility and are DEPRECATED; the currency-tagged
+// MoneyByCurrency equivalents (`netIncome`, `totalRevenue`, `estimatedIncomeTax`,
+// `afterTaxNet`, and `propertyRollup[].currency`) are the correct ones to read.
+//
+// Known gap: `companyCashCents` sums BankAccount balances and BankAccount has
+// no `currency` field at all — only Property and CompanyAccount carry one — so
+// company cash stays denominated in the org default until that schema gains it.
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
@@ -23,7 +34,9 @@ import {
 } from '@/lib/auth/getCurrentUser';
 import { computeBankRollups } from '@/lib/pm/bankBalances';
 import { collectCashJournalEntryIds } from '@/lib/pm/cashBasisFilter';
-import type { AccountingMode } from '@/types/pm';
+import { resolvePropertyCurrency } from '@/lib/pm/currency';
+import { addMoney, type MoneyByCurrency } from '@/lib/pm/moneyByCurrency';
+import type { AccountingMode, PmCurrency } from '@/types/pm';
 
 export const runtime = 'nodejs';
 
@@ -90,8 +103,14 @@ export async function GET(request: Request) {
     ).lean<Array<{ _id: Types.ObjectId; name: string; chartOfAccountId?: Types.ObjectId | null }>>(),
     Property.find(
       { organizationId: orgObjectId, active: true },
-      { _id: 1, propertyName: 1 },
-    ).lean<Array<{ _id: Types.ObjectId; propertyName: string }>>(),
+      { _id: 1, propertyName: 1, currency: 1 },
+    ).lean<
+      Array<{
+        _id: Types.ObjectId;
+        propertyName: string;
+        currency?: PmCurrency | null;
+      }>
+    >(),
     Bill.find(
       {
         organizationId: orgObjectId,
@@ -239,15 +258,51 @@ export async function GET(request: Request) {
     annual.set(year, abucket);
   }
 
+  // Every scope's currency, resolved once. `Property.currency` is optional by
+  // design (undefined = inherit the org default) so it is never read raw.
+  const currencyByProperty = new Map<string, PmCurrency>(
+    properties.map((p) => [
+      String(p._id),
+      resolvePropertyCurrency(p.currency, defaultCurrency),
+    ]),
+  );
+  /** Company-scoped activity sits on the org's own books. */
+  const currencyForScope = (scopeKey: string): PmCurrency =>
+    scopeKey === '__company__'
+      ? defaultCurrency
+      : (currencyByProperty.get(scopeKey) ?? defaultCurrency);
+
   const propertyRollup = Array.from(rollup.entries())
     .filter(([k]) => k !== '__company__')
     .map(([k, v]) => ({
       propertyId: k,
       propertyName: propertyNameById.get(k) ?? 'Unknown',
+      currency: currencyForScope(k),
       incomeCents: v.incomeCents,
       expenseCents: v.expenseCents,
       netCents: v.incomeCents - v.expenseCents,
     }));
+
+  // Currency-tagged equivalents of the headline scalars below. The `*Cents`
+  // fields are retained (and still summed across currencies) so nothing that
+  // reads them breaks; they are deprecated and meaningless in a mixed-currency
+  // org — see the file header.
+  const netIncome: MoneyByCurrency = {};
+  const totalRevenue: MoneyByCurrency = {};
+  for (const [scopeKey, v] of Array.from(rollup.entries())) {
+    const cur = currencyForScope(scopeKey);
+    addMoney(netIncome, cur, v.incomeCents - v.expenseCents);
+    addMoney(totalRevenue, cur, v.incomeCents);
+  }
+  const estimatedIncomeTax: MoneyByCurrency = {};
+  const afterTaxNet: MoneyByCurrency = {};
+  for (const [cur, cents] of Object.entries(netIncome)) {
+    const tax = Math.round(
+      (Math.max(0, cents ?? 0) * estimatedIncomeTaxRatePct) / 100,
+    );
+    estimatedIncomeTax[cur as PmCurrency] = tax;
+    afterTaxNet[cur as PmCurrency] = (cents ?? 0) - tax;
+  }
 
   const companyBucket = rollup.get('__company__') ?? {
     incomeCents: 0,
@@ -356,6 +411,12 @@ export async function GET(request: Request) {
     unpaidBillsCents,
     overdueBillsCount,
     netIncomeCents,
+    // Currency-tagged totals — prefer these over the `*Cents` scalars, which
+    // add unlike units in a mixed CAD/USD org.
+    netIncome,
+    totalRevenue,
+    estimatedIncomeTax,
+    afterTaxNet,
     // §6 — additive reporting fields. `totalRevenueCents = rental + investment`.
     totalRevenueCents,
     rentalRevenueCents,

@@ -37,6 +37,11 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import {
+  amortizationAt,
+  derivePaymentCents,
+  periodsPerYearFor,
+} from "@/lib/pm/amortization";
 import { ScopePicker, useCompanyAccounts } from "@/components/pm/ScopePicker";
 import { parseCurrencyToDollars } from "@/lib/pm/currency";
 import { scopeFromInput, scopeKeyOf } from "@/lib/pm/scope";
@@ -63,6 +68,9 @@ interface OwnerOption {
 interface AccountOption {
   id: string;
   name: string;
+  /** Kept so the pickers can filter: group headers are not postable. */
+  type: string;
+  isGroup: boolean;
 }
 interface BankOption {
   id: string;
@@ -86,9 +94,32 @@ interface AmountRow {
   amount: string;
   /** Split this amount across the named company's buildings. */
   split: boolean;
+  /**
+   * This line is the mortgage payment: the poster splits it into an interest
+   * leg and a principal leg using the rule-level loan terms. Only one line per
+   * rule may carry it.
+   */
+  splitAsMortgage: boolean;
   // Round-tripped, not edited here. See the file header.
   unitId: string | null;
   refNo: string | null;
+}
+
+/**
+ * Loan terms as edited. Everything is a string so a half-typed field doesn't
+ * become NaN; converted to numbers at submit, and to cents at the API boundary.
+ */
+interface MortgageForm {
+  originationDate: string;
+  originalPrincipal: string;
+  annualRatePct: string;
+  termPeriods: string;
+  compounding: "SemiAnnual" | "PeriodMatched";
+  paymentsAlreadyMade: string;
+  principalAccountId: string;
+  interestAccountId: string;
+  statementBalance: string;
+  statementDate: string;
 }
 
 /** GET /api/pm/company-accounts/[id]/properties */
@@ -210,8 +241,25 @@ function newAmountRow(): AmountRow {
     description: "",
     amount: "",
     split: false,
+    splitAsMortgage: false,
     unitId: null,
     refNo: null,
+  };
+}
+
+/** Empty loan terms — dollars/strings, converted at the API boundary. */
+function emptyMortgage(): MortgageForm {
+  return {
+    originationDate: "",
+    originalPrincipal: "",
+    annualRatePct: "",
+    termPeriods: "",
+    compounding: "SemiAnnual",
+    paymentsAlreadyMade: "",
+    principalAccountId: "",
+    interestAccountId: "",
+    statementBalance: "",
+    statementDate: "",
   };
 }
 
@@ -269,7 +317,25 @@ export function EditRecurringCheckModal({
   const [amounts, setAmounts] = React.useState<AmountRow[]>(() => [
     newAmountRow(),
   ]);
+  const [mortgage, setMortgage] = React.useState<MortgageForm>(emptyMortgage);
   const [saving, setSaving] = React.useState(false);
+
+  // Postable accounts only — the chart-of-accounts endpoint returns group
+  // headers too, and posting to one is not valid.
+  const postable = React.useMemo(
+    () => accounts.filter((a) => !a.isGroup),
+    [accounts],
+  );
+  const liabilityAccounts = React.useMemo(
+    () => postable.filter((a) => a.type === "Long-term Liability"),
+    [postable],
+  );
+  const expenseAccounts = React.useMemo(
+    () => postable.filter((a) => a.type === "Operating Expense"),
+    [postable],
+  );
+  const mortgageLineIndex = amounts.findIndex((a) => a.splitAsMortgage);
+  const isMortgageRule = mortgageLineIndex >= 0;
 
   React.useEffect(() => {
     if (!open) return;
@@ -320,9 +386,22 @@ export function EditRecurringCheckModal({
           description: string;
           amount: number;
           allocation?: { mode?: string } | null;
+          splitAsMortgage?: boolean;
           unitId?: string | null;
           refNo?: string | null;
         }>;
+        mortgage?: {
+          originationDate: string;
+          originalPrincipalCents: number;
+          annualRatePct: number;
+          termPeriods: number;
+          compounding: "SemiAnnual" | "PeriodMatched";
+          paymentsAlreadyMade: number;
+          principalAccountId: string | null;
+          interestAccountId: string | null;
+          statementBalanceCents: number | null;
+          statementDate: string | null;
+        } | null;
       };
       setType(d.type);
       setPayeeType(d.payee?.type ?? "Vendor");
@@ -337,6 +416,29 @@ export function EditRecurringCheckModal({
       setQueueForPrinting(d.queueForPrinting);
       setActive(d.active);
       setApplyAll({ scopeType: "Company", scopeId: "" });
+      setMortgage(
+        d.mortgage
+          ? {
+              originationDate: d.mortgage.originationDate,
+              originalPrincipal: String(
+                d.mortgage.originalPrincipalCents / 100,
+              ),
+              annualRatePct: String(d.mortgage.annualRatePct),
+              termPeriods: String(d.mortgage.termPeriods),
+              compounding: d.mortgage.compounding,
+              paymentsAlreadyMade: d.mortgage.paymentsAlreadyMade
+                ? String(d.mortgage.paymentsAlreadyMade)
+                : "",
+              principalAccountId: d.mortgage.principalAccountId ?? "",
+              interestAccountId: d.mortgage.interestAccountId ?? "",
+              statementBalance:
+                d.mortgage.statementBalanceCents == null
+                  ? ""
+                  : String(d.mortgage.statementBalanceCents / 100),
+              statementDate: d.mortgage.statementDate ?? "",
+            }
+          : emptyMortgage(),
+      );
       setAmounts(
         d.amounts.map((a) => {
           // Normalise through the same predicate the server uses, so a legacy
@@ -355,6 +457,10 @@ export function EditRecurringCheckModal({
           // server returns cents; show dollars as editable text
           amount: String(a.amount / 100),
           split: a.allocation?.mode === "CompanyProperties",
+          // Round-tripping this matters: dropping it here would mean opening a
+          // configured mortgage and pressing Save silently reverts the rule to
+          // booking 100% of the payment as expense, with no error shown.
+          splitAsMortgage: a.splitAsMortgage === true,
           unitId: a.unitId ?? null,
           // GET returns '' rather than null for an unset refNo; normalise so
           // the submit path can send `undefined` (the validator types refNo as
@@ -510,6 +616,7 @@ export function EditRecurringCheckModal({
       description: string | undefined;
       amount: number;
       allocation: { mode: "CompanyProperties"; basis: "Equal" } | null;
+      splitAsMortgage: boolean;
       unitId: string | null;
       refNo: string | undefined;
     }> = [];
@@ -544,6 +651,7 @@ export function EditRecurringCheckModal({
           a.split && a.scopeType === "Company" && a.scopeId
             ? { mode: "CompanyProperties", basis: "Equal" }
             : null,
+        splitAsMortgage: a.splitAsMortgage === true,
         unitId: a.scopeType === "Property" ? a.unitId : null,
         refNo: a.refNo ?? undefined,
       });
@@ -563,6 +671,28 @@ export function EditRecurringCheckModal({
       duration,
       occurrenceCount: duration === "End after N" ? occurrenceCount : null,
       amounts: parsedAmounts,
+      // Send `null` when no line is flagged, so unticking the box clears the
+      // terms rather than leaving orphaned loan data behind.
+      mortgage: parsedAmounts.some((a) => a.splitAsMortgage)
+        ? {
+            originationDate: new Date(
+              mortgage.originationDate,
+            ).toISOString(),
+            originalPrincipal: Number(mortgage.originalPrincipal),
+            annualRatePct: Number(mortgage.annualRatePct),
+            termPeriods: Number(mortgage.termPeriods),
+            compounding: mortgage.compounding,
+            paymentsAlreadyMade: Number(mortgage.paymentsAlreadyMade || 0),
+            principalAccountId: mortgage.principalAccountId,
+            interestAccountId: mortgage.interestAccountId,
+            statementBalance: mortgage.statementBalance
+              ? Number(mortgage.statementBalance)
+              : null,
+            statementDate: mortgage.statementDate
+              ? new Date(mortgage.statementDate).toISOString()
+              : null,
+          }
+        : null,
       queueForPrinting,
       active,
     };
@@ -855,7 +985,9 @@ export function EditRecurringCheckModal({
                           }
                         >
                           <option value="">Choose…</option>
-                          {accounts.map((acc) => (
+                          {/* Group headers are not postable — they exist to
+                              nest the chart, not to receive entries. */}
+                          {postable.map((acc) => (
                             <option key={acc.id} value={acc.id}>
                               {acc.name}
                             </option>
@@ -894,6 +1026,39 @@ export function EditRecurringCheckModal({
                         </button>
                       </td>
                     </tr>
+                    {/* Mortgage toggle. Offered on every row, but only one row
+                        per rule may carry it — a second loan belongs on its own
+                        rule with its own origination date. Hidden entirely on a
+                        split row: allocating a mortgage across properties would
+                        need the PRINCIPAL SERIES allocated rather than the
+                        payment, which is a separate feature. */}
+                    {!a.split ? (
+                      <tr className="border-b border-border/40 bg-surface/40">
+                        <td colSpan={5} className="px-2 py-1.5">
+                          <label className="flex items-center gap-2 text-xs text-fg-muted">
+                            <input
+                              type="checkbox"
+                              checked={a.splitAsMortgage}
+                              disabled={isMortgageRule && !a.splitAsMortgage}
+                              onChange={(e) =>
+                                updateRow(
+                                  i,
+                                  "splitAsMortgage",
+                                  e.target.checked,
+                                )
+                              }
+                            />
+                            This is a mortgage payment — split it into interest
+                            and principal
+                            {isMortgageRule && !a.splitAsMortgage && (
+                              <span className="italic">
+                                (already set on line {mortgageLineIndex + 1})
+                              </span>
+                            )}
+                          </label>
+                        </td>
+                      </tr>
+                    ) : null}
                     {/* Rendered ONLY when this row names a company, which is
                         zero rows on any rule that existed before this shipped —
                         so nothing already set up changes appearance. */}
@@ -941,6 +1106,21 @@ export function EditRecurringCheckModal({
             )}
           </div>
 
+          {isMortgageRule && (
+            <MortgageTerms
+              value={mortgage}
+              onChange={setMortgage}
+              paymentCents={Math.round(
+                (parseCurrencyToDollars(
+                  amounts[mortgageLineIndex]?.amount ?? "",
+                ) ?? 0) * 100,
+              )}
+              frequency={frequency}
+              liabilityAccounts={liabilityAccounts}
+              expenseAccounts={expenseAccounts}
+            />
+          )}
+
           <div className="flex flex-wrap gap-4 text-sm text-fg">
             {type === "Check" && (
               <label className="flex items-center gap-2">
@@ -982,5 +1162,288 @@ export function EditRecurringCheckModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Loan terms for a mortgage rule, plus a live preview of what the next payment
+ * will actually post.
+ *
+ * The preview is the point. The client supplies "amount, rate and term", but
+ * the split also depends on the origination date and the compounding
+ * convention, and a wrong input produces a plausible-looking number rather than
+ * an error. Showing the interest/principal split and the resulting balance next
+ * to the lender's own statement figure is what makes a wrong input visible
+ * before anything posts.
+ */
+function MortgageTerms({
+  value,
+  onChange,
+  paymentCents,
+  frequency,
+  liabilityAccounts,
+  expenseAccounts,
+}: {
+  value: MortgageForm;
+  onChange: (next: MortgageForm) => void;
+  paymentCents: number;
+  frequency: RecurringFrequency;
+  liabilityAccounts: AccountOption[];
+  expenseAccounts: AccountOption[];
+}) {
+  const set = <K extends keyof MortgageForm>(k: K, v: MortgageForm[K]) =>
+    onChange({ ...value, [k]: v });
+
+  // Everything below is derived, never stored — the balance at any date is a
+  // pure function of the terms plus the payment number.
+  const preview = React.useMemo((): {
+    scheduled?: number;
+    first?: ReturnType<typeof amortizationAt>;
+    error?: string;
+  } | null => {
+    const principal = Math.round(Number(value.originalPrincipal) * 100);
+    const rate = Number(value.annualRatePct);
+    const term = Number(value.termPeriods);
+    if (!value.originationDate || !principal || !term || Number.isNaN(rate)) {
+      return null;
+    }
+    let periodsPerYear: number;
+    try {
+      periodsPerYear = periodsPerYearFor(frequency);
+    } catch (e) {
+      return { error: (e as Error).message };
+    }
+    const terms = {
+      originalPrincipalCents: principal,
+      annualRatePct: rate,
+      termPeriods: term,
+      periodsPerYear,
+      compounding: value.compounding,
+    };
+    try {
+      const scheduled = derivePaymentCents(terms);
+      if (!paymentCents) return { scheduled };
+      return {
+        scheduled,
+        first: amortizationAt({ ...terms, paymentCents }, 1),
+      };
+    } catch (e) {
+      return { error: (e as Error).message };
+    }
+  }, [
+    value.originationDate,
+    value.originalPrincipal,
+    value.annualRatePct,
+    value.termPeriods,
+    value.compounding,
+    paymentCents,
+    frequency,
+  ]);
+
+  // A large gap between the entered payment and the annuity payment means one
+  // of the four inputs is wrong. Advisory, not blocking — the entered payment
+  // is what actually leaves the bank and must stay authoritative.
+  const drift =
+    preview?.scheduled && paymentCents
+      ? Math.abs(paymentCents - preview.scheduled)
+      : 0;
+  const driftMatters = drift > Math.max(500, Math.round(paymentCents * 0.01));
+
+  return (
+    <div className="space-y-3 rounded border border-border bg-surface/40 p-3">
+      <div className="text-xs font-bold uppercase tracking-widest text-fg-muted">
+        Mortgage terms
+      </div>
+      <p className="text-xs text-fg-muted">
+        The payment above is what leaves the bank and is never recalculated —
+        only its split into interest and principal is computed. Interest is
+        charged to the expense account below; principal reduces the loan.
+      </p>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="mtg-origination">Origination date</Label>
+          <Input
+            id="mtg-origination"
+            type="date"
+            value={value.originationDate}
+            onChange={(e) => set("originationDate", e.target.value)}
+          />
+          <p className="mt-1 text-[11px] text-fg-muted">
+            The date the loan started, not the date it was entered here. Payment
+            numbers are counted from it.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="mtg-principal">Original loan amount</Label>
+          <Input
+            id="mtg-principal"
+            type="text"
+            inputMode="decimal"
+            placeholder="0.00"
+            value={value.originalPrincipal}
+            onChange={(e) => set("originalPrincipal", e.target.value)}
+          />
+          <p className="mt-1 text-[11px] text-fg-muted">
+            The amount borrowed at the start — not the monthly payment, and not
+            the balance today.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="mtg-rate">Annual interest rate (%)</Label>
+          <Input
+            id="mtg-rate"
+            type="number"
+            step="0.001"
+            value={value.annualRatePct}
+            onChange={(e) => set("annualRatePct", e.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="mtg-term">Amortization (number of payments)</Label>
+          <Input
+            id="mtg-term"
+            type="number"
+            value={value.termPeriods}
+            onChange={(e) => set("termPeriods", e.target.value)}
+          />
+          <p className="mt-1 text-[11px] text-fg-muted">
+            300 = 25 years of monthly payments.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="mtg-compounding">Compounding</Label>
+          <select
+            id="mtg-compounding"
+            className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
+            value={value.compounding}
+            onChange={(e) =>
+              set("compounding", e.target.value as MortgageForm["compounding"])
+            }
+          >
+            <option value="SemiAnnual">Semi-annual (Canadian)</option>
+            <option value="PeriodMatched">Monthly (US)</option>
+          </select>
+          <p className="mt-1 text-[11px] text-fg-muted">
+            Canadian mortgages compound semi-annually by law. Check a lender
+            statement — the two differ by roughly $1,300 over a $1M 25-year term.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="mtg-already">Payments already made (optional)</Label>
+          <Input
+            id="mtg-already"
+            type="number"
+            value={value.paymentsAlreadyMade}
+            onChange={(e) => set("paymentsAlreadyMade", e.target.value)}
+          />
+          <p className="mt-1 text-[11px] text-fg-muted">
+            Only if the true origination date is unavailable. Prefer the date.
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="mtg-interest-acct">Interest account (expense)</Label>
+          <select
+            id="mtg-interest-acct"
+            className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
+            value={value.interestAccountId}
+            onChange={(e) => set("interestAccountId", e.target.value)}
+          >
+            <option value="">Choose…</option>
+            {expenseAccounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label htmlFor="mtg-principal-acct">
+            Principal account (long-term liability)
+          </Label>
+          <select
+            id="mtg-principal-acct"
+            className="w-full rounded border border-border bg-surface px-2 py-1 text-sm text-fg"
+            value={value.principalAccountId}
+            onChange={(e) => set("principalAccountId", e.target.value)}
+          >
+            <option value="">Choose…</option>
+            {liabilityAccounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          {liabilityAccounts.length === 0 && (
+            <p className="mt-1 text-[11px] text-warning">
+              No long-term liability account exists yet. Open Accounting → Chart
+              of accounts once to create Mortgage Payable.
+            </p>
+          )}
+        </div>
+        <div>
+          <Label htmlFor="mtg-stmt-balance">
+            Lender statement balance (optional)
+          </Label>
+          <Input
+            id="mtg-stmt-balance"
+            type="text"
+            inputMode="decimal"
+            placeholder="0.00"
+            value={value.statementBalance}
+            onChange={(e) => set("statementBalance", e.target.value)}
+          />
+        </div>
+        <div>
+          <Label htmlFor="mtg-stmt-date">…as at</Label>
+          <Input
+            id="mtg-stmt-date"
+            type="date"
+            value={value.statementDate}
+            onChange={(e) => set("statementDate", e.target.value)}
+          />
+          <p className="mt-1 text-[11px] text-fg-muted">
+            Recorded as a check, never used in a calculation. If our schedule
+            disagrees with the lender by more than a few dollars, the terms are
+            wrong.
+          </p>
+        </div>
+      </div>
+
+      {preview?.error && (
+        <p className="rounded border border-loss/40 bg-loss/10 px-2 py-1.5 text-xs text-fg">
+          {preview.error}
+        </p>
+      )}
+
+      {preview?.first && (
+        <div className="rounded border border-border bg-bg-elevated px-2 py-1.5 text-xs text-fg">
+          <span className="font-bold">First payment splits as</span> interest{" "}
+          <CurrencyAmount cents={preview.first.interestCents} convert={false} />{" "}
+          + principal{" "}
+          <CurrencyAmount
+            cents={preview.first.principalCents}
+            convert={false}
+          />
+          , leaving a balance of{" "}
+          <CurrencyAmount
+            cents={preview.first.closingBalanceCents}
+            convert={false}
+          />
+          .
+        </div>
+      )}
+
+      {driftMatters && preview?.scheduled != null && (
+        <p className="rounded border border-warning/40 bg-warning/10 px-2 py-1.5 text-xs text-fg">
+          These terms imply a payment of{" "}
+          <CurrencyAmount cents={preview.scheduled} convert={false} />, but the
+          line above says{" "}
+          <CurrencyAmount cents={paymentCents} convert={false} />. The entered
+          payment is what will post — but a gap this size usually means the
+          principal, rate, term or compounding is wrong.
+        </p>
+      )}
+    </div>
   );
 }

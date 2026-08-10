@@ -7,6 +7,21 @@
 // matrix endpoint currently returns the same numbers in both modes (Phase 9
 // implements true cash-basis), but the toggle still demonstrates BR-AC-2
 // (toggling NEVER modifies the journal — only the read path).
+//
+// CURRENCY. A Montreal building books in CAD and a Florida one in USD, so the
+// old `s += cellAmount(...)` row and grand totals were adding unlike units and
+// then labelling the result with whichever currency the top-bar toggle happened
+// to be on. Now:
+//   - each property column renders in its OWN currency and never converts;
+//   - a "CAD total" / "USD total" subtotal column closes each currency group;
+//   - only the Total column converts, via MoneyTotal over a MoneyByCurrency.
+// So `CAD total + USD total == Total` is checkable by eye, which is the
+// reconciliation the client actually performs.
+//
+// The subtotal columns are a CLIENT-SIDE view model and are deliberately NOT
+// pushed into `data.columns`: row renderers iterate the view model, but every
+// total computation iterates `data.columns` only. Mixing the two would make the
+// subtotals count themselves.
 "use client";
 
 import * as React from "react";
@@ -17,7 +32,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
-import { fromCents } from "@/lib/pm/currency";
+import { MoneyTotal } from "@/components/pm/MoneyTotal";
+import { addMoney, type MoneyByCurrency } from "@/lib/pm/moneyByCurrency";
+import type { PmCurrency } from "@/types/pm";
 
 interface Account {
   id: string;
@@ -27,6 +44,8 @@ interface Account {
 interface Column {
   id: string;
   name: string;
+  /** Resolved server-side; always concrete. Determines every cell beneath it. */
+  currency: PmCurrency;
 }
 interface Cell {
   accountId: string;
@@ -36,17 +55,47 @@ interface Cell {
 interface Matrix {
   accountingMode: "cash" | "accrual";
   estimatedIncomeTaxRatePct: number;
+  orgDefaultCurrency: PmCurrency;
   accounts: Account[];
   columns: Column[];
   cells: Cell[];
 }
+
+/**
+ * What the table actually draws: the real property columns, with a synthetic
+ * per-currency subtotal column closing each currency group. Only `kind:
+ * "property"` entries correspond to a `data.columns` row — totals must never
+ * iterate this list.
+ */
+type RenderCol =
+  | { kind: "property"; id: string; name: string; currency: PmCurrency }
+  | { kind: "subtotal"; currency: PmCurrency };
+
+const renderColKey = (c: RenderCol) =>
+  c.kind === "property" ? c.id : `subtotal:${c.currency}`;
+
+/** Org-default currency group first, then the rest alphabetically. */
+function orderCurrencies(
+  present: PmCurrency[],
+  orgDefault: PmCurrency,
+): PmCurrency[] {
+  return [...present].sort((a, b) => {
+    if (a === b) return 0;
+    if (a === orgDefault) return -1;
+    if (b === orgDefault) return 1;
+    return a.localeCompare(b);
+  });
+}
 interface ReconReasonBucket {
   count: number;
   cents: number;
+  totals: MoneyByCurrency;
 }
 interface ReconSummary {
   totalUnreflected: number;
+  /** @deprecated mixes currencies — use `totals`. */
   totalUnreflectedCents: number;
+  totals: MoneyByCurrency;
   byReason: Record<string, ReconReasonBucket>;
 }
 
@@ -200,34 +249,103 @@ export default function FinancialsPage() {
   function cellAmount(accountId: string, columnId: string): number {
     return cellMap.get(`${accountId}|${columnId}`) ?? 0;
   }
-  function rowTotal(accountId: string): number {
-    let s = 0;
-    if (!data) return 0;
-    for (const col of data.columns) s += cellAmount(accountId, col.id);
-    return s;
+  /** Currency-tagged: a row spans every column, so it can span currencies. */
+  function rowTotals(accountId: string): MoneyByCurrency {
+    const acc: MoneyByCurrency = {};
+    if (!data) return acc;
+    for (const col of data.columns) {
+      addMoney(acc, col.currency, cellAmount(accountId, col.id));
+    }
+    return acc;
   }
+  /** Single column ⇒ single currency ⇒ a plain number is correct here. */
   function columnTotal(columnId: string, accounts: Account[]): number {
     let s = 0;
     for (const a of accounts) s += cellAmount(a.id, columnId);
     return s;
   }
+  /** Sum of the columns booking in one currency — same unit throughout. */
+  function currencySubtotal(
+    currency: PmCurrency,
+    accounts: Account[],
+  ): number {
+    if (!data) return 0;
+    let s = 0;
+    for (const col of data.columns) {
+      if (col.currency === currency) s += columnTotal(col.id, accounts);
+    }
+    return s;
+  }
 
-  // §6 — derived estimated income-tax footer (company-column only, no GL
-  // write). Applies the org rate to positive grand net income.
-  const grandNetCents = data
-    ? data.columns.reduce(
-        (s, col) =>
-          s +
-          columnTotal(col.id, incomeAccounts) -
+  // The currency groups actually present, and the render list that closes each
+  // one with a subtotal column. Company sits in the org-default group, so that
+  // subtotal is labelled by currency ("CAD total") rather than by geography —
+  // it is not "the Canadian properties", and a footnote below says so.
+  const currencies = React.useMemo<PmCurrency[]>(() => {
+    if (!data) return [];
+    return orderCurrencies(
+      Array.from(new Set(data.columns.map((c) => c.currency))),
+      data.orgDefaultCurrency,
+    );
+  }, [data]);
+
+  const renderCols = React.useMemo<RenderCol[]>(() => {
+    if (!data) return [];
+    const out: RenderCol[] = [];
+    for (const cur of currencies) {
+      for (const c of data.columns) {
+        if (c.currency !== cur) continue;
+        out.push({
+          kind: "property",
+          id: c.id,
+          name: c.name,
+          currency: c.currency,
+        });
+      }
+      // A lone currency group would make the subtotal a duplicate of the Total
+      // column, so only draw it when there is genuinely something to separate.
+      if (currencies.length > 1) out.push({ kind: "subtotal", currency: cur });
+    }
+    return out;
+  }, [data, currencies]);
+
+  // §6 — derived estimated income-tax footer (no GL write). Bucketed per
+  // currency: a US loss no longer offsets Canadian profit, which is both the
+  // more defensible reading (two tax authorities) and the only way to keep this
+  // line independent of a live FX rate.
+  const grandNet = React.useMemo<MoneyByCurrency>(() => {
+    const acc: MoneyByCurrency = {};
+    if (!data) return acc;
+    for (const col of data.columns) {
+      addMoney(
+        acc,
+        col.currency,
+        columnTotal(col.id, incomeAccounts) -
           columnTotal(col.id, expenseAccounts),
-        0,
-      )
-    : 0;
+      );
+    }
+    return acc;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, cellMap]);
+
   const taxRatePct = data?.estimatedIncomeTaxRatePct ?? 0;
-  const estimatedTaxCents = Math.round(
-    (Math.max(0, grandNetCents) * taxRatePct) / 100,
-  );
-  const afterTaxNetCents = grandNetCents - estimatedTaxCents;
+  const estimatedTax = React.useMemo<MoneyByCurrency>(() => {
+    const acc: MoneyByCurrency = {};
+    for (const [cur, cents] of Object.entries(grandNet)) {
+      acc[cur as PmCurrency] = Math.round(
+        (Math.max(0, cents ?? 0) * taxRatePct) / 100,
+      );
+    }
+    return acc;
+  }, [grandNet, taxRatePct]);
+  const afterTaxNet = React.useMemo<MoneyByCurrency>(() => {
+    const acc: MoneyByCurrency = {};
+    for (const [cur, cents] of Object.entries(grandNet)) {
+      acc[cur as PmCurrency] =
+        (cents ?? 0) - (estimatedTax[cur as PmCurrency] ?? 0);
+    }
+    return acc;
+  }, [grandNet, estimatedTax]);
 
   return (
     <div className="space-y-4">
@@ -360,7 +478,7 @@ export default function FinancialsPage() {
               <span className="font-bold">
                 {recon.totalUnreflected} bill
                 {recon.totalUnreflected === 1 ? "" : "s"} totaling{" "}
-                <CurrencyAmount value={fromCents(recon.totalUnreflectedCents)} />
+                <MoneyTotal totals={recon.totals} />
               </span>{" "}
               {recon.totalUnreflected === 1 ? "is" : "are"} not reflected here
               {reconBreakdown(recon) ? ` (${reconBreakdown(recon)})` : ""}.{" "}
@@ -386,77 +504,121 @@ export default function FinancialsPage() {
                 <thead className="border-b border-border bg-surface text-left text-xs uppercase tracking-widest text-fg-muted">
                   <tr>
                     <th className="px-2 py-2">Account</th>
-                    {data.columns.map((c) => (
-                      <th key={c.id} className="px-2 py-2 text-right">
-                        {c.name}
+                    {renderCols.map((c) => (
+                      <th
+                        key={renderColKey(c)}
+                        className={
+                          "px-2 py-2 text-right align-bottom " +
+                          (c.kind === "subtotal"
+                            ? "border-l border-border bg-surface-high"
+                            : "")
+                        }
+                      >
+                        {c.kind === "property" ? c.name : `${c.currency} total`}
+                        {/* Block child: adds height once for every header, so
+                            rows stay aligned and no column gets wider. An
+                            inline tag would force horizontal scroll. */}
+                        <span className="block text-[10px] font-normal normal-case tracking-normal text-fg-muted">
+                          {c.currency}
+                        </span>
                       </th>
                     ))}
-                    <th className="px-2 py-2 text-right">Total</th>
+                    <th className="px-2 py-2 text-right align-bottom">
+                      Total
+                      <span className="block text-[10px] font-normal normal-case tracking-normal text-fg-muted">
+                        converted
+                      </span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   <SectionHeader
                     label="Income"
-                    colSpan={data.columns.length + 2}
+                    colSpan={renderCols.length + 2}
                   />
                   {incomeAccounts.map((a) => (
                     <MatrixRow
                       key={a.id}
                       account={a}
-                      columns={data.columns}
+                      renderCols={renderCols}
                       cellAmount={cellAmount}
+                      currencySubtotal={(cur) =>
+                        currencySubtotal(cur, [a])
+                      }
                       from={from}
                       to={to}
-                      total={rowTotal(a.id)}
+                      totals={rowTotals(a.id)}
                     />
                   ))}
                   <TotalsRow
                     label="Income subtotal"
-                    columns={data.columns}
+                    renderCols={renderCols}
                     valueFor={(colId) => columnTotal(colId, incomeAccounts)}
+                    subtotalFor={(cur) => currencySubtotal(cur, incomeAccounts)}
                   />
                   <SectionHeader
                     label="Operating expenses"
-                    colSpan={data.columns.length + 2}
+                    colSpan={renderCols.length + 2}
                   />
                   {expenseAccounts.map((a) => (
                     <MatrixRow
                       key={a.id}
                       account={a}
-                      columns={data.columns}
+                      renderCols={renderCols}
                       cellAmount={cellAmount}
+                      currencySubtotal={(cur) =>
+                        currencySubtotal(cur, [a])
+                      }
                       from={from}
                       to={to}
-                      total={rowTotal(a.id)}
+                      totals={rowTotals(a.id)}
                     />
                   ))}
                   <TotalsRow
                     label="Expense subtotal"
-                    columns={data.columns}
+                    renderCols={renderCols}
                     valueFor={(colId) => columnTotal(colId, expenseAccounts)}
+                    subtotalFor={(cur) => currencySubtotal(cur, expenseAccounts)}
                   />
                   <TotalsRow
                     label="Net (Income − Expense)"
-                    columns={data.columns}
+                    renderCols={renderCols}
                     bold
                     valueFor={(colId) =>
                       columnTotal(colId, incomeAccounts) -
                       columnTotal(colId, expenseAccounts)
                     }
+                    subtotalFor={(cur) =>
+                      currencySubtotal(cur, incomeAccounts) -
+                      currencySubtotal(cur, expenseAccounts)
+                    }
                   />
-                  {/* §6 — derived estimated income tax (company column only)
-                      + after-tax net. Shown once a rate is configured. */}
+                  {/* §6 — derived estimated income tax + after-tax net, per
+                      currency. It sits on the subtotal columns rather than on
+                      the Company column, where its old placement was a fiction:
+                      the tax is computed on the whole currency group's net, not
+                      on the company's own books. */}
                   {taxRatePct > 0 && (
                     <>
                       <tr className="border-b border-border bg-surface">
                         <td className="px-2 py-1 text-xs uppercase tracking-widest text-fg-muted">
                           Estimated income taxes ({taxRatePct}%)
                         </td>
-                        {data.columns.map((c) => (
-                          <td key={c.id} className="px-2 py-1 text-right">
-                            {c.id === "company" ? (
+                        {renderCols.map((c) => (
+                          <td
+                            key={renderColKey(c)}
+                            className={
+                              "px-2 py-1 text-right " +
+                              (c.kind === "subtotal"
+                                ? "border-l border-border bg-surface-high"
+                                : "")
+                            }
+                          >
+                            {c.kind === "subtotal" ? (
                               <CurrencyAmount
-                                value={fromCents(-estimatedTaxCents)}
+                                cents={-(estimatedTax[c.currency] ?? 0)}
+                                currency={c.currency}
+                                convert={false}
                               />
                             ) : (
                               <span className="text-fg-muted">—</span>
@@ -464,23 +626,36 @@ export default function FinancialsPage() {
                           </td>
                         ))}
                         <td className="px-2 py-1 text-right">
-                          <CurrencyAmount value={fromCents(-estimatedTaxCents)} />
+                          <MoneyTotal totals={negate(estimatedTax)} />
                         </td>
                       </tr>
                       <tr className="border-b border-border bg-surface">
                         <td className="px-2 py-1 text-xs font-bold uppercase tracking-widest text-fg-muted">
                           After-tax net
                         </td>
-                        {data.columns.map((c) => (
+                        {renderCols.map((c) => (
                           <td
-                            key={c.id}
-                            className="px-2 py-1 text-right text-fg-muted"
+                            key={renderColKey(c)}
+                            className={
+                              "px-2 py-1 text-right font-bold " +
+                              (c.kind === "subtotal"
+                                ? "border-l border-border bg-surface-high"
+                                : "text-fg-muted")
+                            }
                           >
-                            —
+                            {c.kind === "subtotal" ? (
+                              <CurrencyAmount
+                                cents={afterTaxNet[c.currency] ?? 0}
+                                currency={c.currency}
+                                convert={false}
+                              />
+                            ) : (
+                              "—"
+                            )}
                           </td>
                         ))}
                         <td className="px-2 py-1 text-right font-bold">
-                          <CurrencyAmount value={fromCents(afterTaxNetCents)} />
+                          <MoneyTotal totals={afterTaxNet} />
                         </td>
                       </tr>
                     </>
@@ -489,47 +664,99 @@ export default function FinancialsPage() {
               </table>
             </div>
           )}
+          {!loading && data && data.accounts.length > 0 && (
+            <p className="mt-2 text-xs text-fg-muted">
+              Each property column is shown in the currency that property books
+              in and does not change when you switch the display currency. Only
+              the <strong>Total</strong> column converts.
+              {currencies.length > 1 && (
+                <>
+                  {" "}
+                  The <strong>{data.orgDefaultCurrency} total</strong> column
+                  includes the Company column, which is kept on the
+                  organisation&apos;s own books — so the subtotals still add up
+                  to the Total.
+                </>
+              )}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
 
+/** Flip the sign of every bucket — for the "taxes reduce net" presentation. */
+function negate(totals: MoneyByCurrency): MoneyByCurrency {
+  const out: MoneyByCurrency = {};
+  for (const [cur, cents] of Object.entries(totals)) {
+    out[cur as PmCurrency] = -(cents ?? 0);
+  }
+  return out;
+}
+
 function MatrixRow({
   account,
-  columns,
+  renderCols,
   cellAmount,
+  currencySubtotal,
   from,
   to,
-  total,
+  totals,
 }: {
   account: Account;
-  columns: Column[];
+  renderCols: RenderCol[];
   cellAmount: (accountId: string, columnId: string) => number;
+  currencySubtotal: (currency: PmCurrency) => number;
   from: string;
   to: string;
-  total: number;
+  totals: MoneyByCurrency;
 }) {
   return (
     <tr className="border-b border-border/30">
       <td className="px-2 py-1 text-fg">{account.name}</td>
-      {columns.map((c) => {
+      {renderCols.map((c) => {
+        if (c.kind === "subtotal") {
+          const v = currencySubtotal(c.currency);
+          return (
+            <td
+              key={renderColKey(c)}
+              className="border-l border-border bg-surface-high/50 px-2 py-1 text-right font-medium"
+            >
+              {v === 0 ? (
+                <span className="text-fg-muted">—</span>
+              ) : (
+                <CurrencyAmount
+                  cents={v}
+                  currency={c.currency}
+                  convert={false}
+                />
+              )}
+            </td>
+          );
+        }
         const v = cellAmount(account.id, c.id);
         const href = drillHref(account.id, c.id, from, to);
         return (
-          <td key={c.id} className="px-2 py-1 text-right">
+          <td key={renderColKey(c)} className="px-2 py-1 text-right">
             {v === 0 ? (
               <span className="text-fg-muted">—</span>
             ) : (
               <Link href={href} className="hover:underline">
-                <CurrencyAmount value={fromCents(v)} />
+                {/* Native: this cell belongs to one property, so converting it
+                    would produce a figure matching nothing in the ledger. */}
+                <CurrencyAmount
+                  cents={v}
+                  currency={c.currency}
+                  convert={false}
+                />
               </Link>
             )}
           </td>
         );
       })}
       <td className="px-2 py-1 text-right font-medium">
-        <CurrencyAmount value={fromCents(total)} />
+        <MoneyTotal totals={totals} />
       </td>
     </tr>
   );
@@ -550,17 +777,24 @@ function SectionHeader({ label, colSpan }: { label: string; colSpan: number }) {
 
 function TotalsRow({
   label,
-  columns,
+  renderCols,
   valueFor,
+  subtotalFor,
   bold = false,
 }: {
   label: string;
-  columns: Column[];
+  renderCols: RenderCol[];
   valueFor: (columnId: string) => number;
+  subtotalFor: (currency: PmCurrency) => number;
   bold?: boolean;
 }) {
-  let grand = 0;
-  for (const c of columns) grand += valueFor(c.id);
+  // The grand total accumulates from the REAL columns only. Reading it off
+  // renderCols would count every property twice — once in its own column and
+  // again in its currency's subtotal.
+  const grand: MoneyByCurrency = {};
+  for (const c of renderCols) {
+    if (c.kind === "property") addMoney(grand, c.currency, valueFor(c.id));
+  }
   return (
     <tr className="border-b border-border bg-surface">
       <td
@@ -571,16 +805,28 @@ function TotalsRow({
       >
         {label}
       </td>
-      {columns.map((c) => (
+      {renderCols.map((c) => (
         <td
-          key={c.id}
-          className={"px-2 py-1 text-right " + (bold ? "font-bold" : "")}
+          key={renderColKey(c)}
+          className={
+            "px-2 py-1 text-right " +
+            (bold ? "font-bold " : "") +
+            (c.kind === "subtotal"
+              ? "border-l border-border bg-surface-high font-bold"
+              : "")
+          }
         >
-          <CurrencyAmount value={fromCents(valueFor(c.id))} />
+          <CurrencyAmount
+            cents={
+              c.kind === "subtotal" ? subtotalFor(c.currency) : valueFor(c.id)
+            }
+            currency={c.currency}
+            convert={false}
+          />
         </td>
       ))}
       <td className={"px-2 py-1 text-right " + (bold ? "font-bold" : "")}>
-        <CurrencyAmount value={fromCents(grand)} />
+        <MoneyTotal totals={grand} />
       </td>
     </tr>
   );

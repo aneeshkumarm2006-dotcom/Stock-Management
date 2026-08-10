@@ -16,10 +16,25 @@
 //
 // Callers must have already run `connectToDatabase()` (mirrors the
 // caller-connects convention used by `postBillToLedger`).
+//
+// CURRENCY. A bill carries a `scope`, so its amount is denominated in that
+// scope's currency. Summing a CAD bill and a USD bill into one cents figure
+// produces a number with no valid label, so every total here is a
+// MoneyByCurrency and the `*Cents` scalars beside them are retained only for
+// callers that have not migrated yet.
 import { Types } from "mongoose";
 import { Bill } from "@/lib/db/models/pm/Bill";
 import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
 import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { Property } from "@/lib/db/models/pm/Property";
+import { CompanyAccount } from "@/lib/db/models/pm/CompanyAccount";
+import { Organization } from "@/lib/db/models/pm/Organization";
+import {
+  resolvePropertyCurrency,
+  resolveCompanyCurrency,
+} from "@/lib/pm/currency";
+import { addMoney, type MoneyByCurrency } from "@/lib/pm/moneyByCurrency";
+import type { PmCurrency } from "@/types/pm";
 
 export type BillReflectionReason =
   /** Draft, or no `journalEntryId` — never posted to the ledger. */
@@ -41,20 +56,32 @@ export interface BillReflection {
   /** ISO string, or '' when unset. */
   invoiceDate: string;
   scope: { type: string; id: string | null };
+  /** Currency this bill's scope books in. Resolved, so always concrete. */
+  currency: PmCurrency;
   reflected: boolean;
   reason: BillReflectionReason | null;
 }
 
 export interface ReflectionReasonBucket {
   count: number;
-  /** Integer cents. */
+  /**
+   * Integer cents, summed across currencies.
+   * @deprecated Meaningless in a mixed-currency org — read `totals` instead.
+   */
   cents: number;
+  /** Currency-tagged equivalent of `cents`. */
+  totals: MoneyByCurrency;
 }
 
 export interface BillReflectionSummary {
   totalUnreflected: number;
-  /** Integer cents. */
+  /**
+   * Integer cents, summed across currencies.
+   * @deprecated Meaningless in a mixed-currency org — read `totals` instead.
+   */
   totalUnreflectedCents: number;
+  /** Currency-tagged equivalent of `totalUnreflectedCents`. */
+  totals: MoneyByCurrency;
   byReason: Record<BillReflectionReason, ReflectionReasonBucket>;
 }
 
@@ -126,6 +153,45 @@ export async function classifyBills(
 
   const plSet = new Set(plAccounts.map((a) => String(a._id)));
 
+  // Resolve a currency per bill scope. Properties and company accounts each
+  // carry an optional `currency` meaning "inherit the org default", so both go
+  // through their resolver rather than being read raw.
+  const [properties, companies, org] = await Promise.all([
+    Property.find({ organizationId: orgObjectId })
+      .select({ _id: 1, currency: 1 })
+      .lean<Array<{ _id: Types.ObjectId; currency?: PmCurrency | null }>>(),
+    CompanyAccount.find({ organizationId: orgObjectId })
+      .select({ _id: 1, currency: 1 })
+      .lean<Array<{ _id: Types.ObjectId; currency?: PmCurrency | null }>>(),
+    Organization.findById(orgObjectId)
+      .select({ defaultCurrency: 1 })
+      .lean<{ defaultCurrency?: PmCurrency } | null>(),
+  ]);
+  const orgDefaultCurrency: PmCurrency = org?.defaultCurrency ?? "USD";
+  const propertyCurrency = new Map(
+    properties.map((p) => [
+      String(p._id),
+      resolvePropertyCurrency(p.currency, orgDefaultCurrency),
+    ]),
+  );
+  const companyCurrency = new Map(
+    companies.map((c) => [
+      String(c._id),
+      resolveCompanyCurrency(c.currency, orgDefaultCurrency),
+    ]),
+  );
+  /** A Company scope with no id is the org's own books. */
+  const currencyForScope = (scope: {
+    type: string;
+    id: string | null;
+  }): PmCurrency => {
+    if (scope.type === "Property" && scope.id) {
+      return propertyCurrency.get(scope.id) ?? orgDefaultCurrency;
+    }
+    if (scope.id) return companyCurrency.get(scope.id) ?? orgDefaultCurrency;
+    return orgDefaultCurrency;
+  };
+
   const jeIds = bills
     .map((b) => b.journalEntryId)
     .filter((x): x is Types.ObjectId => Boolean(x));
@@ -148,6 +214,10 @@ export async function classifyBills(
   };
 
   const reflections: BillReflection[] = bills.map((b) => {
+    const scope = {
+      type: b.scope?.type ?? "Company",
+      id: b.scope?.id ? String(b.scope.id) : null,
+    };
     const base = {
       billId: String(b._id),
       refNo: b.refNo ?? "",
@@ -155,10 +225,8 @@ export async function classifyBills(
       amount: b.amount ?? 0,
       status: b.status,
       invoiceDate: b.invoiceDate ? new Date(b.invoiceDate).toISOString() : "",
-      scope: {
-        type: b.scope?.type ?? "Company",
-        id: b.scope?.id ? String(b.scope.id) : null,
-      },
+      scope,
+      currency: currencyForScope(scope),
     };
 
     // A. Draft / no JE link — never reaches the ledger.
@@ -194,12 +262,15 @@ export async function classifyBills(
 
   const unreflected = reflections.filter((r) => !r.reflected);
   const byReason = Object.fromEntries(
-    REASONS.map((r) => [r, { count: 0, cents: 0 }]),
+    REASONS.map((r) => [r, { count: 0, cents: 0, totals: {} }]),
   ) as Record<BillReflectionReason, ReflectionReasonBucket>;
+  const totals: MoneyByCurrency = {};
   for (const r of unreflected) {
+    addMoney(totals, r.currency, r.amount);
     if (!r.reason) continue;
     byReason[r.reason].count += 1;
     byReason[r.reason].cents += r.amount;
+    addMoney(byReason[r.reason].totals, r.currency, r.amount);
   }
 
   return {
@@ -208,6 +279,7 @@ export async function classifyBills(
     summary: {
       totalUnreflected: unreflected.length,
       totalUnreflectedCents: unreflected.reduce((s, r) => s + r.amount, 0),
+      totals,
       byReason,
     },
   };

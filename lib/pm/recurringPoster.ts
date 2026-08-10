@@ -71,6 +71,13 @@ import {
   createCompanyPropertyResolver,
   membersToWeights,
 } from "@/lib/pm/companyProperties";
+import {
+  amortizationAt,
+  paymentIndexFor,
+  periodsPerYearFor,
+  type AmortizationPeriod,
+} from "@/lib/pm/amortization";
+import { fromCents } from "@/lib/pm/currency";
 import type { IRecurringTransaction } from "@/lib/db/models/pm/RecurringTransaction";
 import type { PmContext } from "@/lib/auth/getCurrentUser";
 import type { RecurringFrequency } from "@/types/pm";
@@ -340,6 +347,25 @@ export interface ExpandedRuleAmounts {
   lines: PostingLine[];
   /** Human-readable notes for the dry-run preview and the run result. */
   notes: string[];
+  /**
+   * Blocking problems — bad loan terms, a period past the end of a mortgage.
+   *
+   * A CHANNEL rather than a thrown error, deliberately. `expandRuleAmounts` is
+   * called before the period claim and outside the try/catch that wraps
+   * `postArtifact`, so a throw here would escape the per-rule loop and abort the
+   * whole nightly cron for every remaining rule. The poster treats a non-empty
+   * `errors` exactly as it treats `lockError`: record it, stop this rule, and
+   * leave the cursor untouched so it retries once the data is fixed.
+   */
+  errors: string[];
+  /** Per-period mortgage split, when this expansion produced one. */
+  mortgage?: {
+    index: number;
+    interestCents: number;
+    principalCents: number;
+    closingBalanceCents: number;
+    note?: string;
+  };
 }
 
 function amountLineScope(line: AmountLine): PmScope {
@@ -357,13 +383,30 @@ function amountLineScope(line: AmountLine): PmScope {
  * Money is never dropped. If a company has no eligible properties (none
  * assigned, or all of them book in a different currency) the line posts whole
  * at company scope, exactly as it does today, and the reason is recorded.
+ *
+ * MORTGAGE SPLIT. A line flagged `splitAsMortgage` becomes TWO posting lines in
+ * the SAME scope group — interest and principal — differing only in account and
+ * amount. That is what keeps the artifact count per period unchanged, so
+ * neither the Bill nor the JournalEntry unique index can start colliding. It is
+ * also why the split works on all three rule types: both legs are DEBITS, so
+ * the Bill path (which turns every line into a debit and credits AP) produces
+ * correct accrual accounting with no change of its own.
+ *
+ * `periodDate` is required to compute the split — the payment number is derived
+ * from the date versus the loan's origination anchor, never from a position in
+ * a run. That is what makes a catch-up backfill reproduce exactly what the cron
+ * would have posted.
  */
 export async function expandRuleAmounts(input: {
-  rule: Pick<IRecurringTransaction, "amounts">;
+  rule: Pick<IRecurringTransaction, "amounts" | "mortgage" | "frequency">;
   resolve: ReturnType<typeof createCompanyPropertyResolver>;
+  /** The period being posted. Required for a mortgage rule. */
+  periodDate?: Date;
 }): Promise<ExpandedRuleAmounts> {
   const out: PostingLine[] = [];
   const notes: string[] = [];
+  const errors: string[] = [];
+  let mortgageSplit: ExpandedRuleAmounts["mortgage"];
 
   for (const line of input.rule.amounts ?? []) {
     const scope = amountLineScope(line);
@@ -375,6 +418,27 @@ export async function expandRuleAmounts(input: {
       refNo: line.refNo,
       amount: line.amount ?? 0,
     };
+
+    // Mortgage split first. It and CompanyProperties allocation are mutually
+    // exclusive (rejected in validation), so the order is for clarity only.
+    if (line.splitAsMortgage) {
+      const split = splitMortgageLine({
+        line,
+        base,
+        scope,
+        mortgage: input.rule.mortgage,
+        frequency: input.rule.frequency,
+        periodDate: input.periodDate,
+      });
+      if (split.error) {
+        errors.push(split.error);
+        continue;
+      }
+      out.push(...split.lines);
+      if (split.note) notes.push(split.note);
+      mortgageSplit = split.summary;
+      continue;
+    }
 
     const wantsSplit =
       line.allocation?.mode === "CompanyProperties" &&
@@ -436,7 +500,148 @@ export async function expandRuleAmounts(input: {
     }
   }
 
-  return { lines: out, notes };
+  return { lines: out, notes, errors, mortgage: mortgageSplit };
+}
+
+/**
+ * Turn one mortgage payment line into an interest leg and a principal leg.
+ *
+ * Both legs are debits and both sit in the SAME scope group — see the note on
+ * `expandRuleAmounts`. Every failure is returned as a string rather than thrown,
+ * for the reason documented on `ExpandedRuleAmounts.errors`.
+ */
+function splitMortgageLine(input: {
+  line: AmountLine;
+  base: Omit<PostingLine, "lineScope">;
+  scope: PmScope;
+  mortgage: IRecurringTransaction["mortgage"];
+  frequency: RecurringFrequency;
+  periodDate?: Date;
+}): {
+  lines: PostingLine[];
+  note?: string;
+  error?: string;
+  summary?: ExpandedRuleAmounts["mortgage"];
+} {
+  const label = input.line.description || "Mortgage payment";
+  const m = input.mortgage;
+  if (!m) {
+    return {
+      lines: [],
+      error: `"${label}" is marked as a mortgage payment but the rule has no loan terms.`,
+    };
+  }
+  if (!input.periodDate) {
+    return {
+      lines: [],
+      error: `"${label}" could not be split: no period date was supplied.`,
+    };
+  }
+  if (!m.principalAccountId || !m.interestAccountId) {
+    return {
+      lines: [],
+      error: `"${label}" could not be split: choose both an interest account and a principal (long-term liability) account.`,
+    };
+  }
+
+  let index: number;
+  let row: AmortizationPeriod;
+  try {
+    const periodsPerYear = periodsPerYearFor(input.frequency);
+    index = paymentIndexFor({
+      originationDate: new Date(m.originationDate),
+      periodDate: input.periodDate,
+      frequency: input.frequency,
+      paymentsAlreadyMade: m.paymentsAlreadyMade ?? 0,
+    });
+    row = amortizationAt(
+      {
+        originalPrincipalCents: m.originalPrincipalCents,
+        annualRatePct: m.annualRatePct,
+        termPeriods: m.termPeriods,
+        periodsPerYear,
+        compounding: m.compounding,
+        // The stored payment is authoritative — it is what leaves the bank.
+        // Only the split is computed.
+        paymentCents: input.base.amount,
+      },
+      index,
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { lines: [], error: `"${label}": ${msg}` };
+  }
+
+  let note: string | undefined;
+  if (row.isFinal && row.adjustedFromScheduledPayment !== 0) {
+    // The last payment clears the balance exactly, so it legitimately differs
+    // from the stored amount by a few cents. Surface it rather than quietly
+    // posting a different total.
+    note =
+      `"${label}" is the final payment (#${index}): posting ` +
+      `${fromCents(row.paymentCents)} instead of ${fromCents(input.base.amount)} ` +
+      `so the loan clears to exactly zero.`;
+  }
+
+  const lines: PostingLine[] = [];
+  if (row.interestCents > 0) {
+    lines.push({
+      ...input.base,
+      accountId: m.interestAccountId,
+      lineScope: input.scope,
+      amount: row.interestCents,
+      description: `${label} — interest (payment ${index} of ${m.termPeriods})`,
+    });
+  }
+  if (row.principalCents > 0) {
+    // A DEBIT to the liability: the payment REDUCES the loan. A credit here
+    // would grow it and would still balance, which is exactly why it has to be
+    // right by construction rather than caught downstream.
+    lines.push({
+      ...input.base,
+      accountId: m.principalAccountId,
+      lineScope: input.scope,
+      amount: row.principalCents,
+      description: `${label} — principal (payment ${index} of ${m.termPeriods})`,
+    });
+  }
+  if (lines.length === 0) {
+    return {
+      lines: [],
+      error: `"${label}" computed a zero interest and zero principal split at payment ${index}.`,
+    };
+  }
+
+  return {
+    lines,
+    note,
+    summary: {
+      index,
+      interestCents: row.interestCents,
+      principalCents: row.principalCents,
+      closingBalanceCents: row.closingBalanceCents,
+      note,
+    },
+  };
+}
+
+/**
+ * Merge posting lines that share a scope into one row.
+ *
+ * Only used by the dry-run preview, and only for a mortgage period: its two
+ * legs sit on the same scope by design, so listing them separately would show
+ * the same property twice and read as a duplicate. The split itself is surfaced
+ * as `PlannedPeriod.mortgage`.
+ */
+function collapseByScope(lines: PostingLine[]): PostingLine[] {
+  const out = new Map<string, PostingLine>();
+  for (const l of lines) {
+    const key = `${scopeKey(l.lineScope)}|${l.allocatedFromCompanyId ?? ""}`;
+    const prev = out.get(key);
+    if (prev) prev.amount += l.amount;
+    else out.set(key, { ...l });
+  }
+  return Array.from(out.values());
 }
 
 /**
@@ -850,7 +1055,27 @@ export async function runRecurringPoster(
       // Expand allocations ONCE per period, then use the same lines for the
       // lock gate and the artifact. Two different expansions would let the gate
       // approve scopes the writer never touches (or worse, miss ones it does).
-      const expanded = await expandRuleAmounts({ rule, resolve: resolveCompany });
+      //
+      // `periodDate` is passed so a mortgage line can derive its payment number
+      // from the date rather than from a position in this loop — which is what
+      // keeps a catch-up backfill identical to what the cron posts.
+      const expanded = await expandRuleAmounts({
+        rule,
+        resolve: resolveCompany,
+        periodDate,
+      });
+
+      // Bad loan terms stop THIS rule and leave the cursor untouched, exactly
+      // like a locked period — never the whole run. See ExpandedRuleAmounts.
+      if (expanded.errors.length > 0) {
+        results.push({
+          recurringTransactionId: String(rule._id),
+          posted: false,
+          periodDate: periodDate.toISOString(),
+          note: expanded.errors.join(" "),
+        });
+        break;
+      }
 
       // Locked-period gate. Check EVERY distinct scope the rule touches, not
       // just the first row's: a partial post would advance the claim and
@@ -1058,6 +1283,18 @@ export interface PlannedPeriod {
   note?: string;
   /** Rule-level warnings (e.g. RECURRING_MISSING_PAYEE) worth showing. */
   warnings: string[];
+  /**
+   * How this period's mortgage payment splits. Rendered as a sub-line rather
+   * than as two `scopes` rows: both legs sit on the same scope, so two rows
+   * with the same property name would read as a duplicate. `amountCents` is
+   * unchanged — interest + principal is the payment.
+   */
+  mortgage?: {
+    index: number;
+    interestCents: number;
+    principalCents: number;
+    closingBalanceCents: number;
+  };
 }
 
 export interface CatchUpPlan {
@@ -1122,28 +1359,17 @@ export async function planRecurringCatchUp(
 
   // The preview must expand allocations exactly as the writer does, or it
   // promises one line and posts four.
+  //
+  // PER PERIOD, not per rule. A mortgage split depends on the payment number,
+  // which depends on the period date — so a single per-rule expansion would
+  // show every month with January's interest. Enumerate the periods first,
+  // expand each one, then resolve labels over the union: resolveScopeLabels is
+  // one round-trip and must see every scope any period touches.
   const resolveCompany = createCompanyPropertyResolver(orgId);
-  const expandedByRule = new Map<string, ExpandedRuleAmounts>();
-  for (const rule of rules) {
-    expandedByRule.set(
-      String(rule._id),
-      await expandRuleAmounts({ rule, resolve: resolveCompany }),
-    );
-  }
-
-  // Resolve every referenced scope label up front — properties AND companies.
-  const labels = await resolveScopeLabels(
-    Array.from(expandedByRule.values()).flatMap((e) =>
-      e.lines.flatMap((l) => [
-        { scopeType: l.groupScope.type, scopeId: l.groupScope.id },
-        { scopeType: l.lineScope.type, scopeId: l.lineScope.id },
-      ]),
-    ),
-    orgId,
-  );
-
-  const plan: PlannedPeriod[] = [];
-  const rulesWithWork = new Set<string>();
+  const workByRule = new Map<
+    string,
+    { periods: Date[]; expansions: ExpandedRuleAmounts[] }
+  >();
 
   for (const rule of rules) {
     let periods = enumeratePeriods({
@@ -1171,33 +1397,73 @@ export async function planRecurringCatchUp(
       if (periods.length === 0) continue;
     }
 
-    const expanded =
-      expandedByRule.get(String(rule._id)) ?? { lines: [], notes: [] };
-    const groups = groupPostingLines(expanded.lines);
+    const expansions: ExpandedRuleAmounts[] = [];
+    for (const periodDate of periods) {
+      expansions.push(
+        await expandRuleAmounts({ rule, resolve: resolveCompany, periodDate }),
+      );
+    }
+    workByRule.set(String(rule._id), { periods, expansions });
+  }
 
-    // One row per posting line, so an allocated share shows the property it
-    // actually lands on with its own cents. `allocatedFrom` lets the UI nest
-    // the shares under the company they came from.
-    const scopes = expanded.lines.map((l) => {
-      const lineKey = scopeKey(l.lineScope);
-      return {
-        propertyId: isPropertyScope(l.lineScope) ? String(l.lineScope.id) : null,
-        propertyName: labels.get(lineKey)?.label ?? "Company",
-        amountCents: l.amount,
-        allocatedFromCompanyId: l.allocatedFromCompanyId ?? null,
-        allocatedFromCompanyName: l.allocatedFromCompanyId
-          ? (labels.get(scopeKey(l.groupScope))?.label ?? null)
-          : null,
-      };
-    });
-    const amountCents = scopes.reduce((s, g) => s + g.amountCents, 0);
+  // Resolve every referenced scope label up front — properties AND companies,
+  // across every period of every rule.
+  const labels = await resolveScopeLabels(
+    Array.from(workByRule.values()).flatMap((w) =>
+      w.expansions.flatMap((e) =>
+        e.lines.flatMap((l) => [
+          { scopeType: l.groupScope.type, scopeId: l.groupScope.id },
+          { scopeType: l.lineScope.type, scopeId: l.lineScope.id },
+        ]),
+      ),
+    ),
+    orgId,
+  );
+
+  const plan: PlannedPeriod[] = [];
+  const rulesWithWork = new Set<string>();
+
+  for (const rule of rules) {
+    const work = workByRule.get(String(rule._id));
+    if (!work) continue;
+
     const warnings = (rule.warnings ?? []).map((w) =>
       typeof w === "string" ? w : (w as { code?: string }).code ?? "Warning",
     );
 
     rulesWithWork.add(String(rule._id));
 
-    for (const periodDate of periods) {
+    for (let i = 0; i < work.periods.length; i += 1) {
+      const periodDate = work.periods[i]!;
+      const expanded = work.expansions[i]!;
+      const groups = groupPostingLines(expanded.lines);
+
+      // One row per posting line, so an allocated share shows the property it
+      // actually lands on with its own cents. `allocatedFrom` lets the UI nest
+      // the shares under the company they came from.
+      //
+      // A mortgage's two legs share a scope, so they are collapsed into a
+      // single row here and the split is surfaced via `row.mortgage` instead.
+      const isMortgagePeriod = Boolean(expanded.mortgage);
+      const lineRows = isMortgagePeriod
+        ? collapseByScope(expanded.lines)
+        : expanded.lines;
+      const scopes = lineRows.map((l) => {
+        const lineKey = scopeKey(l.lineScope);
+        return {
+          propertyId: isPropertyScope(l.lineScope)
+            ? String(l.lineScope.id)
+            : null,
+          propertyName: labels.get(lineKey)?.label ?? "Company",
+          amountCents: l.amount,
+          allocatedFromCompanyId: l.allocatedFromCompanyId ?? null,
+          allocatedFromCompanyName: l.allocatedFromCompanyId
+            ? (labels.get(scopeKey(l.groupScope))?.label ?? null)
+            : null,
+        };
+      });
+      const amountCents = scopes.reduce((s, g) => s + g.amountCents, 0);
+
       const row: PlannedPeriod = {
         ruleId: String(rule._id),
         memo: rule.memo ?? "",
@@ -1208,7 +1474,24 @@ export async function planRecurringCatchUp(
         scopes,
         status: "will-post",
         warnings,
+        mortgage: expanded.mortgage
+          ? {
+              index: expanded.mortgage.index,
+              interestCents: expanded.mortgage.interestCents,
+              principalCents: expanded.mortgage.principalCents,
+              closingBalanceCents: expanded.mortgage.closingBalanceCents,
+            }
+          : undefined,
       };
+
+      // Bad loan terms are shown as blocked rather than silently omitted — the
+      // writer would stop on the same period for the same reason.
+      if (expanded.errors.length > 0) {
+        row.status = "unsupported";
+        row.note = expanded.errors.join(" ");
+        plan.push(row);
+        continue;
+      }
 
       if (groups.length === 0) {
         row.status = "unsupported";
@@ -1236,7 +1519,8 @@ export async function planRecurringCatchUp(
         row.note = dup;
       }
       // Surface why a line did not split (mixed currency, no properties
-      // assigned) on the same screen the user approves the catch-up from.
+      // assigned), or that this is a final payment with a trued-up total, on
+      // the same screen the user approves the catch-up from.
       if (expanded.notes.length > 0) {
         row.note = [row.note, ...expanded.notes].filter(Boolean).join(" ");
       }

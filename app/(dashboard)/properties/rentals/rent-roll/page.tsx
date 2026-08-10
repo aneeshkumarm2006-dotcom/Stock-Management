@@ -2,6 +2,14 @@
 // Default filter `(2) Active, Future` (BR-LL-2). EVICTION PENDING overlay
 // renders as a red row decoration (BR-LL-3). 90-day orange chip on
 // daysRemaining (BR-LL-5).
+//
+// CURRENCY. This list mixes US and Canadian leases, so a single display
+// currency is wrong for at least one of them: a US lease billed at $6,556 is
+// $6,556 whichever way the top-bar toggle is set, and converting it produces a
+// figure that matches no lease document. Each row therefore renders in its own
+// property's currency (`convert={false}`) and is tagged in the Cur column. The
+// only figure on this page that follows the toggle is the grand total, which
+// genuinely spans currencies and converts via MoneyTotal.
 "use client";
 
 import * as React from "react";
@@ -19,10 +27,17 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
-import { LEASE_STATUSES, type LeaseStatus, type TenantType } from "@/types/pm";
+import { MoneyTotal } from "@/components/pm/MoneyTotal";
+import {
+  LEASE_STATUSES,
+  type LeaseStatus,
+  type TenantType,
+  type PmCurrency,
+} from "@/types/pm";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
 import { formatDateOnly } from "@/lib/utils/dateInput";
 import { compareCountryGroups } from "@/lib/pm/country";
+import { addMoney, type MoneyByCurrency } from "@/lib/pm/moneyByCurrency";
 
 // Dashboard widgets deep-link with these query params (PROPERTY_TODO.md
 // Phase 10 [G-B-12]). Both filters are client-side overlays on top of the
@@ -68,6 +83,66 @@ function inInsuranceWindow(
   return daysUntil > 60 && daysUntil <= 90;
 }
 
+// How the table separates rows. "currency" is the default — see the state
+// declaration for why. Mirrors PropertyGroupBy on the properties list.
+type LeaseGroupBy = "none" | "currency" | "country";
+
+const GROUP_BY_LABEL: Record<LeaseGroupBy, string> = {
+  none: "No grouping",
+  currency: "Group by currency",
+  country: "Group by country",
+};
+
+/** USD before CAD, so the sections keep the old US-then-Canada reading order. */
+function compareCurrencyGroups(a: string, b: string): number {
+  const rank = (c: string) => (c === "USD" ? 0 : c === "CAD" ? 1 : 2);
+  return rank(a) - rank(b) || a.localeCompare(b);
+}
+
+/** Lease #, Tenants, Type, Term, Cur, Rent, Deposit held, Status. */
+const COL_COUNT = 8;
+
+/**
+ * A subtotal that only converts when it has to.
+ *
+ * A currency group's subtotal is single-currency by construction and must stay
+ * in that currency — converting it would reintroduce the bug one level up from
+ * the rows. A country group's subtotal genuinely can span currencies (a
+ * property's currency is its own field, not derived from its address), so that
+ * one converts and picks up MoneyTotal's stale-FX warning.
+ *
+ * `fallbackCurrency` covers the all-zero case: with no non-zero bucket there is
+ * nothing to infer a currency from, and without it a USD group's zero deposits
+ * would render as `C$0.00` under the CAD toggle.
+ */
+function GroupMoney({
+  totals,
+  fallbackCurrency,
+}: {
+  totals: MoneyByCurrency;
+  fallbackCurrency?: PmCurrency;
+}) {
+  const present = (Object.keys(totals) as PmCurrency[]).filter(
+    (c) => (totals[c] ?? 0) !== 0,
+  );
+  const only = present.length === 1 ? present[0] : undefined;
+  const native = only ?? (present.length === 0 ? fallbackCurrency : undefined);
+  if (native) {
+    return (
+      <CurrencyAmount
+        cents={totals[native] ?? 0}
+        currency={native}
+        convert={false}
+      />
+    );
+  }
+  return <MoneyTotal totals={totals} />;
+}
+
+/** A currency group's label IS its currency; a country group's is not. */
+const isPmCurrencyLabel = (s: string): s is PmCurrency =>
+  s === "USD" || s === "CAD";
+
 interface LeaseRow {
   id: string;
   leaseNumber: number;
@@ -75,6 +150,10 @@ interface LeaseRow {
   /** Normalized country of the lease's property ("United States" | "Canada" |
    *  "Other"), for the US/CAN separation. */
   country: string;
+  /** Booking currency of the lease's property. Resolved server-side, so this is
+   *  always concrete — never null, never inferred from `country` (a property's
+   *  currency is its own field). */
+  currency: PmCurrency;
   unitId: string;
   tenants: Array<{
     tenantId: string;
@@ -125,9 +204,12 @@ function RentRollPageInner() {
   const [statusFilter, setStatusFilter] =
     React.useState<"Active,Future" | LeaseStatus | "all">("Active,Future");
   const [search, setSearch] = React.useState("");
-  // The client operates in the US and Canada and wants leases separated by
-  // country. On by default; toggle off for a single flat list.
-  const [groupByCountry, setGroupByCountry] = React.useState(true);
+  // The client operates in the US and Canada and wants leases separated. Group
+  // by currency by default — that is the split that changes what the numbers
+  // MEAN, and it is the one the per-group subtotals can legitimately add up.
+  // Country grouping stays available: a country group is not automatically
+  // single-currency, since a property's currency is its own field.
+  const [groupBy, setGroupBy] = React.useState<LeaseGroupBy>("currency");
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -240,20 +322,62 @@ function RentRollPageInner() {
     return r;
   }, [rows, search, expiringWindow, insuranceWindow, insuranceDays]);
 
-  // Group the visible rows by property country, ordered US → Canada → others →
-  // Other (mirrors the dashboard Outstanding Balances widget's separation).
-  const countryGroups = React.useMemo(() => {
+  // Group the visible rows by currency (USD then CAD, preserving the old
+  // US-then-Canada reading order) or by property country (US → Canada → others
+  // → Other, mirroring the dashboard Outstanding Balances widget).
+  //
+  // Each group carries currency-tagged totals rather than a bare number: a
+  // COUNTRY group can legitimately hold both currencies, so summing its rows
+  // into one figure would be exactly the bug this page is fixing.
+  const groups = React.useMemo(() => {
+    if (groupBy === "none") return [];
     const m = new Map<string, LeaseRow[]>();
     for (const l of filtered) {
-      const c = l.country || "Other";
-      const list = m.get(c) ?? [];
+      const key = groupBy === "currency" ? l.currency : l.country || "Other";
+      const list = m.get(key) ?? [];
       list.push(l);
-      m.set(c, list);
+      m.set(key, list);
     }
     return Array.from(m.entries())
-      .map(([country, groupRows]) => ({ country, rows: groupRows }))
-      .sort((a, b) => compareCountryGroups(a.country, b.country));
-  }, [filtered]);
+      .map(([label, groupRows]) => ({
+        label,
+        rows: groupRows,
+        rentTotals: groupRows.reduce<MoneyByCurrency>(
+          (acc, l) =>
+            addMoney(acc, l.currency, l.totalRentAmount ?? l.primaryRentAmount),
+          {},
+        ),
+        depositTotals: groupRows.reduce<MoneyByCurrency>(
+          (acc, l) => addMoney(acc, l.currency, l.securityDepositHeld),
+          {},
+        ),
+      }))
+      .sort((a, b) =>
+        groupBy === "currency"
+          ? compareCurrencyGroups(a.label, b.label)
+          : compareCountryGroups(a.label, b.label),
+      );
+  }, [filtered, groupBy]);
+
+  // Grand totals across every visible lease — the one figure on this page that
+  // genuinely spans currencies, and therefore the one that follows the toggle.
+  const grandRentTotals = React.useMemo(
+    () =>
+      filtered.reduce<MoneyByCurrency>(
+        (acc, l) =>
+          addMoney(acc, l.currency, l.totalRentAmount ?? l.primaryRentAmount),
+        {},
+      ),
+    [filtered],
+  );
+  const grandDepositTotals = React.useMemo(
+    () =>
+      filtered.reduce<MoneyByCurrency>(
+        (acc, l) => addMoney(acc, l.currency, l.securityDepositHeld),
+        {},
+      ),
+    [filtered],
+  );
 
   const renderLeaseRow = (l: LeaseRow) => (
     <tr
@@ -290,15 +414,31 @@ function RentRollPageInner() {
         )}
       </td>
       <td>
-        <CurrencyAmount cents={l.totalRentAmount ?? l.primaryRentAmount} />
+        <Badge variant="outline">{l.currency}</Badge>
+      </td>
+      <td>
+        <CurrencyAmount
+          cents={l.totalRentAmount ?? l.primaryRentAmount}
+          currency={l.currency}
+          convert={false}
+        />
         {(l.totalRentAmount ?? l.primaryRentAmount) > l.primaryRentAmount && (
           <div className="text-xs text-fg-muted">
-            Base <CurrencyAmount cents={l.primaryRentAmount} />
+            Base{" "}
+            <CurrencyAmount
+              cents={l.primaryRentAmount}
+              currency={l.currency}
+              convert={false}
+            />
           </div>
         )}
       </td>
       <td>
-        <CurrencyAmount cents={l.securityDepositHeld} />
+        <CurrencyAmount
+          cents={l.securityDepositHeld}
+          currency={l.currency}
+          convert={false}
+        />
       </td>
       <td>
         <Badge
@@ -389,18 +529,27 @@ function RentRollPageInner() {
                   All
                 </button>
                 <span className="mx-1 h-4 w-px bg-border" aria-hidden />
-                <button
-                  onClick={() => setGroupByCountry((v) => !v)}
-                  className={
-                    "rounded-full border px-3 py-1 text-xs font-bold " +
-                    (groupByCountry
-                      ? "border-primary bg-primary text-primary-fg"
-                      : "border-border bg-surface text-fg-muted")
-                  }
-                  title="Separate leases into United States and Canada sections"
-                >
-                  Group by country
-                </button>
+                {(["currency", "country", "none"] as LeaseGroupBy[]).map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => setGroupBy(g)}
+                    className={
+                      "rounded-full border px-3 py-1 text-xs font-bold " +
+                      (groupBy === g
+                        ? "border-primary bg-primary text-primary-fg"
+                        : "border-border bg-surface text-fg-muted")
+                    }
+                    title={
+                      g === "currency"
+                        ? "Separate leases into USD and CAD sections, each with its own subtotal"
+                        : g === "country"
+                          ? "Separate leases into United States and Canada sections"
+                          : "One flat list"
+                    }
+                  >
+                    {GROUP_BY_LABEL[g]}
+                  </button>
+                ))}
                 <div className="ml-auto flex w-full max-w-md items-center gap-2">
                   <Button
                     variant="outline"
@@ -425,6 +574,9 @@ function RentRollPageInner() {
                     <th>Tenants</th>
                     <th>Type</th>
                     <th>Term</th>
+                    <th title="Currency this lease is billed in — the currency of its property">
+                      Cur
+                    </th>
                     <th>Rent</th>
                     <th>Deposit held</th>
                     <th>Status</th>
@@ -433,29 +585,30 @@ function RentRollPageInner() {
                 <tbody>
                   {loading && (
                     <tr>
-                      <td colSpan={7} className="py-4 text-fg-muted">
+                      <td colSpan={COL_COUNT} className="py-4 text-fg-muted">
                         Loading…
                       </td>
                     </tr>
                   )}
                   {!loading && filtered.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="py-4 text-fg-muted">
+                      <td colSpan={COL_COUNT} className="py-4 text-fg-muted">
                         No leases match.
                       </td>
                     </tr>
                   )}
                   {!loading &&
                     filtered.length > 0 &&
-                    (groupByCountry
-                      ? countryGroups.map((g) => (
-                          <React.Fragment key={g.country}>
+                    (groupBy === "none"
+                      ? filtered.map(renderLeaseRow)
+                      : groups.map((g) => (
+                          <React.Fragment key={g.label}>
                             <tr className="bg-surface-high/40">
                               <td
-                                colSpan={7}
+                                colSpan={COL_COUNT}
                                 className="py-1.5 text-xs font-bold uppercase tracking-widest text-fg-muted"
                               >
-                                {g.country}
+                                {g.label}
                                 <span className="ml-2 font-normal normal-case tracking-normal">
                                   {g.rows.length} lease
                                   {g.rows.length === 1 ? "" : "s"}
@@ -463,13 +616,58 @@ function RentRollPageInner() {
                               </td>
                             </tr>
                             {g.rows.map(renderLeaseRow)}
+                            <tr className="border-b border-border/60 text-xs font-bold">
+                              <td className="py-1.5 text-fg-muted" colSpan={4}>
+                                {g.label} subtotal
+                              </td>
+                              <td />
+                              <td>
+                                <GroupMoney
+                                  totals={g.rentTotals}
+                                  fallbackCurrency={
+                                    isPmCurrencyLabel(g.label)
+                                      ? g.label
+                                      : undefined
+                                  }
+                                />
+                              </td>
+                              <td>
+                                <GroupMoney
+                                  totals={g.depositTotals}
+                                  fallbackCurrency={
+                                    isPmCurrencyLabel(g.label)
+                                      ? g.label
+                                      : undefined
+                                  }
+                                />
+                              </td>
+                              <td />
+                            </tr>
                           </React.Fragment>
-                        ))
-                      : filtered.map(renderLeaseRow))}
+                        )))}
                 </tbody>
+                {!loading && filtered.length > 0 && (
+                  <tfoot className="border-t-2 border-border text-sm font-bold">
+                    <tr>
+                      <td className="py-2" colSpan={4}>
+                        All leases
+                      </td>
+                      <td />
+                      <td>
+                        <MoneyTotal totals={grandRentTotals} />
+                      </td>
+                      <td>
+                        <MoneyTotal totals={grandDepositTotals} />
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                )}
               </table>
               <p className="text-xs text-fg-muted">
-                Match count: {filtered.length} of {rows.length} loaded.
+                Match count: {filtered.length} of {rows.length} loaded. Each
+                lease shows the currency it is billed in and does not change
+                when you switch the display currency — only the totals convert.
               </p>
             </TabsContent>
 

@@ -11,7 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { MoneyTotal } from "@/components/pm/MoneyTotal";
 import { CollectManagementFeesModal } from "@/components/pm/CollectManagementFeesModal";
+import type { MoneyByCurrency } from "@/lib/pm/moneyByCurrency";
+import type { PmCurrency } from "@/types/pm";
 
 interface CompanyFinancialsData {
   accountingMode: "cash" | "accrual";
@@ -21,7 +24,13 @@ interface CompanyFinancialsData {
   companyCashCents: number;
   unpaidBillsCents: number;
   overdueBillsCount: number;
+  /** @deprecated sums across currencies — read `netIncome`. */
   netIncomeCents: number;
+  /** Currency-tagged totals. Correct in a mixed CAD/USD org. */
+  netIncome: MoneyByCurrency;
+  totalRevenue: MoneyByCurrency;
+  estimatedIncomeTax: MoneyByCurrency;
+  afterTaxNet: MoneyByCurrency;
   // §6 — additive reporting fields (rate defaults 0 ⇒ $0 tax line).
   totalRevenueCents: number;
   rentalRevenueCents: number;
@@ -33,6 +42,8 @@ interface CompanyFinancialsData {
   propertyRollup: Array<{
     propertyId: string;
     propertyName: string;
+    /** Booking currency of this property. Resolved server-side. */
+    currency: PmCurrency;
     incomeCents: number;
     expenseCents: number;
     netCents: number;
@@ -215,7 +226,7 @@ export default function CompanyFinancialsPage() {
           value={
             <CurrencyAmount cents={data?.companyCashCents ?? 0} currency={currency} />
           }
-          subtitle="Sum of every isCompanyCash bank account"
+          subtitle={`Sum of every isCompanyCash bank account · shown in ${currency}`}
         />
         <HeroCard
           label="Unpaid bills"
@@ -230,9 +241,7 @@ export default function CompanyFinancialsPage() {
         />
         <HeroCard
           label="Net income"
-          value={
-            <CurrencyAmount cents={data?.netIncomeCents ?? 0} currency={currency} />
-          }
+          value={<MoneyTotal totals={data?.netIncome ?? {}} />}
           subtitle={`${data?.accountingMode ?? "—"} basis · ${from} → ${to}`}
         />
       </div>
@@ -589,15 +598,32 @@ export default function CompanyFinancialsPage() {
               <tbody>
                 {data.propertyRollup.map((p) => (
                   <tr key={p.propertyId} className="border-b border-border/40">
-                    <td className="py-1.5">{p.propertyName}</td>
-                    <td className="text-right tabular-nums">
-                      <CurrencyAmount cents={p.incomeCents} currency={currency} />
+                    <td className="py-1.5">
+                      {p.propertyName}
+                      <span className="ml-2 text-[10px] uppercase tracking-widest text-fg-muted">
+                        {p.currency}
+                      </span>
                     </td>
                     <td className="text-right tabular-nums">
-                      <CurrencyAmount cents={p.expenseCents} currency={currency} />
+                      <CurrencyAmount
+                        cents={p.incomeCents}
+                        currency={p.currency}
+                        convert={false}
+                      />
+                    </td>
+                    <td className="text-right tabular-nums">
+                      <CurrencyAmount
+                        cents={p.expenseCents}
+                        currency={p.currency}
+                        convert={false}
+                      />
                     </td>
                     <td className="text-right tabular-nums font-bold">
-                      <CurrencyAmount cents={p.netCents} currency={currency} />
+                      <CurrencyAmount
+                        cents={p.netCents}
+                        currency={p.currency}
+                        convert={false}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -607,14 +633,23 @@ export default function CompanyFinancialsPage() {
                     <tr className="border-t border-border bg-bg-elevated">
                       <td className="py-1.5 font-bold">Company-scoped</td>
                       <td className="text-right tabular-nums">
-                        <CurrencyAmount cents={data.companyOnly.incomeCents} currency={currency} />
+                        <CurrencyAmount
+                          cents={data.companyOnly.incomeCents}
+                          currency={currency}
+                          convert={false}
+                        />
                       </td>
                       <td className="text-right tabular-nums">
-                        <CurrencyAmount cents={data.companyOnly.expenseCents} currency={currency} />
+                        <CurrencyAmount
+                          cents={data.companyOnly.expenseCents}
+                          currency={currency}
+                          convert={false}
+                        />
                       </td>
                       <td className="text-right tabular-nums font-bold">
                         <CurrencyAmount
                           currency={currency}
+                          convert={false}
                           cents={
                             data.companyOnly.incomeCents -
                             data.companyOnly.expenseCents

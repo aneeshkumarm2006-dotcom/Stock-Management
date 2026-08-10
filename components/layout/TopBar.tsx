@@ -94,6 +94,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   bills: "Bills",
   "owner-contributions": "Owner contributions",
   financials: "Financials",
+  "balance-sheet": "Balance sheet",
   "chart-of-accounts": "Chart of accounts",
   budgets: "Budgets",
   "locked-periods": "Locked periods",

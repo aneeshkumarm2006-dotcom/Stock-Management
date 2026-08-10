@@ -8,8 +8,13 @@ import {
   getPmContext,
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
-import { recurringTransactionUpdateSchema } from '@/lib/validation/pm/recurringTransaction';
-import { mapAmountLineToDb, serializeAmountLine } from '../serialize';
+import { recurringTransactionUpdateSchemaChecked } from '@/lib/validation/pm/recurringTransaction';
+import {
+  mapAmountLineToDb,
+  mapMortgageToDb,
+  serializeAmountLine,
+  serializeMortgage,
+} from '../serialize';
 import { computeWarnings, mergeWarnings } from '@/lib/pm/warnings';
 import { logActivity } from '@/lib/pm/activity';
 
@@ -51,6 +56,7 @@ export async function GET(
         ? Math.max(0, doc.occurrenceCount - doc.postedCount)
         : null,
     amounts: (doc.amounts ?? []).map(serializeAmountLine),
+    mortgage: serializeMortgage(doc.mortgage),
     queueForPrinting: doc.queueForPrinting,
     active: doc.active,
     postedCount: doc.postedCount,
@@ -72,7 +78,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const parsed = recurringTransactionUpdateSchema.safeParse(body);
+  const parsed = recurringTransactionUpdateSchemaChecked.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: 'Invalid input', issues: parsed.error.flatten().fieldErrors },
@@ -83,11 +89,15 @@ export async function PATCH(
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+  // `mortgage` is pulled out with the other hand-mapped fields: it arrives in
+  // dollars and must go through mapMortgageToDb, so Object.assign must never
+  // see it.
   const {
     payee,
     bankAccountId,
     nextDate,
     amounts,
+    mortgage,
     ...rest
   } = parsed.data;
 
@@ -123,6 +133,13 @@ export async function PATCH(
     doc.amounts = amounts.map(
       mapAmountLineToDb,
     ) as unknown as typeof doc.amounts;
+  }
+  // `mortgage: null` clears the terms; omitting the key leaves them alone, so a
+  // partial PATCH from some other surface can't wipe a configured loan.
+  if (mortgage !== undefined) {
+    doc.mortgage = mapMortgageToDb(
+      mortgage,
+    ) as unknown as typeof doc.mortgage;
   }
 
   await doc.save();

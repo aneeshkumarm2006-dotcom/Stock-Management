@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
-import { fromCents } from "@/lib/pm/currency";
+import type { PmCurrency } from "@/types/pm";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 
 interface JELine {
@@ -48,6 +48,8 @@ interface AccountOption {
 interface PropertyOption {
   id: string;
   name: string;
+  /** null when the property inherits the org default. */
+  currency: PmCurrency | null;
 }
 
 export default function JournalEntryDetailPage() {
@@ -75,9 +77,16 @@ export default function JournalEntryDetailPage() {
     ]).then(([a, p]) => {
       setAccounts(a as AccountOption[]);
       setProperties(
-        (p as { id: string; propertyName: string }[]).map((row) => ({
+        (
+          p as {
+            id: string;
+            propertyName: string;
+            currency: PmCurrency | null;
+          }[]
+        ).map((row) => ({
           id: row.id,
           name: row.propertyName,
+          currency: row.currency ?? null,
         })),
       );
     });
@@ -90,6 +99,16 @@ export default function JournalEntryDetailPage() {
     accounts.find((a) => a.id === id)?.name ?? "—";
   const propertyName = (id: string | null) =>
     id ? properties.find((p) => p.id === id)?.name ?? "Property" : "Company";
+  // An entry is denominated in its scope's currency. This page is the
+  // drill-through target of the Financials matrix, so a USD entry must not
+  // render under a C$ symbol. Company scope falls through to the org default.
+  const currencyForScope = (
+    scopeType: string,
+    scopeId: string | null,
+  ): PmCurrency | undefined =>
+    scopeType === "Property" && scopeId
+      ? (properties.find((p) => p.id === scopeId)?.currency ?? undefined)
+      : undefined;
 
   async function voidEntry() {
     if (!doc) return;
@@ -225,10 +244,18 @@ export default function JournalEntryDetailPage() {
                       {l.description || "—"}
                     </td>
                     <td className="px-2 py-1 text-right">
-                      <CurrencyAmount value={fromCents(l.debit)} />
+                      <CurrencyAmount
+                        cents={l.debit}
+                        currency={currencyForScope(l.scopeType, l.scopeId)}
+                        convert={false}
+                      />
                     </td>
                     <td className="px-2 py-1 text-right">
-                      <CurrencyAmount value={fromCents(l.credit)} />
+                      <CurrencyAmount
+                        cents={l.credit}
+                        currency={currencyForScope(l.scopeType, l.scopeId)}
+                        convert={false}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -237,10 +264,18 @@ export default function JournalEntryDetailPage() {
                     Totals
                   </td>
                   <td className="px-2 py-2 text-right">
-                    <CurrencyAmount value={fromCents(doc.totalDebits)} />
+                    <CurrencyAmount
+                      cents={doc.totalDebits}
+                      currency={currencyForScope(doc.scopeType, doc.scopeId)}
+                      convert={false}
+                    />
                   </td>
                   <td className="px-2 py-2 text-right">
-                    <CurrencyAmount value={fromCents(doc.totalCredits)} />
+                    <CurrencyAmount
+                      cents={doc.totalCredits}
+                      currency={currencyForScope(doc.scopeType, doc.scopeId)}
+                      convert={false}
+                    />
                   </td>
                 </tr>
               </tbody>

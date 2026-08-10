@@ -11,8 +11,15 @@
 // provider (e.g. reused by the stock workspace) behaviour is unchanged: label
 // with `currency`, convert nothing.
 //
-// Pass `convert={false}` for figures a server route already converted, so they
-// are not converted twice.
+// `convert={false}` carries two distinct meanings, both intended:
+//   1. the figure was already converted upstream (a server route that had to
+//      convert before summing) — don't convert it twice; and
+//   2. the figure belongs to exactly one property and must render in its own
+//      currency regardless of the top-bar toggle (a US lease's rent is USD
+//      whichever way the toggle is set).
+// For (2), prefer wrapping the subtree in <PmNativeCurrency renderNative> over
+// threading the prop through every call site; an unset `convert` then resolves
+// to native automatically. The explicit prop still wins where it is passed.
 "use client";
 
 import * as React from "react";
@@ -37,7 +44,12 @@ interface CurrencyAmountProps {
   currency?: Currency;
   /**
    * Set false when the amount has already been converted to the display
-   * currency upstream (server-side aggregates that must convert before summing).
+   * currency upstream (server-side aggregates that must convert before
+   * summing), or when it belongs to one property and must stay native.
+   *
+   * Leave unset to inherit the enclosing scope: inside a
+   * <PmNativeCurrency renderNative> subtree that means native, everywhere else
+   * it means convert — which is the historical default.
    */
   convert?: boolean;
   /**
@@ -56,7 +68,7 @@ export function CurrencyAmount({
   value,
   cents,
   currency,
-  convert = true,
+  convert,
   accounting = true,
   decimals,
   hideSymbol,
@@ -79,8 +91,11 @@ export function CurrencyAmount({
     // rather than being handed to the converter as an unknown code.
     const native: PmCurrency =
       currency === "USD" || currency === "CAD" ? currency : pm.nativeCurrency;
-    renderCurrency = convert ? pm.displayCurrency : native;
-    if (convert && typeof dollars === "number" && Number.isFinite(dollars)) {
+    // An explicit prop always wins; otherwise the scope decides. Outside a
+    // `renderNative` scope this resolves to `true`, which is the old default.
+    const doConvert = convert ?? !pm.renderNative;
+    renderCurrency = doConvert ? pm.displayCurrency : native;
+    if (doConvert && typeof dollars === "number" && Number.isFinite(dollars)) {
       // Convert in the ledger's own unit so the result lands on a whole cent.
       amount = pm.convert(Math.round(dollars * 100), native) / 100;
     }

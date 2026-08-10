@@ -9,7 +9,7 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { recurringTransactionCreateSchema } from '@/lib/validation/pm/recurringTransaction';
-import { mapAmountLineToDb } from './serialize';
+import { mapAmountLineToDb, mapMortgageToDb } from './serialize';
 import { logActivity } from '@/lib/pm/activity';
 import { computeWarnings } from '@/lib/pm/warnings';
 import {
@@ -185,6 +185,7 @@ export async function POST(request: Request) {
     duration: parsed.data.duration,
     occurrenceCount: parsed.data.occurrenceCount ?? null,
     amounts: (parsed.data.amounts ?? []).map(mapAmountLineToDb),
+    mortgage: mapMortgageToDb(parsed.data.mortgage),
     queueForPrinting: parsed.data.queueForPrinting ?? false,
     active: parsed.data.active ?? true,
     createdByUserId: new Types.ObjectId(ctx.userId),

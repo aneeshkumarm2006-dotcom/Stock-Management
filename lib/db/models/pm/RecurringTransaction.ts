@@ -11,6 +11,7 @@ import type {
   RecurringTransactionType,
 } from '@/types/pm';
 import { WarningSchema, type IWarning } from './_shared/WarningSchema';
+import type { AmortizationCompounding } from '@/lib/pm/amortization';
 
 export const RECURRING_TRANSACTION_TYPES_DB: RecurringTransactionType[] = [
   'Check',
@@ -76,6 +77,61 @@ export interface IRecurringAmountLine {
   /** Integer cents. */
   amount: number;
   allocation?: IRecurringLineAllocation | null;
+  /**
+   * Marks THIS line as the mortgage payment, so the poster splits it into an
+   * interest leg and a principal leg using the rule-level `mortgage` terms.
+   *
+   * A boolean rather than a line id on purpose: PATCH rebuilds `amounts[]`
+   * wholesale through `mapAmountLineToDb`, which does not carry `_id`, so every
+   * save regenerates the line ids and any id reference would be orphaned by the
+   * first edit. Absent/false ⇒ the historical single-line behaviour, so no
+   * backfill is needed.
+   */
+  splitAsMortgage?: boolean;
+}
+
+/**
+ * Immutable loan facts for a mortgage rule. Everything else — the balance at
+ * any date, this period's interest and principal — is DERIVED from these plus
+ * the payment index, never stored.
+ *
+ * There is deliberately no `currentBalanceCents`: a rolled-back period, a
+ * duplicate-suppressed period or a released claim would each leave a
+ * decremented balance permanently wrong with nothing able to detect it.
+ * See lib/pm/amortization.ts.
+ */
+export interface IRecurringMortgage {
+  /** The loan's start date. The anchor the payment index counts from. */
+  originationDate: Date;
+  /** Original loan amount at origination, integer cents. */
+  originalPrincipalCents: number;
+  /** Nominal annual rate as a percentage, e.g. 5.25. */
+  annualRatePct: number;
+  /** Total scheduled payments over the amortization period. */
+  termPeriods: number;
+  /**
+   * 'SemiAnnual' is the Canadian legal convention and the default; US loans use
+   * 'PeriodMatched'. Worth ~$1,300 over a $1M 25-year term — confirm it against
+   * a lender statement rather than guessing.
+   */
+  compounding: AmortizationCompounding;
+  /**
+   * Offset for a loan that started before it was entered here and whose true
+   * origination date isn't available. Prefer the real date and leave this at 0.
+   */
+  paymentsAlreadyMade: number;
+  /** Long-term Liability account the principal leg debits. */
+  principalAccountId: Types.ObjectId;
+  /** Operating Expense account the interest leg debits. */
+  interestAccountId: Types.ObjectId;
+  /**
+   * A lender statement balance and its date. Stored as a CHECK, not as state:
+   * `verify-amortization.ts --live` recomputes what our schedule says the
+   * balance was on that date and reports the delta. A gap of more than a few
+   * dollars means the terms are wrong and the rule must not go live.
+   */
+  statementBalanceCents?: number | null;
+  statementDate?: Date | null;
 }
 
 export interface IRecurringPayee {
@@ -98,6 +154,8 @@ export interface IRecurringTransaction {
   /** Required when duration='End after N'. */
   occurrenceCount?: number | null;
   amounts: IRecurringAmountLine[];
+  /** Loan terms, when this rule is a mortgage payment. Null otherwise. */
+  mortgage?: IRecurringMortgage | null;
   queueForPrinting: boolean;
   active: boolean;
   lastPostedDate?: Date | null;
@@ -163,8 +221,38 @@ const RecurringAmountLineSchema = new Schema<IRecurringAmountLine>(
     amount: { type: Number, required: true },
     // `null` = don't allocate, which is what every pre-existing row is.
     allocation: { type: RecurringLineAllocationSchema, default: null },
+    // `false` = post as one line, which is what every pre-existing row is.
+    splitAsMortgage: { type: Boolean, default: false },
   },
   { _id: true },
+);
+
+const RecurringMortgageSchema = new Schema<IRecurringMortgage>(
+  {
+    originationDate: { type: Date, required: true },
+    originalPrincipalCents: { type: Number, required: true, min: 1 },
+    annualRatePct: { type: Number, required: true, min: 0, max: 100 },
+    termPeriods: { type: Number, required: true, min: 1, max: 1200 },
+    compounding: {
+      type: String,
+      enum: ['SemiAnnual', 'PeriodMatched'],
+      default: 'SemiAnnual',
+    },
+    paymentsAlreadyMade: { type: Number, default: 0, min: 0 },
+    principalAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmChartOfAccount',
+      required: true,
+    },
+    interestAccountId: {
+      type: Schema.Types.ObjectId,
+      ref: 'PmChartOfAccount',
+      required: true,
+    },
+    statementBalanceCents: { type: Number, default: null },
+    statementDate: { type: Date, default: null },
+  },
+  { _id: false },
 );
 
 const RecurringPayeeSchema = new Schema<IRecurringPayee>(
@@ -218,6 +306,9 @@ const RecurringTransactionSchema = new Schema<IRecurringTransaction>(
       type: [RecurringAmountLineSchema],
       default: [],
     },
+    // `null` = not a mortgage, which is what every pre-existing rule is — so
+    // deploying this is a no-op until someone configures one.
+    mortgage: { type: RecurringMortgageSchema, default: null },
     queueForPrinting: { type: Boolean, default: false },
     active: { type: Boolean, default: true },
     lastPostedDate: { type: Date, default: null },

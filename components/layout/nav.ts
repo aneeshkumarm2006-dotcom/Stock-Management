@@ -29,6 +29,7 @@ import {
   TrendingUp,
   Home,
   LineChart,
+  Scale,
   BookOpen,
   Landmark,
   Receipt,
@@ -152,6 +153,7 @@ const PM_NAV: NavNode[] = [
     icon: Calculator,
     children: [
       { href: "/properties/accounting/financials", label: "Financials", icon: LineChart },
+      { href: "/properties/accounting/balance-sheet", label: "Balance sheet", icon: Scale },
       { href: "/properties/accounting/general-ledger", label: "General ledger", icon: BookOpen },
       { href: "/properties/accounting/banking", label: "Banking", icon: Landmark },
       { href: "/properties/accounting/bills", label: "Bills", icon: Receipt },

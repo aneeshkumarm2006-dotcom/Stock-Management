@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { JournalEntryModal } from "@/components/pm/JournalEntryModal";
-import { fromCents } from "@/lib/pm/currency";
+import type { PmCurrency } from "@/types/pm";
 
 interface JELine {
   accountId: string;
@@ -55,6 +55,8 @@ interface AccountOption {
 interface PropertyOption {
   id: string;
   name: string;
+  /** null when the property inherits the org default. */
+  currency: PmCurrency | null;
 }
 
 function GeneralLedgerContent() {
@@ -84,9 +86,16 @@ function GeneralLedgerContent() {
     ]).then(([a, p]) => {
       setAccounts(a as AccountOption[]);
       setProperties(
-        (p as { id: string; propertyName: string }[]).map((row) => ({
+        (
+          p as {
+            id: string;
+            propertyName: string;
+            currency: PmCurrency | null;
+          }[]
+        ).map((row) => ({
           id: row.id,
           name: row.propertyName,
+          currency: row.currency ?? null,
         })),
       );
     });
@@ -136,6 +145,17 @@ function GeneralLedgerContent() {
     for (const p of properties) m.set(p.id, p.name);
     return m;
   }, [properties]);
+  // A journal entry is denominated in its scope's currency. This is the
+  // drill-through target of every Financials cell, so rendering a USD entry
+  // under a C$ symbol here would undo the fix one click later. Company-scoped
+  // entries fall through to the provider's org default.
+  const currencyForScope = React.useCallback(
+    (scopeType: string, scopeId: string | null): PmCurrency | undefined => {
+      if (scopeType !== "Property" || !scopeId) return undefined;
+      return properties.find((p) => p.id === scopeId)?.currency ?? undefined;
+    },
+    [properties],
+  );
 
   return (
     <div className="space-y-4">
@@ -298,10 +318,18 @@ function GeneralLedgerContent() {
                           <StatusBadge status={r.status} />
                         </td>
                         <td className="text-right">
-                          <CurrencyAmount value={fromCents(r.totalDebits)} />
+                          <CurrencyAmount
+                            cents={r.totalDebits}
+                            currency={currencyForScope(r.scopeType, r.scopeId)}
+                            convert={false}
+                          />
                         </td>
                         <td className="text-right">
-                          <CurrencyAmount value={fromCents(r.totalCredits)} />
+                          <CurrencyAmount
+                            cents={r.totalCredits}
+                            currency={currencyForScope(r.scopeType, r.scopeId)}
+                            convert={false}
+                          />
                         </td>
                       </tr>
                       {expanded.has(r.id) && (
@@ -334,12 +362,22 @@ function GeneralLedgerContent() {
                                     </td>
                                     <td className="text-right">
                                       <CurrencyAmount
-                                        value={fromCents(l.debit)}
+                                        cents={l.debit}
+                                        currency={currencyForScope(
+                                          l.scopeType,
+                                          l.scopeId,
+                                        )}
+                                        convert={false}
                                       />
                                     </td>
                                     <td className="text-right">
                                       <CurrencyAmount
-                                        value={fromCents(l.credit)}
+                                        cents={l.credit}
+                                        currency={currencyForScope(
+                                          l.scopeType,
+                                          l.scopeId,
+                                        )}
+                                        convert={false}
                                       />
                                     </td>
                                   </tr>

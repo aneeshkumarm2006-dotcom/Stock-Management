@@ -1,4 +1,10 @@
 // Per-row CRUD on Lease.
+//
+// CURRENCY. Every amount on a lease — rent, splits, deposits, charges — is
+// denominated in the currency its PROPERTY books in; a lease has no currency of
+// its own. The payload therefore carries one resolved top-level `currency` and
+// the page wraps itself in <PmNativeCurrency renderNative> with it, which is
+// what stops a US lease being FX-converted into a figure matching no document.
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
@@ -8,10 +14,13 @@ import {
 } from '@/lib/db/models/pm/Lease';
 import { Tenant } from '@/lib/db/models/pm/Tenant';
 import { Unit } from '@/lib/db/models/pm/Unit';
+import { Property } from '@/lib/db/models/pm/Property';
+import { Organization } from '@/lib/db/models/pm/Organization';
 import type {
   EsignatureStatus,
   LeaseStatus,
   LeaseType,
+  PmCurrency,
   RentCycle,
   TenantType,
 } from '@/types/pm';
@@ -27,7 +36,7 @@ import {
   deriveCurrentRentFromSchedule,
 } from '@/lib/validation/pm/rentSchedule';
 import { logActivity } from '@/lib/pm/activity';
-import { toCents } from '@/lib/pm/currency';
+import { toCents, resolvePropertyCurrency } from '@/lib/pm/currency';
 import { resolveRent, RentResolutionError } from '@/lib/pm/rent';
 import { computePeriodAmounts } from '@/lib/pm/rentSchedule';
 import {
@@ -56,7 +65,7 @@ export async function GET(
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const [insurancePolicies, pets] = await Promise.all([
+  const [insurancePolicies, pets, property, org] = await Promise.all([
     RentersInsurancePolicy.find({
       organizationId: doc.organizationId,
       leaseId: doc._id,
@@ -65,7 +74,23 @@ export async function GET(
       organizationId: doc.organizationId,
       leaseId: doc._id,
     }).lean(),
+    Property.findOne({
+      _id: doc.propertyId,
+      organizationId: doc.organizationId,
+    })
+      .select({ currency: 1 })
+      .lean<{ currency?: PmCurrency | null } | null>(),
+    Organization.findById(doc.organizationId)
+      .select({ defaultCurrency: 1 })
+      .lean<{ defaultCurrency?: PmCurrency } | null>(),
   ]);
+
+  // `Property.currency` is optional by design — undefined means "inherit the
+  // org default" — so it is resolved here rather than read raw.
+  const currency: PmCurrency = resolvePropertyCurrency(
+    property?.currency,
+    org?.defaultCurrency,
+  );
 
   // BR-LL-6 — uninsuredResidents = lease.tenants where every covered policy
   // explicitly excludes them. Empty `coveredResidents` array means
@@ -92,6 +117,8 @@ export async function GET(
     id: String(doc._id),
     leaseNumber: doc.leaseNumber,
     propertyId: String(doc.propertyId),
+    /** Booking currency of this lease's property — covers every amount below. */
+    currency,
     unitId: String(doc.unitId),
     rentalOwnerId: doc.rentalOwnerId ? String(doc.rentalOwnerId) : null,
     tenants: doc.tenants.map((t) => ({

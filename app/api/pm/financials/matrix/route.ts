@@ -11,6 +11,19 @@
 // refine cash-basis to "only count entries that hit a cash CoA"; until then
 // both modes use the underlying ledger as-is. The org.accountingMode is still
 // surfaced so the UI can display the active mode.
+//
+// CURRENCY. Every COLUMN carries its own resolved currency; CELLS deliberately
+// do not. A cell is keyed `accountId|propertyId`, so its column already
+// determines what it is denominated in — putting the currency on both would
+// create two sources of truth that can drift. Every cell provably has a column
+// (the archived-orphan logic below guarantees it), so nothing is left
+// unlabelled. The page uses this to render each column natively and to bucket
+// row/grand totals into a MoneyByCurrency instead of adding CAD to USD.
+//
+// The 'company' column is the org's own books, so it takes the org default
+// currency. `scopeReportKey` is called with splitByCompany off, which collapses
+// every Company-scoped line onto that one column; if that is ever turned on,
+// each `company:<id>` column should resolve via resolveCompanyCurrency instead.
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
@@ -23,6 +36,8 @@ import {
   getPmContext,
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
+import { resolvePropertyCurrency } from '@/lib/pm/currency';
+import type { PmCurrency } from '@/types/pm';
 
 export const runtime = 'nodejs';
 
@@ -51,10 +66,23 @@ export async function GET(request: Request) {
     })
       .sort({ type: 1, name: 1 })
       .lean(),
+    // Projected and typed explicitly: the previous untyped `.lean()` returned
+    // `currency` all along, which is how it went unnoticed that the columns
+    // were never labelled with it.
     Property.find({ organizationId: orgObjectId, active: true })
+      .select({ _id: 1, propertyName: 1, currency: 1 })
       .sort({ propertyName: 1 })
-      .lean(),
+      .lean<
+        Array<{
+          _id: Types.ObjectId;
+          propertyName: string;
+          currency?: PmCurrency | null;
+        }>
+      >(),
   ]);
+
+  const orgDefaultCurrency: PmCurrency =
+    (org as { defaultCurrency?: PmCurrency } | null)?.defaultCurrency ?? 'USD';
 
   const accountIds = accounts.map((a) => a._id);
 
@@ -126,15 +154,25 @@ export async function GET(request: Request) {
           $in: Array.from(orphanPropIds).map((id) => new Types.ObjectId(id)),
         },
       })
-        .select({ _id: 1, propertyName: 1 })
-        .lean<Array<{ _id: Types.ObjectId; propertyName: string }>>()
+        .select({ _id: 1, propertyName: 1, currency: 1 })
+        .lean<
+          Array<{
+            _id: Types.ObjectId;
+            propertyName: string;
+            currency?: PmCurrency | null;
+          }>
+        >()
     : [];
-  const archivedNameById = new Map(
-    archivedProps.map((p) => [String(p._id), p.propertyName]),
-  );
+  const archivedById = new Map(archivedProps.map((p) => [String(p._id), p]));
   const archivedColumns = Array.from(orphanPropIds).map((id) => ({
     id,
-    name: `${archivedNameById.get(id) || 'Archived property'} (archived)`,
+    name: `${archivedById.get(id)?.propertyName || 'Archived property'} (archived)`,
+    // An archived property still booked in a real currency; falling back to the
+    // org default here would silently relabel its history.
+    currency: resolvePropertyCurrency(
+      archivedById.get(id)?.currency,
+      orgDefaultCurrency,
+    ),
   }));
 
   // Phase 9 (BR-AC-20) — surface HOA per-association groupings. Pull
@@ -169,11 +207,13 @@ export async function GET(request: Request) {
       name: a.name,
       type: a.type,
     })),
+    orgDefaultCurrency,
     columns: [
-      { id: 'company', name: 'Company' },
+      { id: 'company', name: 'Company', currency: orgDefaultCurrency },
       ...properties.map((p) => ({
         id: String(p._id),
         name: p.propertyName,
+        currency: resolvePropertyCurrency(p.currency, orgDefaultCurrency),
       })),
       ...archivedColumns,
     ],

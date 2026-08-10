@@ -1,11 +1,20 @@
 // Lease CRUD (PDR §3.3). The list view defaults to BR-LL-2 filter
 // `(2) Active, Future`. POST is the data-import path — most leases come into
 // existence via /draft-leases/[id]/execute.
+//
+// CURRENCY. Rent amounts are integer cents with no unit of their own, and a
+// lease carries no currency — it belongs to the lease's property. Every row
+// therefore ships a resolved `currency` so a mixed US/Canada rent roll can
+// render each lease in its own currency instead of asserting one for all of
+// them. Resolved server-side via resolvePropertyCurrency, so the field is
+// always a concrete "USD" | "CAD" and never null. Mirrors the join that
+// /api/pm/outstanding-balances already performs.
 import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { Lease } from '@/lib/db/models/pm/Lease';
 import { Property } from '@/lib/db/models/pm/Property';
+import { Organization } from '@/lib/db/models/pm/Organization';
 import { Unit } from '@/lib/db/models/pm/Unit';
 import { Tenant } from '@/lib/db/models/pm/Tenant';
 import {
@@ -18,11 +27,11 @@ import {
   deriveCurrentRentFromSchedule,
 } from '@/lib/validation/pm/rentSchedule';
 import { logActivity } from '@/lib/pm/activity';
-import { toCents } from '@/lib/pm/currency';
+import { toCents, resolvePropertyCurrency } from '@/lib/pm/currency';
 import { normalizeCountry } from '@/lib/pm/country';
 import { resolveRent, RentResolutionError } from '@/lib/pm/rent';
 import { LEASE_STATUSES } from '@/types/pm';
-import type { LeaseType, RentCycle, LeaseStatus } from '@/types/pm';
+import type { LeaseType, RentCycle, LeaseStatus, PmCurrency } from '@/types/pm';
 import {
   computeLeaseStatus,
   daysRemaining,
@@ -62,27 +71,52 @@ export async function GET(request: Request) {
     .sort({ status: 1, startDate: -1 })
     .lean();
 
-  // Leases carry no country of their own — it lives on the property. Batch-fetch
-  // the referenced properties and expose each lease's normalized country so the
-  // rent roll can separate US vs Canada (mirrors the outstanding-balances join).
+  // Leases carry no country OR currency of their own — both live on the
+  // property. Batch-fetch the referenced properties and expose each lease's
+  // normalized country (so the rent roll can separate US vs Canada) and its
+  // resolved booking currency (so each row renders in its own currency).
+  // Mirrors the outstanding-balances join.
   const leasePropIds = Array.from(
     new Set(rows.map((r) => String(r.propertyId)).filter(Boolean)),
   ).map((s) => new Types.ObjectId(s));
-  const leaseProps =
+  const [leaseProps, org] = await Promise.all([
     leasePropIds.length === 0
-      ? []
-      : await Property.find({
+      ? Promise.resolve(
+          [] as Array<{
+            _id: Types.ObjectId;
+            currency?: PmCurrency | null;
+            address?: { country?: string };
+          }>,
+        )
+      : Property.find({
           _id: { $in: leasePropIds },
           organizationId: new Types.ObjectId(ctx.orgId),
         })
-          .select({ _id: 1, 'address.country': 1 })
-          .lean();
+          .select({ _id: 1, currency: 1, 'address.country': 1 })
+          .lean<
+            Array<{
+              _id: Types.ObjectId;
+              currency?: PmCurrency | null;
+              address?: { country?: string };
+            }>
+          >(),
+    Organization.findById(new Types.ObjectId(ctx.orgId))
+      .select({ defaultCurrency: 1 })
+      .lean<{ defaultCurrency?: PmCurrency } | null>(),
+  ]);
+  const orgDefaultCurrency: PmCurrency = org?.defaultCurrency ?? 'USD';
   const countryByProperty = new Map(
     leaseProps.map((p) => [
       String(p._id),
-      normalizeCountry(
-        (p as { address?: { country?: string } }).address?.country,
-      ),
+      normalizeCountry(p.address?.country),
+    ]),
+  );
+  // `Property.currency` is optional by design — undefined means "inherit the
+  // org default", so it must never be read raw.
+  const currencyByProperty = new Map<string, PmCurrency>(
+    leaseProps.map((p) => [
+      String(p._id),
+      resolvePropertyCurrency(p.currency, orgDefaultCurrency),
     ]),
   );
 
@@ -92,6 +126,9 @@ export async function GET(request: Request) {
       leaseNumber: r.leaseNumber,
       propertyId: String(r.propertyId),
       country: countryByProperty.get(String(r.propertyId)) ?? 'Other',
+      /** Booking currency of this lease's property. Always concrete. */
+      currency:
+        currencyByProperty.get(String(r.propertyId)) ?? orgDefaultCurrency,
       unitId: String(r.unitId),
       tenants: (r.tenants ?? []).map((t) => ({
         tenantId: String(t.tenantId),

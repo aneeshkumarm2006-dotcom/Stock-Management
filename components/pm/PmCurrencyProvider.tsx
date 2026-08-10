@@ -14,6 +14,14 @@
 // Nesting is meaningful: a property-scoped section can override the org-level
 // default, so a list of mixed-currency properties wraps each row in its own
 // scope. Refs: lib/pm/currency.ts (resolver + convertCents).
+//
+// NATIVE RENDERING (`renderNative`). A figure that belongs to exactly one
+// property is not a candidate for conversion at all — a US lease's rent is
+// $6,556 USD whichever way the top-bar toggle is set, and converting it
+// produces a number that matches no document anyone holds. Such a subtree sets
+// `renderNative`, and every CurrencyAmount and usePmMoneyFormatter beneath it
+// renders in the native currency with the native symbol. Only figures that
+// genuinely span currencies (MoneyTotal over a MoneyByCurrency) convert.
 import * as React from "react";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useFxSync } from "@/lib/hooks/useDashboard";
@@ -29,6 +37,12 @@ interface PmCurrencyContextValue {
   orgDefaultCurrency: PmCurrency;
   /** Native currency of amounts in the current subtree. */
   nativeCurrency: PmCurrency;
+  /**
+   * True when amounts in this subtree belong to one property/entity and must be
+   * rendered in `nativeCurrency` rather than converted to `displayCurrency`.
+   * Set by <PmNativeCurrency renderNative>; false at the provider root.
+   */
+  renderNative: boolean;
   rates: FxRates;
   /** True once the FX table has loaded a rate for the display currency. */
   ratesReady: boolean;
@@ -97,6 +111,7 @@ export function PmCurrencyProvider({
       displayCurrency,
       orgDefaultCurrency,
       nativeCurrency: orgDefaultCurrency,
+      renderNative: false,
       rates,
       ratesReady,
       convert: (cents, native) =>
@@ -123,12 +138,19 @@ export function PmCurrencyProvider({
  *
  * `currency={undefined}` is a valid no-op — it keeps the inherited scope, so
  * callers can pass `property.currency` straight through without a guard.
+ *
+ * Pass `renderNative` when the amounts below belong to a single property and
+ * must NOT follow the top-bar toggle — a lease detail page, a single-property
+ * card. Omit it for a scope that should still convert (the historical
+ * behaviour, kept so existing call sites are untouched).
  */
 export function PmNativeCurrency({
   currency,
+  renderNative,
   children,
 }: {
   currency: PmCurrency | null | undefined;
+  renderNative?: boolean;
   children: React.ReactNode;
 }) {
   const parent = React.useContext(PmCurrencyContext);
@@ -139,9 +161,12 @@ export function PmNativeCurrency({
     return {
       ...parent,
       nativeCurrency: native,
+      // Inherit rather than reset: a native subtree nested inside another
+      // native subtree stays native.
+      renderNative: renderNative ?? parent.renderNative,
       convert: (cents, override) => parent.convert(cents, override ?? native),
     };
-  }, [parent, currency]);
+  }, [parent, currency, renderNative]);
 
   if (!value) return <>{children}</>;
   return (
@@ -166,6 +191,10 @@ export function usePmCurrency(): PmCurrencyContextValue | null {
  * template literals. Converts from the scope's native currency and formats with
  * the user's number-format preference.
  *
+ * Inside a `renderNative` scope it formats in the native currency and converts
+ * nothing — this is what carries the fix into LeaseTermScheduleTable and the
+ * lease modals, which format through here rather than through <CurrencyAmount>.
+ *
  * Prefer <CurrencyAmount> in JSX; it also handles the red-negative styling.
  */
 export function usePmMoneyFormatter(): (
@@ -178,6 +207,13 @@ export function usePmMoneyFormatter(): (
   return React.useCallback(
     (cents, nativeCurrency) => {
       if (cents == null || !Number.isFinite(cents)) return "—";
+      const native = nativeCurrency ?? pm?.nativeCurrency ?? "USD";
+      if (pm?.renderNative) {
+        return formatCurrency(cents / 100, native, {
+          format: numberFormat,
+          accounting: true,
+        });
+      }
       const display = pm?.displayCurrency ?? "USD";
       const converted = pm ? pm.convert(cents, nativeCurrency) : cents;
       return formatCurrency(converted / 100, display, {
