@@ -7,6 +7,7 @@ import { Tenant } from '@/lib/db/models/pm/Tenant';
 import { Lease } from '@/lib/db/models/pm/Lease';
 import { Property } from '@/lib/db/models/pm/Property';
 import { Unit } from '@/lib/db/models/pm/Unit';
+import { CompanyAccount } from '@/lib/db/models/pm/CompanyAccount';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -14,6 +15,7 @@ import {
 import { tenantCreateSchema } from '@/lib/validation/pm/tenant';
 import { logActivity } from '@/lib/pm/activity';
 import { tenantDisplayName } from '@/lib/pm/tenantName';
+import { normalizeCountry, OTHER } from '@/lib/pm/country';
 import type { TenantType } from '@/types/pm';
 
 export const runtime = 'nodejs';
@@ -58,15 +60,22 @@ export async function GET(request: Request) {
     .sort({ lastName: 1, firstName: 1 })
     .lean<TenantLeanLike[]>();
 
-  // Batch-resolve each tenant's current lease → property/unit name. Three
-  // extra queries total, independent of row count (no per-row lookups).
+  // Batch-resolve each tenant's current lease → property (name, country,
+  // parent company) + unit name. Four extra queries total, independent of row
+  // count (no per-row lookups).
   const orgId = new Types.ObjectId(ctx.orgId);
   const leaseById = new Map<
     string,
     { propertyId: string; unitId: string }
   >();
-  const propNameById = new Map<string, string>();
+  // The list groups by property, country and parent company, so the property
+  // lookup below carries all three rather than the name alone.
+  const propById = new Map<
+    string,
+    { name: string; country: string; companyAccountId: string | null }
+  >();
   const unitNameById = new Map<string, string>();
+  const companyNameById = new Map<string, string>();
 
   const leaseIds = Array.from(
     new Set(
@@ -98,8 +107,15 @@ export async function GET(request: Request) {
         organizationId: orgId,
         _id: { $in: Array.from(propIds).map((s) => new Types.ObjectId(s)) },
       })
-        .select({ propertyName: 1 })
-        .lean<{ _id: Types.ObjectId; propertyName?: string }[]>(),
+        .select({ propertyName: 1, 'address.country': 1, companyAccountId: 1 })
+        .lean<
+          {
+            _id: Types.ObjectId;
+            propertyName?: string;
+            address?: { country?: string };
+            companyAccountId?: Types.ObjectId | null;
+          }[]
+        >(),
       Unit.find({
         organizationId: orgId,
         _id: { $in: Array.from(unitIds).map((s) => new Types.ObjectId(s)) },
@@ -107,8 +123,53 @@ export async function GET(request: Request) {
         .select({ unitId: 1 })
         .lean<{ _id: Types.ObjectId; unitId?: string }[]>(),
     ]);
-    for (const p of props) propNameById.set(String(p._id), p.propertyName ?? '');
+    for (const p of props) {
+      propById.set(String(p._id), {
+        name: p.propertyName ?? '',
+        // Bucketed server-side (as the leases route does) so every surface
+        // groups identically and the client never re-derives it.
+        country: normalizeCountry(p.address?.country),
+        companyAccountId: p.companyAccountId ? String(p.companyAccountId) : null,
+      });
+    }
     for (const u of units) unitNameById.set(String(u._id), u.unitId ?? '');
+
+    // One $in for the parent companies, mirroring the properties list.
+    const companyIds = Array.from(
+      new Set(
+        Array.from(propById.values())
+          .map((p) => p.companyAccountId)
+          .filter((v): v is string => Boolean(v)),
+      ),
+    );
+    if (companyIds.length > 0) {
+      const companies = await CompanyAccount.find({
+        organizationId: orgId,
+        _id: { $in: companyIds.map((s) => new Types.ObjectId(s)) },
+      })
+        .select({ name: 1 })
+        .lean<{ _id: Types.ObjectId; name?: string }[]>();
+      for (const c of companies) {
+        companyNameById.set(String(c._id), c.name ?? '');
+      }
+    }
+  }
+
+  // Property/unit for a tenant's CURRENT active lease. Country and company
+  // ride along so the list can section rows the way Properties does.
+  function serializeCurrentLease(lease: { propertyId: string; unitId: string }) {
+    const prop = propById.get(lease.propertyId);
+    const companyAccountId = prop?.companyAccountId ?? null;
+    return {
+      propertyId: lease.propertyId,
+      propertyName: prop?.name || '(Unknown property)',
+      unitName: unitNameById.get(lease.unitId) || '(Unknown unit)',
+      country: prop?.country ?? OTHER,
+      companyAccountId,
+      companyName: companyAccountId
+        ? (companyNameById.get(companyAccountId) || '(unknown company)')
+        : null,
+    };
   }
 
   return NextResponse.json(
@@ -127,14 +188,7 @@ export async function GET(request: Request) {
         active: r.active,
         displayName: tenantDisplayName(r),
         currentLeaseId: leaseId,
-        currentLease: lease
-          ? {
-              propertyId: lease.propertyId,
-              propertyName:
-                propNameById.get(lease.propertyId) || '(Unknown property)',
-              unitName: unitNameById.get(lease.unitId) || '(Unknown unit)',
-            }
-          : null,
+        currentLease: lease ? serializeCurrentLease(lease) : null,
       };
     }),
   );

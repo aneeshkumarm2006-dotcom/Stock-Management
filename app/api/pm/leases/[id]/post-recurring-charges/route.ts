@@ -27,6 +27,11 @@ import {
   LockedPeriodError,
 } from '@/lib/pm/lockedPeriod';
 import { buildRentChargeLines } from '@/lib/pm/rentCharge';
+import {
+  leaseTenantsLabel,
+  recurringChargeMemo,
+  rentChargeMemo,
+} from '@/lib/pm/journalMemo';
 import { resolveScheduledRentForDate } from '@/lib/pm/rentSchedule';
 import type { RentCycle } from '@/types/pm';
 
@@ -120,6 +125,9 @@ export async function POST(
   if (!property) {
     return NextResponse.json({ error: 'Property missing' }, { status: 409 });
   }
+  // Every JE this sweep posts names the same tenant(s); `lease.tenants[]` is
+  // the denormalized snapshot already loaded above, so this costs no query.
+  const tenantLabel = leaseTenantsLabel(lease.tenants);
   const arCoa = await ChartOfAccount.findOne({
     organizationId: orgId,
     defaultFor: 'Accounts Receivable',
@@ -172,7 +180,11 @@ export async function POST(
       date: charge.nextDate,
       scopeType: 'Property',
       scopeId: lease.propertyId,
-      memo: `Recurring charge for lease #${lease.leaseNumber} (${charge.memo ?? charge.frequency})`,
+      memo: recurringChargeMemo({
+        leaseNumber: lease.leaseNumber,
+        tenantLabel,
+        detail: charge.memo ?? charge.frequency,
+      }),
       lines: [
         {
           accountId: accountsReceivableCoaId,
@@ -254,7 +266,10 @@ export async function POST(
           date: dueDate,
           scopeType: 'Property',
           scopeId: lease.propertyId,
-          memo: `Rent charge for lease #${lease.leaseNumber}`,
+          memo: rentChargeMemo({
+            leaseNumber: lease.leaseNumber,
+            tenantLabel,
+          }),
           lines: built.lines,
           status: 'Posted',
           postedAt: new Date(),

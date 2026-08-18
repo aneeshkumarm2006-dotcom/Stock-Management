@@ -25,6 +25,11 @@ import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
 import { logActivity } from "@/lib/pm/activity";
 import { assertWriteAllowed, LockedPeriodError } from "@/lib/pm/lockedPeriod";
 import { buildRentChargeLines } from "@/lib/pm/rentCharge";
+import {
+  leaseTenantsLabel,
+  recurringChargeMemo,
+  rentChargeMemo,
+} from "@/lib/pm/journalMemo";
 import { resolveScheduledRentForDate } from "@/lib/pm/rentSchedule";
 import type { PmContext } from "@/lib/auth/getCurrentUser";
 import type { RentCycle } from "@/types/pm";
@@ -132,6 +137,9 @@ export async function runLeaseRecurringPoster(
   const results: LeasePostResult[] = [];
   for (const lease of leases) {
     let postedThisLease = 0;
+    // Resolved once per lease — every JE this iteration posts carries the
+    // same tenant label, and `lease.tenants[]` is already in memory.
+    const tenantLabel = leaseTenantsLabel(lease.tenants);
 
     for (const charge of lease.recurringCharges) {
       const chargeId = String((charge as { _id?: unknown })._id ?? "");
@@ -210,7 +218,11 @@ export async function runLeaseRecurringPoster(
           date: originalNextDate,
           scopeType: "Property",
           scopeId: lease.propertyId,
-          memo: `Recurring charge for lease #${lease.leaseNumber} (${charge.memo ?? charge.frequency})`,
+          memo: recurringChargeMemo({
+            leaseNumber: lease.leaseNumber,
+            tenantLabel,
+            detail: charge.memo ?? charge.frequency,
+          }),
           lines: [
             {
               accountId: accountsReceivableCoaId,
@@ -349,7 +361,10 @@ export async function runLeaseRecurringPoster(
                 date: dueDate,
                 scopeType: "Property",
                 scopeId: lease.propertyId,
-                memo: `Rent charge for lease #${lease.leaseNumber}`,
+                memo: rentChargeMemo({
+                  leaseNumber: lease.leaseNumber,
+                  tenantLabel,
+                }),
                 lines: built.lines,
                 status: "Posted",
                 postedAt: new Date(now),

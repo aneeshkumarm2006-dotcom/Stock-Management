@@ -16,6 +16,7 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { compareCountryGroups } from "@/lib/pm/country";
 
 interface TenantRow {
   id: string;
@@ -32,15 +33,41 @@ interface TenantRow {
     propertyId: string;
     propertyName: string;
     unitName: string;
+    /** Already bucketed by the API via normalizeCountry. */
+    country: string;
+    companyAccountId: string | null;
+    companyName: string | null;
   } | null;
 }
 
 type ActiveFilter = "active" | "inactive" | "all";
 
+// Mirrors PropertyGroupBy on the properties list. Every dimension here hangs
+// off the tenant's CURRENT active lease, which is also what the Property /
+// Unit column shows — so a section always agrees with the rows under it.
+type TenantGroupBy = "none" | "property" | "country" | "company";
+
+const GROUP_BY_OPTIONS: Array<[TenantGroupBy, string]> = [
+  ["none", "None"],
+  ["property", "Property"],
+  ["country", "Country"],
+  ["company", "Company"],
+];
+
+// Tenants between leases have no property to group under. They get their own
+// bucket pinned last, matching the Unowned/Unassigned rule on the properties
+// list. Deliberately distinct from the country bucket "Other", which means
+// "a country we don't recognise" rather than "no lease".
+const NO_LEASE = "__unassigned";
+const NO_LEASE_LABEL = "No current lease";
+
 export default function TenantsPage() {
   const [rows, setRows] = React.useState<TenantRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [filter, setFilter] = React.useState<ActiveFilter>("active");
+  // Grouped by default (as the rent roll is) — the flat list gave no hint
+  // that tenants cluster by property.
+  const [groupBy, setGroupBy] = React.useState<TenantGroupBy>("property");
   const [search, setSearch] = React.useState("");
   const [modalOpen, setModalOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<TenantRow | null>(null);
@@ -64,6 +91,114 @@ export default function TenantsPage() {
     if (filter === "inactive") return rows.filter((r) => !r.active);
     return rows;
   }, [rows, filter]);
+
+  // Section the visible rows by property, country or parent company. "none"
+  // is a single unlabeled group, so the table below renders one code path
+  // either way. Same Map → sort shape as the properties list.
+  const groups = React.useMemo<
+    Array<{ key: string; label: string; rows: TenantRow[] }>
+  >(() => {
+    if (groupBy === "none") {
+      return [{ key: "all", label: "", rows: visible }];
+    }
+
+    // One pass, keyed per dimension; tenants with no current lease always
+    // fall into NO_LEASE regardless of which dimension is selected.
+    const m = new Map<string, { label: string; rows: TenantRow[] }>();
+    for (const t of visible) {
+      const lease = t.currentLease;
+      let key = NO_LEASE;
+      let label = NO_LEASE_LABEL;
+      if (lease) {
+        if (groupBy === "property") {
+          key = lease.propertyId;
+          label = lease.propertyName;
+        } else if (groupBy === "country") {
+          key = lease.country;
+          label = lease.country;
+        } else {
+          key = lease.companyAccountId ?? "__nocompany";
+          label = lease.companyName ?? "Unassigned";
+        }
+      }
+      const g = m.get(key) ?? { label, rows: [] };
+      g.rows.push(t);
+      m.set(key, g);
+    }
+
+    return Array.from(m.entries())
+      .map(([key, v]) => ({ key, label: v.label, rows: v.rows }))
+      .sort((a, b) => {
+        // "No current lease" and an unset company both pin last.
+        if (a.key === NO_LEASE) return 1;
+        if (b.key === NO_LEASE) return -1;
+        if (a.key === "__nocompany") return 1;
+        if (b.key === "__nocompany") return -1;
+        return groupBy === "country"
+          ? compareCountryGroups(a.label, b.label)
+          : a.label.localeCompare(b.label);
+      });
+  }, [visible, groupBy]);
+
+  const renderTenantRow = (t: TenantRow) => (
+    <tr
+      key={t.id}
+      className={"border-b border-border/40 " + (t.active ? "" : "opacity-50")}
+    >
+      <td className="py-2 text-fg">
+        <Link
+          href={`/properties/rentals/tenants/${t.id}`}
+          className="font-medium hover:underline"
+        >
+          {t.displayName}
+        </Link>
+        {t.tenantType === "Company" && t.contactPersonName && (
+          <span className="block text-xs text-fg-muted">
+            Contact: {t.contactPersonName}
+          </span>
+        )}
+      </td>
+      <td className="text-fg-muted">
+        <span
+          className={
+            "inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide " +
+            (t.tenantType === "Company"
+              ? "border-primary/40 text-primary"
+              : "border-border text-fg-muted")
+          }
+        >
+          {t.tenantType === "Company" ? "Company" : "Individual"}
+        </span>
+      </td>
+      <td className="text-fg-muted">{t.email || "—"}</td>
+      <td className="text-fg-muted">
+        {t.cosignerFlag ? "Cosigner" : "Tenant"}
+      </td>
+      <td className="text-fg-muted">
+        {t.currentLease ? (
+          <Link
+            href={`/properties/rentals/properties/${t.currentLease.propertyId}`}
+            className="hover:underline"
+          >
+            {t.currentLease.propertyName} · {t.currentLease.unitName}
+          </Link>
+        ) : (
+          "—"
+        )}
+      </td>
+      <td className="text-right">
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Delete ${t.displayName}`}
+          className="text-fg-muted hover:text-error"
+          onClick={() => setDeleteTarget(t)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </td>
+    </tr>
+  );
 
   return (
     <div className="space-y-4">
@@ -94,6 +229,23 @@ export default function TenantsPage() {
               selected={filter === "all"}
               onClick={() => setFilter("all")}
             />
+            <span className="ml-2 text-xs text-fg-muted">·</span>
+            <span className="text-xs text-fg-muted">Group by</span>
+            {GROUP_BY_OPTIONS.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setGroupBy(value)}
+                className={
+                  "rounded-full border px-3 py-1 text-xs font-bold transition-colors " +
+                  (groupBy === value
+                    ? "border-primary bg-primary text-primary-fg"
+                    : "border-border bg-surface text-fg-muted hover:text-fg")
+                }
+              >
+                {label}
+              </button>
+            ))}
             <div className="ml-auto w-full max-w-xs">
               <Input
                 value={search}
@@ -129,72 +281,36 @@ export default function TenantsPage() {
                   </td>
                 </tr>
               )}
-              {visible.map((t) => (
-                <tr
-                  key={t.id}
-                  className={
-                    "border-b border-border/40 " + (t.active ? "" : "opacity-50")
-                  }
-                >
-                  <td className="py-2 text-fg">
-                    <Link
-                      href={`/properties/rentals/tenants/${t.id}`}
-                      className="font-medium hover:underline"
-                    >
-                      {t.displayName}
-                    </Link>
-                    {t.tenantType === "Company" && t.contactPersonName && (
-                      <span className="block text-xs text-fg-muted">
-                        Contact: {t.contactPersonName}
-                      </span>
+              {!loading &&
+                visible.length > 0 &&
+                groups.map((g) => (
+                  <React.Fragment key={g.key}>
+                    {groupBy !== "none" && (
+                      <tr className="bg-surface-high/40">
+                        <td
+                          colSpan={6}
+                          className="py-1.5 text-xs font-bold uppercase tracking-widest text-fg-muted"
+                        >
+                          {g.label}
+                          <span className="ml-2 font-normal normal-case tracking-normal">
+                            {g.rows.length} tenant
+                            {g.rows.length === 1 ? "" : "s"}
+                          </span>
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="text-fg-muted">
-                    <span
-                      className={
-                        "inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide " +
-                        (t.tenantType === "Company"
-                          ? "border-primary/40 text-primary"
-                          : "border-border text-fg-muted")
-                      }
-                    >
-                      {t.tenantType === "Company" ? "Company" : "Individual"}
-                    </span>
-                  </td>
-                  <td className="text-fg-muted">{t.email || "—"}</td>
-                  <td className="text-fg-muted">
-                    {t.cosignerFlag ? "Cosigner" : "Tenant"}
-                  </td>
-                  <td className="text-fg-muted">
-                    {t.currentLease ? (
-                      <Link
-                        href={`/properties/rentals/properties/${t.currentLease.propertyId}`}
-                        className="hover:underline"
-                      >
-                        {t.currentLease.propertyName} · {t.currentLease.unitName}
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Delete ${t.displayName}`}
-                      className="text-fg-muted hover:text-error"
-                      onClick={() => setDeleteTarget(t)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+                    {g.rows.map(renderTenantRow)}
+                  </React.Fragment>
+                ))}
             </tbody>
           </table>
           <p className="text-xs text-fg-muted">
-            Property / unit reflects each tenant’s current active lease. Assign a
-            tenant from their detail page or from a property’s Units tab.
+            Match count: {visible.length} of {rows.length} loaded.
+          </p>
+          <p className="text-xs text-fg-muted">
+            Property / unit reflects each tenant’s current active lease, and
+            drives the grouping above. Assign a tenant from their detail page or
+            from a property’s Units tab.
           </p>
         </CardContent>
       </Card>

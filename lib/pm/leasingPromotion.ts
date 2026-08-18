@@ -35,6 +35,7 @@ import { assertWriteAllowed } from "@/lib/pm/lockedPeriod";
 import { canOverrideLockedPeriod } from "@/lib/pm/roles";
 import { computeLeaseStatus } from "@/lib/pm/leaseStatus";
 import { advanceRentDate } from "@/lib/pm/leaseRecurringPoster";
+import { leaseTenantsLabel, moveInMemo } from "@/lib/pm/journalMemo";
 import { rentCentsFromRateCents } from "@/lib/pm/rent";
 import {
   deriveCurrentRentFromSchedule,
@@ -660,7 +661,12 @@ export async function executeDraftLease(
           date: txnDate,
           scopeType: "Property",
           scopeId: lease.propertyId,
-          memo: `Move-in JE for lease #${leaseNumber} at ${property.propertyName}`,
+          // The property used to ride along here; the GL list already renders
+          // it in the Scope column, so the tenant takes that space instead.
+          memo: moveInMemo({
+            leaseNumber,
+            tenantLabel: leaseTenantsLabel(lease.tenants),
+          }),
           lines,
           status: "Posted",
           postedAt: txnDate,
