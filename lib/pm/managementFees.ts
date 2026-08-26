@@ -21,6 +21,7 @@ import { Types } from "mongoose";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { Property } from "@/lib/db/models/pm/Property";
 import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { ledgerVisibleMatch } from "@/lib/pm/ledgerVisibility";
 import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
 import { assertWriteAllowed, LockedPeriodError } from "@/lib/pm/lockedPeriod";
 import type { PmContext } from "@/lib/auth/getCurrentUser";
@@ -63,7 +64,7 @@ async function computePeriodIncomeCents(opts: {
 
   const jes = await JournalEntry.find({
     organizationId: opts.orgId,
-    status: "Posted",
+    ...ledgerVisibleMatch(),
     date: { $gte: opts.periodStart, $lte: opts.periodEnd },
     "lines.scopeId": opts.propertyId,
   })

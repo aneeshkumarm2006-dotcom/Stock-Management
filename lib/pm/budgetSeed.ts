@@ -7,6 +7,7 @@ import { connectToDatabase } from "@/lib/db/mongoose";
 import { Budget, type IBudgetLine } from "@/lib/db/models/pm/Budget";
 import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
 import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { ledgerVisibleMatch } from "@/lib/pm/ledgerVisibility";
 import type { BudgetLineCategory, FiscalMonth } from "@/types/pm";
 import { FISCAL_MONTH_INDEX } from "@/types/pm";
 
@@ -109,7 +110,7 @@ async function seedFromPriorFY(
     {
       $match: {
         organizationId: orgObjectId,
-        status: "Posted",
+        ...ledgerVisibleMatch(),
         date: { $gte: prior.startDate, $lt: prior.endDate },
       },
     },

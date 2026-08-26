@@ -9,6 +9,7 @@
 //     (the existing-budget clone path uses `copyExistingBudgetLines`)
 import { Types } from "mongoose";
 import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { ledgerVisibleMatch } from "@/lib/pm/ledgerVisibility";
 import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
 import { Budget } from "@/lib/db/models/pm/Budget";
 import type { FiscalMonth } from "@/types/pm";
@@ -119,7 +120,7 @@ export async function copyPriorFyActuals(opts: {
 
   const jes = await JournalEntry.find({
     organizationId: opts.orgId,
-    status: "Posted",
+    ...ledgerVisibleMatch(),
     date: { $gte: startDate, $lte: endDate },
   })
     .select("date lines")

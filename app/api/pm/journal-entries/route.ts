@@ -43,6 +43,15 @@ export async function GET(request: Request) {
   if (status) filter.status = status;
   else if (!includeVoided) filter.status = { $ne: 'Voided' };
 
+  // A void is a PAIR: the Voided original plus its Posted mirror-image
+  // reversal. Hiding only the original left the reversal on screen as a
+  // free-standing entry that looks like a real transaction — and, because it
+  // carries the opposite sign, reads as a mystery deduction. "Include voided
+  // entries" governs the pair, so hide the reversal alongside its original
+  // and bring both back together. An explicit ?status= filter is an audit
+  // query, so it still returns exactly what was asked for.
+  if (!status && !includeVoided) filter.reversesJournalEntryId = null;
+
   if (accountId && Types.ObjectId.isValid(accountId)) {
     filter['lines.accountId'] = new Types.ObjectId(accountId);
   }

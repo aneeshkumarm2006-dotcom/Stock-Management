@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
+import { Bill } from '@/lib/db/models/pm/Bill';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -35,9 +36,44 @@ export async function GET(
   if (!ctx) return unauthorizedResponse();
   const doc = await load(params.id, ctx.orgId);
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  return NextResponse.json(
-    serializeJournalEntry(doc.toObject() as unknown as Record<string, unknown>),
-  );
+
+  // A JE posted from a bill reads "Bill — <memo>" and otherwise gives no way
+  // back to the record that created it, so someone looking at the ledger had
+  // to guess which row in the Bills tab it came from. Resolve the link here.
+  //
+  // Three ways a JE can belong to a bill, and all three are needed — a void
+  // done from the General Ledger and a void done from the Bills tab leave
+  // different links behind:
+  //   1. it IS the bill's accrual JE            → Bill.journalEntryId === this
+  //   2. it reverses the bill's accrual JE      → Bill.journalEntryId === this
+  //      .reversesJournalEntryId. This is the one that matters for a GL void,
+  //      which never touches the Bill document and so never sets (3).
+  //   3. the Bills-tab void recorded it         → Bill.voidingJournalEntryId
+  // Indexed lookup, and null for hand-written entries.
+  const accrualJeIds = [doc._id];
+  if (doc.reversesJournalEntryId) accrualJeIds.push(doc.reversesJournalEntryId);
+
+  const sourceBill = await Bill.findOne(
+    {
+      organizationId: new Types.ObjectId(ctx.orgId),
+      $or: [
+        { journalEntryId: { $in: accrualJeIds } },
+        { voidingJournalEntryId: doc._id },
+      ],
+    },
+    { _id: 1, memo: 1, status: 1 },
+  ).lean<{ _id: Types.ObjectId; memo?: string; status: string } | null>();
+
+  return NextResponse.json({
+    ...serializeJournalEntry(doc.toObject() as unknown as Record<string, unknown>),
+    sourceBill: sourceBill
+      ? {
+          id: String(sourceBill._id),
+          memo: sourceBill.memo ?? '',
+          status: sourceBill.status,
+        }
+      : null,
+  });
 }
 
 export async function PATCH(

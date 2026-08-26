@@ -113,8 +113,16 @@ export interface ILeaseTermPeriod {
   /** Human label shown on the schedule, e.g. "Year 1-2", "Renewal Option". */
   label: string;
   kind: LeaseTermKind;
+  /** The period's own lease type, independent of the lease's `leaseType`. A
+   *  commercial lease commonly runs several `Fixed` terms and then holds over
+   *  month-to-month, so the schedule has to be able to say so per period.
+   *  `At-will` is the only value that permits a null `endDate` (open-ended). */
+  leaseType: LeaseType;
   startDate: Date;
-  endDate: Date;
+  /** Null ONLY on an `At-will` period, which runs open-ended until a later
+   *  period starts or the row is removed — `activeTermPeriodForDate` already
+   *  reads a null end as "no upper bound". */
+  endDate: Date | null;
   /** Square footage SNAPSHOT at save time — informational (the Unit's
    *  `sizeSqft` may change later). Never multiplies an amount. */
   sizeSqft: number;
@@ -246,8 +254,18 @@ const TermPeriodSchema = new Schema<ILeaseTermPeriod>(
   {
     label: { type: String, required: true, trim: true, maxlength: 60 },
     kind: { type: String, enum: LEASE_TERM_KINDS, default: 'Term' },
+    leaseType: { type: String, enum: LEASE_TYPES, default: 'Fixed' },
     startDate: { type: Date, required: true },
-    endDate: { type: Date, required: true },
+    // Mirrors BR-LL-1 at the period level: the two fixed flavours must be
+    // bounded, At-will must not be. Keeping the guard here (not only in Zod)
+    // means the migration/backfill scripts can't write an unbounded Fixed term.
+    endDate: {
+      type: Date,
+      default: null,
+      required: function (this: ILeaseTermPeriod) {
+        return this.leaseType !== 'At-will';
+      },
+    },
     sizeSqft: { type: Number, default: 0, min: 0 },
     baseMonthlyAmount: { type: Number, default: 0, min: 0 },
     baseAccountId: {

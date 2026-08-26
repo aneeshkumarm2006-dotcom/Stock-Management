@@ -1,8 +1,15 @@
 // reverseJournalEntry — write a paired reversing JournalEntry for a Posted JE
 // and flip the original to Voided. Reversing a JE is the system's "undo": each
-// line's debit↔credit are swapped so reports that filter out `status==='Voided'`
-// rows still net to zero without losing the audit trail (BR-AC, see the JE
-// /void route and JournalEntry model header).
+// line's debit↔credit are swapped so the pair sums to zero, preserving the
+// audit trail instead of deleting history (BR-AC, see the JE /void route and
+// JournalEntry model header).
+//
+// THE PAIR IS INDIVISIBLE. The reversal cancels THE ORIGINAL — it is only
+// meaningful alongside it. A report that drops `status==='Voided'` rows but
+// keeps this Posted reversal counts a bare −amount that never existed, which
+// silently subtracts from unrelated transactions in the same account/period.
+// Read queries must therefore go through `ledgerVisibleMatch()`
+// (lib/pm/ledgerVisibility.ts), which excludes both halves.
 //
 // This was duplicated by hand in two places:
 //   - app/api/pm/journal-entries/[id]/void/route.ts

@@ -21,8 +21,10 @@
 //  Draft   → editable; never affects balances or reports
 //  Posted  → immutable; counts in balances and reports
 //  Voided  → flipped via /void route, which writes a paired reversing JE
-//            (back-linked via reversesJournalEntryId). Reports filter out
-//            `status === 'Voided'` rows.
+//            (back-linked via reversesJournalEntryId). The two are ONE unit:
+//            reports must exclude both, via `ledgerVisibleMatch()` in
+//            lib/pm/ledgerVisibility.ts. Excluding only the Voided row leaves
+//            the reversal counting as a real −amount.
 //
 // Locked-period gating (BR-AC-3) lives in `lib/pm/lockedPeriod.ts` and is
 // invoked by the API routes — not the schema layer — so admin Financial

@@ -18,15 +18,19 @@ import { Button } from "@/components/ui/button";
 import { fromCents, toCents } from "@/lib/pm/currency";
 import { usePmMoneyFormatter } from "@/components/pm/PmCurrencyProvider";
 import { annualRatePerSqft, computePeriodAmounts } from "@/lib/pm/rentSchedule";
-import type { LeaseTermKind } from "@/types/pm";
+import { LEASE_TYPES, type LeaseTermKind, type LeaseType } from "@/types/pm";
+import { LeaseTypeHelp } from "@/components/pm/LeaseTypeHelp";
 import { toDateInputValueUTC } from "@/lib/utils/dateInput";
 
 export interface ScheduleRow {
   key: string;
   label: string;
   kind: LeaseTermKind;
+  /** The period's own lease type — independent of the lease's. `At-will` is the
+   *  only value that lets `endDate` stay blank (open-ended). */
+  leaseType: LeaseType;
   startDate: string; // yyyy-mm-dd
-  endDate: string; // yyyy-mm-dd
+  endDate: string; // yyyy-mm-dd — blank only on an At-will row
   sizeSqft: string;
   baseAmount: string; // dollars / month
   baseAccountId: string;
@@ -53,6 +57,9 @@ export function emptyScheduleRow(
     key: genKey(),
     label: "",
     kind,
+    // `Fixed` is the only default that leaves an existing schedule's behaviour
+    // unchanged — every period written before this field existed was fixed-term.
+    leaseType: "Fixed",
     startDate: "",
     endDate: "",
     sizeSqft:
@@ -77,6 +84,10 @@ export function scheduleRowsToPayload(rows: ScheduleRow[]) {
         r.label.trim() ||
         r.startDate ||
         r.endDate ||
+        // A row whose only content is a non-default lease type is still a row
+        // the PM deliberately created — dropping it would look like a save that
+        // silently failed.
+        r.leaseType !== "Fixed" ||
         Number(r.baseAmount) > 0 ||
         Number(r.opexAmount) > 0 ||
         Number(r.taxAmount) > 0,
@@ -84,8 +95,11 @@ export function scheduleRowsToPayload(rows: ScheduleRow[]) {
     .map((r) => ({
       label: r.label.trim() || "(unnamed)",
       kind: r.kind,
+      leaseType: r.leaseType,
       startDate: r.startDate,
-      endDate: r.endDate,
+      // An At-will period is open-ended; send null rather than "" so the
+      // validator sees "no end date" instead of a malformed one.
+      endDate: r.leaseType === "At-will" ? r.endDate || null : r.endDate,
       sizeSqft: Number(r.sizeSqft) || 0,
       baseMonthlyAmount: Number(r.baseAmount) || 0,
       baseAccountId: r.baseAccountId || undefined,
@@ -99,6 +113,7 @@ export function scheduleRowsToPayload(rows: ScheduleRow[]) {
 interface ApiPeriod {
   label: string;
   kind: LeaseTermKind;
+  leaseType?: LeaseType | null;
   startDate: string | null;
   endDate: string | null;
   sizeSqft: number;
@@ -121,6 +136,7 @@ export function scheduleApiToRows(
     key: genKey(),
     label: p.label ?? "",
     kind: p.kind ?? "Term",
+    leaseType: p.leaseType ?? "Fixed",
     startDate: p.startDate ? toDateInputValueUTC(p.startDate) : "",
     endDate: p.endDate ? toDateInputValueUTC(p.endDate) : "",
     sizeSqft: p.sizeSqft ? String(p.sizeSqft) : "",
@@ -176,12 +192,18 @@ export function LeaseTermScheduleEditor({
   // Once a schedule exists it DRIVES posting: only the Term period covering the
   // due date posts rent. A schedule whose periods all sit in the past (or leave
   // a gap over today) silently posts nothing — warn rather than let that pass.
+  // An At-will row is deliberately unbounded, so it counts as a complete term
+  // with no end date; without that it would trip the warning below, which is
+  // exactly the holdover case the field exists to record.
   const terms = rows.filter(
-    (r) => r.kind === "Term" && r.startDate && r.endDate,
+    (r) =>
+      r.kind === "Term" &&
+      r.startDate &&
+      (r.endDate || r.leaseType === "At-will"),
   );
   const todayKey = new Date().toISOString().slice(0, 10);
   const currentTerm = terms.find(
-    (r) => r.startDate <= todayKey && todayKey <= r.endDate,
+    (r) => r.startDate <= todayKey && (!r.endDate || todayKey <= r.endDate),
   );
   const noCurrentTerm = terms.length > 0 && !currentTerm;
 
@@ -210,6 +232,13 @@ export function LeaseTermScheduleEditor({
           time (past &amp; future), plus any renewal options.
         </p>
       )}
+
+      <p className="text-xs text-fg-muted">
+        Each period carries its own lease type
+        <LeaseTypeHelp />, independent of the lease&apos;s. An{" "}
+        <span className="font-medium text-fg">At-will</span> period has no end
+        date — it runs open-ended, so it must be the last term period.
+      </p>
 
       {noCurrentTerm && (
         <p className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-fg">
@@ -272,7 +301,7 @@ export function LeaseTermScheduleEditor({
                   onChange={(e) => update(r.key, { label: e.target.value })}
                 />
               </div>
-              <div className="w-40">
+              <div className="w-36">
                 <Label>Type</Label>
                 <select
                   className={selectCls}
@@ -283,6 +312,31 @@ export function LeaseTermScheduleEditor({
                 >
                   <option value="Term">Term (posts rent)</option>
                   <option value="RenewalOption">Renewal option</option>
+                </select>
+              </div>
+              {/* Per-period lease type. On both Term and Renewal option rows —
+                  a renewal option is negotiated as its own fixed/at-will term,
+                  so recording it there is the point of the field. */}
+              <div className="w-40">
+                <Label>Lease type</Label>
+                <select
+                  className={selectCls}
+                  value={r.leaseType}
+                  onChange={(e) => {
+                    const leaseType = e.target.value as LeaseType;
+                    update(r.key, {
+                      leaseType,
+                      // Clear a now-unreachable end date rather than leave a
+                      // stale one behind a disabled input to be sent on save.
+                      ...(leaseType === "At-will" ? { endDate: "" } : {}),
+                    });
+                  }}
+                >
+                  {LEASE_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
                 </select>
               </div>
               <Button
@@ -306,10 +360,18 @@ export function LeaseTermScheduleEditor({
                 />
               </div>
               <div>
-                <Label>End date</Label>
+                <Label>
+                  End date{" "}
+                  {r.leaseType === "At-will" && (
+                    <span className="font-normal text-fg-muted">
+                      (N/A — At-will)
+                    </span>
+                  )}
+                </Label>
                 <Input
                   type="date"
                   value={r.endDate}
+                  disabled={r.leaseType === "At-will"}
                   onChange={(e) => update(r.key, { endDate: e.target.value })}
                 />
               </div>

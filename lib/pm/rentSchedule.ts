@@ -21,7 +21,7 @@
 // type-only and erased at compile), so the pure display helpers are safe to
 // import from client components (the schedule editor computes amounts live).
 import type { Types } from "mongoose";
-import type { LeaseTermKind } from "@/types/pm";
+import type { LeaseTermKind, LeaseType } from "@/types/pm";
 import type { RentChargeSource } from "@/lib/pm/rentCharge";
 
 /** Minimal amount inputs for the pure display math — structural so the client
@@ -39,8 +39,12 @@ export interface PeriodAmountInput {
 export interface SchedulePeriod extends PeriodAmountInput {
   label: string;
   kind: LeaseTermKind;
+  /** Per-period lease type. Absent on rows written before the field existed —
+   *  read it as `Fixed`, which is how they have always behaved. */
+  leaseType?: LeaseType;
   startDate: Date;
-  endDate: Date;
+  /** Null means open-ended, which only an `At-will` period may be. */
+  endDate: Date | null;
   baseAccountId?: Types.ObjectId | null;
   opexAccountId?: Types.ObjectId | null;
   taxAccountId?: Types.ObjectId | null;
@@ -232,6 +236,15 @@ export function resolveScheduledRentForDate(
   };
 }
 
+/** A period runs open-ended (no upper date bound) when it is `At-will` and
+ *  carries no end date. Every other flavour must be bounded — the period-level
+ *  echo of BR-LL-1. */
+export function isOpenEndedPeriod(
+  p: Pick<SchedulePeriod, "leaseType" | "endDate">,
+): boolean {
+  return (p.leaseType ?? "Fixed") === "At-will" && !p.endDate;
+}
+
 /**
  * Pure cross-period validation shared by the Zod schemas. Returns a list of
  * human-readable problems (empty when the schedule is valid). Overlaps and
@@ -250,10 +263,20 @@ export function findScheduleErrors(
   for (const p of periods) {
     const start = p.startDate ? new Date(p.startDate).getTime() : NaN;
     const end = p.endDate ? new Date(p.endDate).getTime() : NaN;
-    if (Number.isNaN(start) || Number.isNaN(end)) {
+    const openEnded = isOpenEndedPeriod(p);
+    if (Number.isNaN(start)) {
       errors.push(
-        `Period "${p.label || "(unnamed)"}" needs a start and end date.`,
+        openEnded
+          ? `Period "${p.label || "(unnamed)"}" needs a start date.`
+          : `Period "${p.label || "(unnamed)"}" needs a start and end date.`,
       );
+    } else if (Number.isNaN(end)) {
+      // An At-will period is legitimately unbounded; anything else is not.
+      if (!openEnded) {
+        errors.push(
+          `Period "${p.label || "(unnamed)"}" needs a start and end date. Only an At-will period may be left open-ended.`,
+        );
+      }
     } else if (end <= start) {
       errors.push(
         `Period "${p.label || "(unnamed)"}" end date must be after its start date.`,
@@ -265,7 +288,9 @@ export function findScheduleErrors(
       );
     }
   }
-  // Overlap check among Term periods (sorted by start).
+  // Overlap check among Term periods (sorted by start). An open-ended Term has
+  // no upper bound, so it swallows every Term that starts after it — it can
+  // only ever be the last one.
   const sortedTerms = [...terms].sort(
     (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
   );
@@ -273,7 +298,13 @@ export function findScheduleErrors(
     const prev = sortedTerms[i - 1];
     const cur = sortedTerms[i];
     if (!prev || !cur) continue;
-    if (new Date(cur.startDate).getTime() <= new Date(prev.endDate).getTime()) {
+    if (isOpenEndedPeriod(prev)) {
+      errors.push(
+        `Term period "${prev.label || "(unnamed)"}" is open-ended (At-will), so it must be the last term period — "${cur.label || "(unnamed)"}" starts after it.`,
+      );
+      continue;
+    }
+    if (new Date(cur.startDate).getTime() <= new Date(prev.endDate!).getTime()) {
       errors.push(
         `Term periods "${prev.label || "(unnamed)"}" and "${cur.label || "(unnamed)"}" overlap.`,
       );

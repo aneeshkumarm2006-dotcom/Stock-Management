@@ -108,7 +108,9 @@ interface LeaseGet {
   rentSchedule: Array<{
     label: string;
     kind: "Term" | "RenewalOption";
+    leaseType?: LeaseType | null;
     startDate: string | null;
+    /** Null on an open-ended At-will period. */
     endDate: string | null;
     sizeSqft: number;
     /** cents / month */

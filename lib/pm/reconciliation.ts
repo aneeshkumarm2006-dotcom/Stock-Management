@@ -24,6 +24,7 @@ import { Reconciliation } from "@/lib/db/models/pm/Reconciliation";
 import { BankAccount } from "@/lib/db/models/pm/BankAccount";
 import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
 import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { ledgerVisibleMatch } from "@/lib/pm/ledgerVisibility";
 import { LockedPeriodPolicy } from "@/lib/db/models/pm/LockedPeriodPolicy";
 import type { PmContext } from "@/lib/auth/getCurrentUser";
 
@@ -59,7 +60,7 @@ export async function computeUnclearedLines(opts: {
 
   const jes = await JournalEntry.find({
     organizationId: opts.orgId,
-    status: "Posted",
+    ...ledgerVisibleMatch(),
     date: { $gte: opts.startDate, $lte: opts.endDate },
     "lines.accountId": bank.chartOfAccountId,
   })

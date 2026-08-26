@@ -108,8 +108,10 @@ export async function GET(
     rentSchedule: (doc.rentSchedule ?? []).map((p) => ({
       label: p.label,
       kind: p.kind,
+      leaseType: p.leaseType ?? 'Fixed',
       startDate: p.startDate,
-      endDate: p.endDate,
+      // Null on an open-ended At-will period.
+      endDate: p.endDate ?? null,
       sizeSqft: p.sizeSqft ?? 0,
       baseMonthlyAmount: p.baseMonthlyAmount ?? 0,
       baseAccountId: p.baseAccountId ? String(p.baseAccountId) : null,

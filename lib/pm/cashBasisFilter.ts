@@ -16,6 +16,7 @@
 // JE IDs that the caller pre-computed via `collectCashJournalEntryIds`.
 import type { Types } from "mongoose";
 import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { ledgerVisibleMatch } from "@/lib/pm/ledgerVisibility";
 import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
 import type { AccountingMode } from "@/types/pm";
 
@@ -52,7 +53,7 @@ export async function collectCashJournalEntryIds(
   const jeIds = await JournalEntry.find(
     {
       organizationId: opts.orgId,
-      status: "Posted",
+      ...ledgerVisibleMatch(),
       "lines.accountId": { $in: cashAccountIds },
       ...(opts.from || opts.to ? { date: dateClause } : {}),
     },

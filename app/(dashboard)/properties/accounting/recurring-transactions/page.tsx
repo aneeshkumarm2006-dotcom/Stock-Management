@@ -133,6 +133,11 @@ export default function RecurringTransactionsPage() {
                 {/* Matches the phrase the amounts grid already uses, now that
                     the cell can hold a company name. */}
                 <th>Property or company</th>
+                {/* Several rules share a property/company name and are told
+                    apart only by what they book — school tax vs municipal tax
+                    on the same building, one mortgage per lender on the same
+                    company. Without the memo the rows are indistinguishable. */}
+                <th>Memo</th>
                 <th className="px-4 text-right">Amount</th>
                 <th>Frequency</th>
                 <th>Next date</th>
@@ -145,14 +150,14 @@ export default function RecurringTransactionsPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={9} className="py-4 text-fg-muted">
+                  <td colSpan={10} className="py-4 text-fg-muted">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-4 text-fg-muted">
+                  <td colSpan={10} className="py-4 text-fg-muted">
                     No recurring rules.
                   </td>
                 </tr>
@@ -189,6 +194,15 @@ export default function RecurringTransactionsPage() {
                       </span>
                     ) : (
                       "Company"
+                    )}
+                  </td>
+                  <td className="max-w-[22rem] text-fg-muted">
+                    {r.memo ? (
+                      <span className="block truncate" title={r.memo}>
+                        {r.memo}
+                      </span>
+                    ) : (
+                      "—"
                     )}
                   </td>
                   <td className="px-4 text-right text-fg-muted tabular-nums">

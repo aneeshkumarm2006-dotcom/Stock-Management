@@ -82,8 +82,11 @@ export interface IDraftLeaseSplitRentCharge {
 export interface IDraftLeaseTermPeriod {
   label: string;
   kind: LeaseTermKind;
+  /** Per-period lease type; `At-will` is the only value allowing a null
+   *  `endDate`. See `ILeaseTermPeriod` in Lease.ts. */
+  leaseType: LeaseType;
   startDate: Date;
-  endDate: Date;
+  endDate: Date | null;
   sizeSqft: number;
   baseMonthlyAmount: number; // cents / month
   baseAccountId?: Types.ObjectId | null;
@@ -232,8 +235,15 @@ const TermPeriodSchema = new Schema<IDraftLeaseTermPeriod>(
   {
     label: { type: String, required: true, trim: true, maxlength: 60 },
     kind: { type: String, enum: LEASE_TERM_KINDS, default: 'Term' },
+    leaseType: { type: String, enum: LEASE_TYPES, default: 'Fixed' },
     startDate: { type: Date, required: true },
-    endDate: { type: Date, required: true },
+    endDate: {
+      type: Date,
+      default: null,
+      required: function (this: IDraftLeaseTermPeriod) {
+        return this.leaseType !== 'At-will';
+      },
+    },
     sizeSqft: { type: Number, default: 0, min: 0 },
     baseMonthlyAmount: { type: Number, default: 0, min: 0 },
     baseAccountId: {

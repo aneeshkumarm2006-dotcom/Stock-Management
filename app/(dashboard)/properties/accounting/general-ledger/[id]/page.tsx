@@ -7,7 +7,7 @@
 import * as React from "react";
 import { useParams, notFound } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, FileText, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
@@ -39,6 +39,8 @@ interface JEDetail {
   reversedByJournalEntryId: string | null;
   voidedAt: string | null;
   postedAt: string | null;
+  /** The Bill this entry was posted from, when there is one. */
+  sourceBill: { id: string; memo: string; status: string } | null;
 }
 
 interface AccountOption {
@@ -158,6 +160,26 @@ export default function JournalEntryDetailPage() {
           <StatusBadge status={doc.status} />
         </CardHeader>
         <CardContent className="space-y-3">
+          {doc.sourceBill && (
+            <div className="flex flex-wrap items-center gap-2 rounded border border-border bg-surface-high p-2 text-xs text-fg-muted">
+              <FileText className="h-4 w-4 shrink-0" />
+              <span>
+                Posted from bill
+                {doc.sourceBill.memo ? (
+                  <> &ldquo;{doc.sourceBill.memo}&rdquo;</>
+                ) : null}{" "}
+                <span className="rounded bg-surface px-1 py-0.5 font-bold uppercase tracking-widest">
+                  {doc.sourceBill.status}
+                </span>
+              </span>
+              <Link
+                href={`/properties/accounting/bills/${doc.sourceBill.id}`}
+                className="font-bold text-primary underline"
+              >
+                Open the bill
+              </Link>
+            </div>
+          )}
           {doc.reversesJournalEntryId && (
             <div className="flex items-center gap-2 rounded border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
               <AlertTriangle className="h-4 w-4" />

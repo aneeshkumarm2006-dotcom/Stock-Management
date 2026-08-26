@@ -2,9 +2,14 @@
 //
 // Returns rows = Income + Operating Expense CoA rows, columns = active
 // Properties + a "Company" pseudo-property, cells = signed net (income shown
-// positive, expense shown positive) for the period. Posted JEs only;
-// `status === 'Voided'` excluded (the paired reversing JE neutralises any
-// counted amount).
+// positive, expense shown positive) for the period.
+//
+// Which JEs count is decided by `ledgerVisibleMatch()` — Posted, excluding the
+// reversal half of a voided pair. Filtering on `status: 'Posted'` alone used to
+// keep a void's reversing entry while dropping its Voided original, so voiding
+// one bill silently subtracted from every other bill sharing that
+// account/property/month (C$724.73 rendered as C$13.30). See
+// lib/pm/ledgerVisibility.ts.
 //
 // Cash vs Accrual: the Phase 2 MVP returns the same matrix regardless — the
 // toggle is mainly a placeholder so the UI surface exists. Phase 9 will
@@ -37,6 +42,7 @@ import {
   unauthorizedResponse,
 } from '@/lib/auth/getCurrentUser';
 import { resolvePropertyCurrency } from '@/lib/pm/currency';
+import { ledgerVisibleMatch } from '@/lib/pm/ledgerVisibility';
 import type { PmCurrency } from '@/types/pm';
 
 export const runtime = 'nodejs';
@@ -92,7 +98,7 @@ export async function GET(request: Request) {
 
   const matchStage: Record<string, unknown> = {
     organizationId: orgObjectId,
-    status: 'Posted',
+    ...ledgerVisibleMatch(),
   };
   if (Object.keys(dateClause).length > 0) matchStage.date = dateClause;
 

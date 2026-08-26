@@ -11,12 +11,15 @@ import { Badge } from "@/components/ui/badge";
 import { usePmMoneyFormatter } from "@/components/pm/PmCurrencyProvider";
 import { formatDateOnly } from "@/lib/utils/dateInput";
 import type { PeriodAmounts } from "@/lib/pm/rentSchedule";
-import type { LeaseTermKind } from "@/types/pm";
+import type { LeaseTermKind, LeaseType } from "@/types/pm";
 
 export interface SchedulePeriodView {
   label: string;
   kind: LeaseTermKind;
+  /** Absent on periods stored before the field existed — read as `Fixed`. */
+  leaseType?: LeaseType | null;
   startDate: string | null;
+  /** Null on an open-ended At-will period. */
   endDate: string | null;
   sizeSqft: number;
   /** cents / month */
@@ -32,13 +35,13 @@ interface Props {
   salesTaxRatePct?: number | null;
 }
 
+/** Mirrors `activeTermPeriodForDate`: a null end date means open-ended (only an
+ *  At-will period may be), so it stays current until a later period takes over. */
 function isActive(p: SchedulePeriodView): boolean {
-  if (p.kind !== "Term" || !p.startDate || !p.endDate) return false;
+  if (p.kind !== "Term" || !p.startDate) return false;
   const now = Date.now();
-  return (
-    now >= new Date(p.startDate).getTime() &&
-    now <= new Date(p.endDate).getTime()
-  );
+  if (now < new Date(p.startDate).getTime()) return false;
+  return !p.endDate || now <= new Date(p.endDate).getTime();
 }
 
 export function LeaseTermScheduleTable({
@@ -103,6 +106,12 @@ export function LeaseTermScheduleTable({
                 >
                   <td className="py-2 pr-3">
                     <span className="font-medium">{p.label}</span>
+                    {/* Only worth the ink when it isn't the default. */}
+                    {p.leaseType && p.leaseType !== "Fixed" && (
+                      <span className="ml-2 text-xs text-fg-muted">
+                        {p.leaseType}
+                      </span>
+                    )}
                     {active && (
                       <Badge variant="gain" className="ml-2">
                         Current
@@ -116,7 +125,11 @@ export function LeaseTermScheduleTable({
                   </td>
                   <td className="pr-3 text-fg-muted">
                     {p.startDate ? formatDateOnly(p.startDate) : "—"} →{" "}
-                    {p.endDate ? formatDateOnly(p.endDate) : "—"}
+                    {p.endDate
+                      ? formatDateOnly(p.endDate)
+                      : p.leaseType === "At-will"
+                        ? "At-will"
+                        : "—"}
                   </td>
                   <td className="pr-3 text-right">{p.sizeSqft || "—"}</td>
                   <td className="pr-3 text-right">{fmt(a.baseMonthly)}</td>

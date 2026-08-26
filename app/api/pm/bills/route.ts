@@ -29,6 +29,7 @@ interface BillLeanLike {
   invoiceDate: Date;
   status: string;
   refNo?: string;
+  memo?: string;
   amount: number;
   scope?: { type: string; id?: unknown };
   workOrderId?: unknown;
@@ -64,22 +65,63 @@ export async function GET(request: Request) {
     .sort({ invoiceDate: -1 })
     .lean<BillLeanLike[]>();
 
+  // Resolve every scope id to a display name in two batched queries. The list
+  // previously returned a bare `{type, id}`, so the page could only render the
+  // vendor — and a bill with no vendor showed a literal "—" with nothing else
+  // to identify it by. A recurring tax bill (no vendor, memo carrying the only
+  // human label) was then genuinely unfindable in the UI. `memo` + `scopeName`
+  // are what make a row recognisable, so both ship with the list.
+  const propertyIds: Types.ObjectId[] = [];
+  const companyIds: Types.ObjectId[] = [];
+  for (const r of rows) {
+    const id = r.scope?.id ? String(r.scope.id) : null;
+    if (!id || !Types.ObjectId.isValid(id)) continue;
+    if (r.scope?.type === 'Property') propertyIds.push(new Types.ObjectId(id));
+    else companyIds.push(new Types.ObjectId(id));
+  }
+  const [props, companies] = await Promise.all([
+    propertyIds.length
+      ? Property.find(
+          { organizationId: new Types.ObjectId(ctx.orgId), _id: { $in: propertyIds } },
+          { _id: 1, propertyName: 1 },
+        ).lean<Array<{ _id: Types.ObjectId; propertyName: string }>>()
+      : [],
+    companyIds.length
+      ? CompanyAccount.find(
+          { organizationId: new Types.ObjectId(ctx.orgId), _id: { $in: companyIds } },
+          { _id: 1, name: 1 },
+        ).lean<Array<{ _id: Types.ObjectId; name: string }>>()
+      : [],
+  ]);
+  const nameById = new Map<string, string>([
+    ...props.map((p) => [String(p._id), p.propertyName] as const),
+    ...companies.map((c) => [String(c._id), c.name] as const),
+  ]);
+
   return NextResponse.json(
-    rows.map((r) => ({
-      id: String(r._id),
-      vendorId: r.vendorId ? String(r.vendorId) : null,
-      invoiceDate: r.invoiceDate,
-      status: r.status,
-      refNo: r.refNo ?? '',
-      amount: r.amount,
-      scope: r.scope
-        ? { type: r.scope.type, id: r.scope.id ? String(r.scope.id) : null }
-        : null,
-      workOrderId: r.workOrderId ? String(r.workOrderId) : null,
-      journalEntryId: r.journalEntryId ? String(r.journalEntryId) : null,
-      createdBy: r.createdBy,
-      updatedAt: r.updatedAt,
-    })),
+    rows.map((r) => {
+      const scopeId = r.scope?.id ? String(r.scope.id) : null;
+      return {
+        id: String(r._id),
+        vendorId: r.vendorId ? String(r.vendorId) : null,
+        invoiceDate: r.invoiceDate,
+        status: r.status,
+        refNo: r.refNo ?? '',
+        memo: r.memo ?? '',
+        amount: r.amount,
+        scope: r.scope ? { type: r.scope.type, id: scopeId } : null,
+        // Company-scoped rows written before companies were nameable carry a
+        // null id and legitimately have no name — label them by scope type
+        // rather than leaving the cell blank.
+        scopeName:
+          (scopeId ? nameById.get(scopeId) : null) ??
+          (r.scope?.type === 'Property' ? 'Property' : 'Company'),
+        workOrderId: r.workOrderId ? String(r.workOrderId) : null,
+        journalEntryId: r.journalEntryId ? String(r.journalEntryId) : null,
+        createdBy: r.createdBy,
+        updatedAt: r.updatedAt,
+      };
+    }),
   );
 }
 

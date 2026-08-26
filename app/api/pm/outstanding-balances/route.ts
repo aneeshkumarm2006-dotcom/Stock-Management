@@ -30,6 +30,7 @@ import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
+import { ledgerVisibleMatch } from '@/lib/pm/ledgerVisibility';
 import { Lease } from '@/lib/db/models/pm/Lease';
 import { Property } from '@/lib/db/models/pm/Property';
 import { Unit } from '@/lib/db/models/pm/Unit';
@@ -119,12 +120,13 @@ export async function GET() {
   const arAccountIds = arAccounts.map((a) => a._id);
 
   // 2. Aggregate posted JE lines against the AR account(s), grouped by
-  //    (propertyId / scopeId, unitId). Skip Voided entries entirely.
+  //    (propertyId / scopeId, unitId). Skips a voided entry AND its reversal
+  //    as a pair — counting only the reversal would show negative AR.
   const agg = (await JournalEntry.aggregate([
     {
       $match: {
         organizationId: orgId,
-        status: 'Posted',
+        ...ledgerVisibleMatch(),
         'lines.accountId': { $in: arAccountIds },
       },
     },

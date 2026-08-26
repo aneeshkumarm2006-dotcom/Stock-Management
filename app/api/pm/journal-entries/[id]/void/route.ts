@@ -1,9 +1,14 @@
 // POST /api/pm/journal-entries/:id/void
 //
 // Voiding a Posted JE flips the original to status=Voided and writes a paired
-// reversing JE (debits ↔ credits) so reports that filter `status !== 'Voided'`
-// still net to zero without losing the audit trail. The reversing JE is
-// itself Posted (so it counts) and back-links via reversesJournalEntryId.
+// reversing JE (debits ↔ credits) so the two sum to zero without losing the
+// audit trail. The reversing JE is itself Posted and back-links via
+// reversesJournalEntryId.
+//
+// Reports must exclude BOTH halves — see `ledgerVisibleMatch()` in
+// lib/pm/ledgerVisibility.ts. Counting the reversal without its Voided
+// original turns a void into a phantom deduction against everything else
+// posted to that account in the period.
 //
 // Locked-period gating applies — the reversing entry's date matches the
 // original's date, so an admin override is required if the original date is

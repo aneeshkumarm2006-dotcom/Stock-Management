@@ -292,10 +292,15 @@ export function EditRecurringCheckModal({
     Record<string, CompanyPropertySet>
   >({});
   // Bulk-apply helper above the grid. Client-only; never persisted.
+  //
+  // `{Property, ""}` encodes to "" — the neutral "Choose…" placeholder. It used
+  // to start at `{Company, ""}`, which is the legacy unnamed-company bucket and
+  // renders as "Company (not specified)": a claim about the rule's scope rather
+  // than an empty control. On edit it is derived from the loaded rows below.
   const [applyAll, setApplyAll] = React.useState<{
     scopeType: "Property" | "Company";
     scopeId: string;
-  }>({ scopeType: "Company", scopeId: "" });
+  }>({ scopeType: "Property", scopeId: "" });
 
   const [type, setType] = React.useState<RecurringTransactionType>("Bill");
   const [payeeType, setPayeeType] =
@@ -415,7 +420,32 @@ export function EditRecurringCheckModal({
       setOccurrenceCount(d.occurrenceCount ?? 12);
       setQueueForPrinting(d.queueForPrinting);
       setActive(d.active);
-      setApplyAll({ scopeType: "Company", scopeId: "" });
+      // "Apply to all rows" is a bulk-apply helper, but PMs read it as "what
+      // this rule is scoped to". Hard-coding it to `{Company, ""}` here made
+      // every saved rule open claiming "Company (not specified)" — the reported
+      // bug — even when every row named a property. Derive it from the rows we
+      // just loaded instead, keyed through the same `scopeKeyOf` the poster uses
+      // to group a rule into bills, so the header can never disagree with what
+      // actually posts. Read `d.amounts` directly: `setAmounts` below has not
+      // run yet, so the `amounts` state is still the previous render's.
+      const loadedScopeKeys = new Set(
+        d.amounts.map((a) =>
+          scopeKeyOf({ scopeType: a.scopeType, scopeId: a.scopeId }),
+        ),
+      );
+      const firstAmount = d.amounts[0];
+      if (loadedScopeKeys.size === 1 && firstAmount) {
+        const s = scopeFromInput(firstAmount.scopeType, firstAmount.scopeId);
+        setApplyAll({
+          scopeType: s.type,
+          scopeId: s.id ? String(s.id) : "",
+        });
+      } else {
+        // Rows name different scopes (or there are none): show the neutral
+        // placeholder rather than picking one row's scope and calling it the
+        // rule's.
+        setApplyAll({ scopeType: "Property", scopeId: "" });
+      }
       setMortgage(
         d.mortgage
           ? {

@@ -23,6 +23,7 @@ import { NextResponse } from 'next/server';
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
+import { ledgerVisibleMatch } from '@/lib/pm/ledgerVisibility';
 import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
 import { BankAccount } from '@/lib/db/models/pm/BankAccount';
 import { Bill } from '@/lib/db/models/pm/Bill';
@@ -120,7 +121,7 @@ export async function GET(request: Request) {
     ).lean<Array<{ _id: Types.ObjectId; amount: number; status: string }>>(),
     JournalEntry.find({
       organizationId: orgObjectId,
-      status: 'Posted',
+      ...ledgerVisibleMatch(),
       date: { $gte: from, $lte: to },
     })
       .select('date lines')

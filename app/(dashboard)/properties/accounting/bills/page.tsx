@@ -4,7 +4,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Plus, FileText } from "lucide-react";
+import { Plus, FileText, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
@@ -20,7 +20,9 @@ interface BillRow {
   invoiceDate: string;
   status: string;
   refNo: string;
+  memo: string;
   amount: number;
+  scopeName: string;
   workOrderId: string | null;
   journalEntryId: string | null;
   createdBy: string;
@@ -31,7 +33,7 @@ interface VendorOption {
   displayName: string;
 }
 
-type StatusFilter = "open" | "drafts" | "paid" | "unreflected" | "all";
+type StatusFilter = "open" | "drafts" | "paid" | "voided" | "unreflected" | "all";
 
 // Why a bill is missing from Financials — keyed by the reconciliation API's
 // reason codes (see lib/pm/billReflection.ts). Shown as the badge tooltip.
@@ -42,6 +44,17 @@ const REASON_LABEL: Record<string, string> = {
   OUTSIDE_DATE_RANGE: "Dated outside the selected Financials period",
 };
 
+// Chip labels, reused by the search result-count line so it can name the
+// subset being searched ("3 matching bills in Open").
+const FILTER_LABEL: Record<StatusFilter, string> = {
+  open: "Open",
+  drafts: "Drafts",
+  paid: "Paid",
+  voided: "Voided",
+  unreflected: "Not in Financials",
+  all: "All",
+};
+
 export default function BillsPage() {
   const { toast } = useToast();
   const [rows, setRows] = React.useState<BillRow[]>([]);
@@ -49,6 +62,7 @@ export default function BillsPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [filter, setFilter] = React.useState<StatusFilter>("open");
+  const [query, setQuery] = React.useState("");
   const [recordOpen, setRecordOpen] = React.useState(false);
   const [payOpen, setPayOpen] = React.useState(false);
   const [ocrOpen, setOcrOpen] = React.useState(false);
@@ -61,7 +75,11 @@ export default function BillsPage() {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch("/api/pm/bills");
+      // includeVoided: a voided bill is still a record people need to find —
+//        to confirm it was voided, or to read what it said before re-entering
+//        it. The list is filtered client-side, so the "Voided" chip can hide
+//        them from the default view without a second round-trip.
+      const r = await fetch("/api/pm/bills?includeVoided=1");
       if (r.ok) setRows((await r.json()) as BillRow[]);
       else setError(`Error ${r.status}`);
     } catch {
@@ -104,17 +122,46 @@ export default function BillsPage() {
   );
 
   const visible = React.useMemo(() => {
+    // Status chip first, then the free-text query narrows whatever it selected.
+    let out: BillRow[];
     if (filter === "open") {
-      return rows.filter(
+      out = rows.filter(
         (r) => r.status === "Due" || r.status === "Overdue" || r.status === "Partially paid",
       );
+    } else if (filter === "drafts") {
+      out = rows.filter((r) => r.status === "Draft");
+    } else if (filter === "paid") {
+      out = rows.filter((r) => r.status === "Paid");
+    } else if (filter === "voided") {
+      out = rows.filter((r) => r.status === "Voided");
+    } else if (filter === "unreflected") {
+      out = rows.filter((r) => unreflected.has(r.id));
+    } else {
+      out = rows;
     }
-    if (filter === "drafts") return rows.filter((r) => r.status === "Draft");
-    if (filter === "paid") return rows.filter((r) => r.status === "Paid");
-    if (filter === "unreflected")
-      return rows.filter((r) => unreflected.has(r.id));
-    return rows;
-  }, [rows, filter, unreflected]);
+
+    const q = query.trim().toLowerCase();
+    if (!q) return out;
+    // Search every column a person might remember the bill by: what it was
+    // for (memo), where it posted (property/company), the vendor, the ref, and
+    // the amount as typed — "32,767.23", "32767.23" and "32767" all match.
+    return out.filter((r) => {
+      const vendor = r.vendorId ? vendorById[r.vendorId] ?? "" : "";
+      const amount = (r.amount / 100).toFixed(2);
+      return [
+        r.memo,
+        r.scopeName,
+        r.refNo,
+        vendor,
+        r.status,
+        amount,
+        amount.replace(/\B(?=(\d{3})+(?!\d))/g, ","),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [rows, filter, unreflected, query, vendorById]);
 
   return (
     <div className="space-y-4">
@@ -185,6 +232,12 @@ export default function BillsPage() {
               onClick={() => setFilter("paid")}
             />
             <FilterChip
+              label="Voided"
+              count={rows.filter((r) => r.status === "Voided").length}
+              selected={filter === "voided"}
+              onClick={() => setFilter("voided")}
+            />
+            <FilterChip
               label="Not in Financials"
               count={rows.filter((r) => unreflected.has(r.id)).length}
               selected={filter === "unreflected"}
@@ -196,12 +249,48 @@ export default function BillsPage() {
               selected={filter === "all"}
               onClick={() => setFilter("all")}
             />
+            <div className="relative ml-auto">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-muted" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search memo, property, vendor, amount…"
+                aria-label="Search bills"
+                className="w-72 rounded-full border border-border bg-surface py-1 pl-8 pr-3 text-xs text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none"
+              />
+            </div>
           </div>
+          {query.trim() && (
+            <p className="text-xs text-fg-muted">
+              {visible.length} matching {visible.length === 1 ? "bill" : "bills"}{" "}
+              in <span className="font-bold">{FILTER_LABEL[filter]}</span>.
+              {visible.length === 0 && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => setFilter("all")}
+                    className="font-bold underline"
+                  >
+                    Search all bills
+                  </button>{" "}
+                  instead.
+                </>
+              )}
+            </p>
+          )}
 
           <table className="w-full text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
               <tr>
                 <th className="py-2">Vendor</th>
+                {/* A recurring tax bill has no vendor and an empty ref — the
+                    memo and the property are the only things identifying it.
+                    Without these two columns such a row rendered as "— — date"
+                    and could not be picked out of the list at all. */}
+                <th>Memo</th>
+                <th>Property / company</th>
                 <th>Ref #</th>
                 <th>Invoice date</th>
                 <th>Status</th>
@@ -212,15 +301,24 @@ export default function BillsPage() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-fg-muted">
+                  <td colSpan={8} className="py-4 text-fg-muted">
                     Loading…
                   </td>
                 </tr>
               )}
               {!loading && visible.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-fg-muted">
-                    No bills match.
+                  <td colSpan={8} className="py-4 text-fg-muted">
+                    No bills match this filter.{" "}
+                    {filter !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => setFilter("all")}
+                        className="font-bold underline"
+                      >
+                        Show all bills
+                      </button>
+                    )}
                   </td>
                 </tr>
               )}
@@ -236,6 +334,16 @@ export default function BillsPage() {
                         : "—"}
                     </Link>
                   </td>
+                  <td className="max-w-[20rem] text-fg-muted">
+                    {b.memo ? (
+                      <span className="block truncate" title={b.memo}>
+                        {b.memo}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="text-fg-muted">{b.scopeName || "—"}</td>
                   <td className="text-fg-muted">{b.refNo || "—"}</td>
                   <td className="text-fg-muted">
                     {formatDateOnly(b.invoiceDate)}

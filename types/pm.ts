@@ -136,7 +136,9 @@ export type TaxIdentityType = "SSN" | "EIN" | "ITIN";
 
 /** JournalEntry.status — DECISIONS.md [G-S-18]. Posted is the steady state;
  * Draft is editable; Voided is paired with a reversing JE via
- * `reversesJournalEntryId`. Reports filter `status !== 'Voided'`. */
+ * `reversesJournalEntryId`. Reports exclude the whole pair via
+ * `ledgerVisibleMatch()` (lib/pm/ledgerVisibility.ts) — filtering on
+ * `status !== 'Voided'` alone would leave the reversal counted. */
 export type JournalEntryStatus = "Posted" | "Draft" | "Voided";
 
 /** JournalEntry / JournalLine scope (PDR §3.19, §3.19a). A JE's scope is

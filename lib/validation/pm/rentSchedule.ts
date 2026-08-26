@@ -6,7 +6,12 @@
 // dollars to integer cents for storage. See lib/pm/rentSchedule.ts.
 import { z } from 'zod';
 import { Types } from 'mongoose';
-import { LEASE_TERM_KINDS, type LeaseTermKind } from '@/types/pm';
+import {
+  LEASE_TERM_KINDS,
+  LEASE_TYPES,
+  type LeaseTermKind,
+  type LeaseType,
+} from '@/types/pm';
 import { toCents } from '@/lib/pm/currency';
 import {
   findScheduleErrors,
@@ -21,8 +26,12 @@ const objectIdString = z
 export const rentSchedulePeriodSchema = z.object({
   label: z.string().min(1).max(60),
   kind: z.enum(LEASE_TERM_KINDS as unknown as [string, ...string[]]).optional(),
+  /** Per-period lease type; defaults to `Fixed`. */
+  leaseType: z.enum(LEASE_TYPES as unknown as [string, ...string[]]).optional(),
   startDate: z.string().min(8),
-  endDate: z.string().min(8),
+  /** Omitted/null ONLY for an `At-will` period (open-ended). `refineRentSchedule`
+   *  rejects a missing end date on every other flavour. */
+  endDate: z.string().min(8).nullable().optional(),
   sizeSqft: z.number().nonnegative().optional(),
   /** Monthly dollars (not cents, not per sq ft). */
   baseMonthlyAmount: z.number().nonnegative().optional(),
@@ -56,8 +65,9 @@ export function refineRentSchedule(
     periods.map((p) => ({
       label: p.label,
       kind: (p.kind ?? 'Term') as SchedulePeriod['kind'],
+      leaseType: (p.leaseType ?? 'Fixed') as LeaseType,
       startDate: new Date(p.startDate),
-      endDate: new Date(p.endDate),
+      endDate: p.endDate ? new Date(p.endDate) : null,
       sizeSqft: p.sizeSqft ?? 0,
       baseMonthlyAmount: toCents(p.baseMonthlyAmount ?? 0),
       opexMonthlyAmount: toCents(p.opexMonthlyAmount ?? 0),
@@ -102,8 +112,10 @@ export function refineRentSchedule(
 export interface RentSchedulePeriodModel {
   label: string;
   kind: LeaseTermKind;
+  leaseType: LeaseType;
   startDate: Date;
-  endDate: Date;
+  /** Null for an open-ended `At-will` period. */
+  endDate: Date | null;
   sizeSqft: number;
   baseMonthlyAmount: number; // cents / month
   baseAccountId: Types.ObjectId | null;
@@ -121,8 +133,9 @@ export function mapRentScheduleToModel(
   return (periods ?? []).map((p) => ({
     label: p.label,
     kind: (p.kind ?? 'Term') as LeaseTermKind,
+    leaseType: (p.leaseType ?? 'Fixed') as LeaseType,
     startDate: new Date(p.startDate),
-    endDate: new Date(p.endDate),
+    endDate: p.endDate ? new Date(p.endDate) : null,
     sizeSqft: p.sizeSqft ?? 0,
     baseMonthlyAmount: toCents(p.baseMonthlyAmount ?? 0),
     baseAccountId: p.baseAccountId ? new Types.ObjectId(p.baseAccountId) : null,

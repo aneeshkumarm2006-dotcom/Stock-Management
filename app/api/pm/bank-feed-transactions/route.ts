@@ -11,6 +11,7 @@ import { connectToDatabase } from '@/lib/db/mongoose';
 import { BankFeedTransaction } from '@/lib/db/models/pm/BankFeedTransaction';
 import { BankAccount } from '@/lib/db/models/pm/BankAccount';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
+import { ledgerVisibleMatch } from '@/lib/pm/ledgerVisibility';
 import {
   getPmContext,
   unauthorizedResponse,
@@ -91,7 +92,7 @@ export async function GET(request: Request) {
       );
       const jes = await JournalEntry.find({
         organizationId: orgObjectId,
-        status: 'Posted',
+        ...ledgerVisibleMatch(),
         date: { $gte: oldest, $lte: newest },
         'lines.accountId': bank.chartOfAccountId,
       })

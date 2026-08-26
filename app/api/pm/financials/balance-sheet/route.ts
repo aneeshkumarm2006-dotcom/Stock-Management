@@ -34,6 +34,7 @@ import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/mongoose';
 import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
 import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
+import { ledgerVisibleMatch } from '@/lib/pm/ledgerVisibility';
 import { Property } from '@/lib/db/models/pm/Property';
 import { CompanyAccount } from '@/lib/db/models/pm/CompanyAccount';
 import { Organization } from '@/lib/db/models/pm/Organization';
@@ -152,7 +153,13 @@ export async function GET(request: Request) {
   // outstanding-balances route already runs; the (organizationId, date) index
   // covers it.
   const rows: AggRow[] = await JournalEntry.aggregate([
-    { $match: { organizationId: orgObjectId, status: 'Posted', date: { $lte: asOf } } },
+    {
+      $match: {
+        organizationId: orgObjectId,
+        ...ledgerVisibleMatch(),
+        date: { $lte: asOf },
+      },
+    },
     { $unwind: '$lines' },
     {
       $group: {

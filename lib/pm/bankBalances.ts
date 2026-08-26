@@ -16,6 +16,7 @@ import { connectToDatabase } from "@/lib/db/mongoose";
 import { BankAccount } from "@/lib/db/models/pm/BankAccount";
 import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
 import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { ledgerVisibleMatch } from "@/lib/pm/ledgerVisibility";
 
 export interface BankRollup {
   /** Balance in cents (signed). */
@@ -55,11 +56,12 @@ export async function computeBankRollups(
     (v): v is Types.ObjectId => Boolean(v),
   );
 
-  // Sum debits/credits per cash account from Posted JEs only.
+  // Sum debits/credits per cash account from ledger-visible JEs only (Posted,
+  // excluding a voided entry's reversal — see lib/pm/ledgerVisibility.ts).
   const balanceRows: { _id: Types.ObjectId; net: number }[] =
     cashAccountIds.length > 0
       ? await JournalEntry.aggregate([
-          { $match: { organizationId: orgObjectId, status: "Posted" } },
+          { $match: { organizationId: orgObjectId, ...ledgerVisibleMatch() } },
           { $unwind: "$lines" },
           { $match: { "lines.accountId": { $in: cashAccountIds } } },
           {
@@ -84,7 +86,7 @@ export async function computeBankRollups(
     undepositedActive = Boolean(
       await JournalEntry.exists({
         organizationId: orgObjectId,
-        status: "Posted",
+        ...ledgerVisibleMatch(),
         "lines.accountId": undepositedAccount._id,
       }),
     );

@@ -53,8 +53,10 @@ function check(name: string, ok: boolean, detail: string) {
 interface Period {
   label: string;
   kind: 'Term' | 'RenewalOption';
+  leaseType?: 'Fixed' | 'Fixed w/rollover' | 'At-will';
   startDate: Date;
-  endDate: Date;
+  /** Null on an open-ended At-will period. */
+  endDate: Date | null;
   sizeSqft?: number;
   baseMonthlyAmount?: number;
   opexMonthlyAmount?: number;
@@ -89,6 +91,7 @@ async function main() {
     const apiPeriods = periods.map((p) => ({
       label: p.label,
       kind: p.kind,
+      leaseType: p.leaseType ?? ('Fixed' as const),
       startDate: p.startDate ? new Date(p.startDate).toISOString() : null,
       endDate: p.endDate ? new Date(p.endDate).toISOString() : null,
       sizeSqft: p.sizeSqft ?? 0,
@@ -151,6 +154,22 @@ async function main() {
       'save round-trip does not change any amount',
       stableAll && roundTripped.length === periods.length,
       stableAll ? '' : 'AMOUNTS DRIFTED ON SAVE',
+    );
+
+    // The per-period lease type and its open-ended end date have to survive the
+    // same trip: a stored At-will period silently reading back as a bounded
+    // Fixed one is exactly the drift the amounts check above would not catch.
+    const typesStable = roundTripped.every((rt, i) => {
+      const orig = periods[i]!;
+      const origType = orig.leaseType ?? 'Fixed';
+      const origEnd = orig.endDate ? new Date(orig.endDate).getTime() : null;
+      const rtEnd = rt.endDate ? new Date(rt.endDate).getTime() : null;
+      return rt.leaseType === origType && rtEnd === origEnd;
+    });
+    check(
+      'save round-trip preserves lease type and open-ended end date',
+      typesStable,
+      typesStable ? '' : 'LEASE TYPE OR END DATE DRIFTED ON SAVE',
     );
 
     // 4. What the Revenue rows / rent roll show now.
