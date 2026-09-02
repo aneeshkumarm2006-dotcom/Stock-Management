@@ -20,12 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { MoneyTotal } from "@/components/pm/MoneyTotal";
 import {
@@ -35,9 +30,10 @@ import {
   type PmCurrency,
 } from "@/types/pm";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
-import { formatDateOnly } from "@/lib/utils/dateInput";
 import { compareCountryGroups } from "@/lib/pm/country";
 import { addMoney, type MoneyByCurrency } from "@/lib/pm/moneyByCurrency";
+import { formatDateOnly } from "@/lib/utils/dateInput";
+import { RentCatchUpModal } from "@/components/pm/RentCatchUpModal";
 
 // Dashboard widgets deep-link with these query params (PROPERTY_TODO.md
 // Phase 10 [G-B-12]). Both filters are client-side overlays on top of the
@@ -176,7 +172,9 @@ interface LeaseRow {
 
 export default function RentRollPage() {
   return (
-    <React.Suspense fallback={<div className="text-sm text-fg-muted">Loading…</div>}>
+    <React.Suspense
+      fallback={<div className="text-sm text-fg-muted">Loading…</div>}
+    >
       <RentRollPageInner />
     </React.Suspense>
   );
@@ -198,11 +196,13 @@ function RentRollPageInner() {
     : null;
 
   const { toast } = useToast();
+  const [catchingUp, setCatchingUp] = React.useState(false);
   const [rows, setRows] = React.useState<LeaseRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [reconciling, setReconciling] = React.useState(false);
-  const [statusFilter, setStatusFilter] =
-    React.useState<"Active,Future" | LeaseStatus | "all">("Active,Future");
+  const [statusFilter, setStatusFilter] = React.useState<
+    "Active,Future" | LeaseStatus | "all"
+  >("Active,Future");
   const [search, setSearch] = React.useState("");
   // The client operates in the US and Canada and wants leases separated. Group
   // by currency by default — that is the split that changes what the numbers
@@ -273,27 +273,32 @@ function RentRollPageInner() {
   // policies (expiringPolicies), so for large orgs the insurance filter is
   // bounded by that slice. Expose per-lease policy-expiry on the leases list
   // endpoint to make this exhaustive.
-  const [insuranceDays, setInsuranceDays] = React.useState<
-    Map<string, number>
-  >(new Map());
+  const [insuranceDays, setInsuranceDays] = React.useState<Map<string, number>>(
+    new Map(),
+  );
 
   React.useEffect(() => {
     if (!insuranceWindow) return;
     let cancelled = false;
     fetch("/api/pm/renters-insurance")
       .then(async (r) => (r.ok ? r.json() : null))
-      .then((data: {
-        expiringPolicies?: Array<{ leaseId: string; daysUntil: number }>;
-      } | null) => {
-        if (cancelled || !data?.expiringPolicies) return;
-        const m = new Map<string, number>();
-        for (const p of data.expiringPolicies) {
-          // Keep the soonest-expiring policy per lease.
-          const prev = m.get(p.leaseId);
-          if (prev == null || p.daysUntil < prev) m.set(p.leaseId, p.daysUntil);
-        }
-        setInsuranceDays(m);
-      });
+      .then(
+        (
+          data: {
+            expiringPolicies?: Array<{ leaseId: string; daysUntil: number }>;
+          } | null,
+        ) => {
+          if (cancelled || !data?.expiringPolicies) return;
+          const m = new Map<string, number>();
+          for (const p of data.expiringPolicies) {
+            // Keep the soonest-expiring policy per lease.
+            const prev = m.get(p.leaseId);
+            if (prev == null || p.daysUntil < prev)
+              m.set(p.leaseId, p.daysUntil);
+          }
+          setInsuranceDays(m);
+        },
+      );
     return () => {
       cancelled = true;
     };
@@ -384,7 +389,7 @@ function RentRollPageInner() {
       key={l.id}
       className={
         "border-b border-border/40 " +
-        (l.evictionPending ? "bg-loss/10 border-l-2 border-loss" : "")
+        (l.evictionPending ? "border-l-2 border-loss bg-loss/10" : "")
       }
     >
       <td className="py-2">
@@ -465,16 +470,24 @@ function RentRollPageInner() {
           Dashboard filter applied:
           {expiringWindow && (
             <span className="ml-2 font-bold">
-              Expiring {expiringWindow === "all" ? "(all windows)" : `${expiringWindow} days`}
+              Expiring{" "}
+              {expiringWindow === "all"
+                ? "(all windows)"
+                : `${expiringWindow} days`}
             </span>
           )}
           {insuranceWindow && (
             <span className="ml-2 font-bold">
               Insurance:{" "}
-              {insuranceWindow === "expired" ? "Expired" : `${insuranceWindow} days`}
+              {insuranceWindow === "expired"
+                ? "Expired"
+                : `${insuranceWindow} days`}
             </span>
           )}
-          <Link href="/properties/rentals/rent-roll" className="ml-3 text-primary hover:underline">
+          <Link
+            href="/properties/rentals/rent-roll"
+            className="ml-3 text-primary hover:underline"
+          >
             Clear
           </Link>
         </div>
@@ -482,6 +495,16 @@ function RentRollPageInner() {
       <Card>
         <CardHeader>
           <CardTitle>Rent roll</CardTitle>
+          {/* The lease counterpart of the recurring-transactions "Catch up…"
+              button. Rent posts one period per nightly run, so a lease whose
+              months were never posted can only be recovered in bulk here. */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setCatchingUp(true)}
+          >
+            Catch up rent…
+          </Button>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="leases">
@@ -501,7 +524,10 @@ function RentRollPageInner() {
                       : "border-border bg-surface text-fg-muted")
                   }
                 >
-                  Active + Future <Badge variant="muted" className="ml-1.5">{rows.length}</Badge>
+                  Active + Future{" "}
+                  <Badge variant="muted" className="ml-1.5">
+                    {rows.length}
+                  </Badge>
                 </button>
                 {LEASE_STATUSES.map((s) => (
                   <button
@@ -529,27 +555,29 @@ function RentRollPageInner() {
                   All
                 </button>
                 <span className="mx-1 h-4 w-px bg-border" aria-hidden />
-                {(["currency", "country", "none"] as LeaseGroupBy[]).map((g) => (
-                  <button
-                    key={g}
-                    onClick={() => setGroupBy(g)}
-                    className={
-                      "rounded-full border px-3 py-1 text-xs font-bold " +
-                      (groupBy === g
-                        ? "border-primary bg-primary text-primary-fg"
-                        : "border-border bg-surface text-fg-muted")
-                    }
-                    title={
-                      g === "currency"
-                        ? "Separate leases into USD and CAD sections, each with its own subtotal"
-                        : g === "country"
-                          ? "Separate leases into United States and Canada sections"
-                          : "One flat list"
-                    }
-                  >
-                    {GROUP_BY_LABEL[g]}
-                  </button>
-                ))}
+                {(["currency", "country", "none"] as LeaseGroupBy[]).map(
+                  (g) => (
+                    <button
+                      key={g}
+                      onClick={() => setGroupBy(g)}
+                      className={
+                        "rounded-full border px-3 py-1 text-xs font-bold " +
+                        (groupBy === g
+                          ? "border-primary bg-primary text-primary-fg"
+                          : "border-border bg-surface text-fg-muted")
+                      }
+                      title={
+                        g === "currency"
+                          ? "Separate leases into USD and CAD sections, each with its own subtotal"
+                          : g === "country"
+                            ? "Separate leases into United States and Canada sections"
+                            : "One flat list"
+                      }
+                    >
+                      {GROUP_BY_LABEL[g]}
+                    </button>
+                  ),
+                )}
                 <div className="ml-auto flex w-full max-w-md items-center gap-2">
                   <Button
                     variant="outline"
@@ -680,6 +708,13 @@ function RentRollPageInner() {
           </Tabs>
         </CardContent>
       </Card>
+      {catchingUp && (
+        <RentCatchUpModal
+          open={catchingUp}
+          onClose={() => setCatchingUp(false)}
+          onPosted={load}
+        />
+      )}
     </div>
   );
 }

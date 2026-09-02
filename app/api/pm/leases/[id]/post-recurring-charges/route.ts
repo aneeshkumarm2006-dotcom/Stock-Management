@@ -9,59 +9,38 @@
 // detail page). The automated nightly counterpart lives in
 // `/api/cron/post-recurring-rent` → `runLeaseRecurringPoster`, which applies
 // the same accounting and locked-period rules unattended.
-import { NextResponse } from 'next/server';
-import { Types } from 'mongoose';
-import { z } from 'zod';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { Lease } from '@/lib/db/models/pm/Lease';
-import { Property } from '@/lib/db/models/pm/Property';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import {
-  getPmContext,
-  unauthorizedResponse,
-} from '@/lib/auth/getCurrentUser';
-import { logActivity } from '@/lib/pm/activity';
-import {
-  assertWriteAllowed,
-  LockedPeriodError,
-} from '@/lib/pm/lockedPeriod';
-import { buildRentChargeLines } from '@/lib/pm/rentCharge';
+import { NextResponse } from "next/server";
+import { Types } from "mongoose";
+import { z } from "zod";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { Lease } from "@/lib/db/models/pm/Lease";
+import { Property } from "@/lib/db/models/pm/Property";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { getPmContext, unauthorizedResponse } from "@/lib/auth/getCurrentUser";
+import { logActivity } from "@/lib/pm/activity";
+import { assertWriteAllowed, LockedPeriodError } from "@/lib/pm/lockedPeriod";
+import { buildRentChargeLines } from "@/lib/pm/rentCharge";
+import { advanceRentDate } from "@/lib/pm/leaseRecurringPoster";
 import {
   leaseTenantsLabel,
   recurringChargeMemo,
   rentChargeMemo,
-} from '@/lib/pm/journalMemo';
-import { resolveScheduledRentForDate } from '@/lib/pm/rentSchedule';
-import type { RentCycle } from '@/types/pm';
+} from "@/lib/pm/journalMemo";
+import { resolveScheduledRentForDate } from "@/lib/pm/rentSchedule";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const bodySchema = z.object({
   asOfDate: z.string().min(8).optional(),
 });
 
-function advance(date: Date, freq: RentCycle): Date {
-  const next = new Date(date);
-  switch (freq) {
-    case 'Weekly':
-      next.setDate(next.getDate() + 7);
-      break;
-    case 'Bi-weekly':
-      next.setDate(next.getDate() + 14);
-      break;
-    case 'Monthly':
-      next.setMonth(next.getMonth() + 1);
-      break;
-    case 'Quarterly':
-      next.setMonth(next.getMonth() + 3);
-      break;
-    case 'Yearly':
-      next.setFullYear(next.getFullYear() + 1);
-      break;
-  }
-  return next;
+/** Last instant of `d`'s calendar day, so "due today" counts as due. */
+function endOfLocalDay(d: Date): Date {
+  const out = new Date(d);
+  out.setHours(23, 59, 59, 999);
+  return out;
 }
 
 export async function POST(
@@ -71,7 +50,7 @@ export async function POST(
   const ctx = await getPmContext();
   if (!ctx) return unauthorizedResponse();
   if (!Types.ObjectId.isValid(params.id)) {
-    return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
 
   let body: unknown = {};
@@ -83,13 +62,23 @@ export async function POST(
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: 'Invalid input', issues: parsed.error.flatten().fieldErrors },
+      { error: "Invalid input", issues: parsed.error.flatten().fieldErrors },
       { status: 400 },
     );
   }
-  const asOf = parsed.data.asOfDate ? new Date(parsed.data.asOfDate) : new Date();
-  if (Number.isNaN(asOf.getTime())) {
-    return NextResponse.json({ error: 'Invalid asOfDate' }, { status: 400 });
+  // Compared at calendar-day granularity, matching `startOfDay()` in
+  // lib/pm/leaseRecurringPoster.ts. `asOfDate` arrives as a bare YYYY-MM-DD
+  // (UTC midnight) but the default is `new Date()` — a full timestamp — so a
+  // raw instant compare made a charge due TODAY invisible to this button while
+  // the cron happily posted it. End-of-day makes "due today" due on both paths.
+  const asOfRaw = parsed.data.asOfDate
+    ? new Date(parsed.data.asOfDate)
+    : new Date();
+  const asOf = Number.isNaN(asOfRaw.getTime())
+    ? asOfRaw
+    : endOfLocalDay(asOfRaw);
+  if (Number.isNaN(asOfRaw.getTime())) {
+    return NextResponse.json({ error: "Invalid asOfDate" }, { status: 400 });
   }
 
   await connectToDatabase();
@@ -98,11 +87,11 @@ export async function POST(
     _id: new Types.ObjectId(params.id),
     organizationId: orgId,
   });
-  if (!lease) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  if (lease.status !== 'Active' && lease.status !== 'Future') {
+  if (!lease) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (lease.status !== "Active" && lease.status !== "Future") {
     return NextResponse.json(
       {
-        error: 'Recurring charges only post against Active or Future leases.',
+        error: "Recurring charges only post against Active or Future leases.",
       },
       { status: 409 },
     );
@@ -123,14 +112,14 @@ export async function POST(
       propertyName: string;
     } | null>();
   if (!property) {
-    return NextResponse.json({ error: 'Property missing' }, { status: 409 });
+    return NextResponse.json({ error: "Property missing" }, { status: 409 });
   }
   // Every JE this sweep posts names the same tenant(s); `lease.tenants[]` is
   // the denormalized snapshot already loaded above, so this costs no query.
   const tenantLabel = leaseTenantsLabel(lease.tenants);
   const arCoa = await ChartOfAccount.findOne({
     organizationId: orgId,
-    defaultFor: 'Accounts Receivable',
+    defaultFor: "Accounts Receivable",
     active: true,
   })
     .select({ _id: 1 })
@@ -140,7 +129,7 @@ export async function POST(
     return NextResponse.json(
       {
         error:
-          'No Accounts Receivable chart-of-account configured; cannot post recurring charges.',
+          "No Accounts Receivable chart-of-account configured; cannot post recurring charges.",
       },
       { status: 409 },
     );
@@ -167,7 +156,7 @@ export async function POST(
     } catch (err) {
       if (err instanceof LockedPeriodError) {
         skipped.push({
-          chargeId: String((charge as { _id?: unknown })._id ?? ''),
+          chargeId: String((charge as { _id?: unknown })._id ?? ""),
           reason: err.policyMessage,
         });
         continue;
@@ -178,7 +167,7 @@ export async function POST(
     const je = await JournalEntry.create({
       organizationId: orgId,
       date: charge.nextDate,
-      scopeType: 'Property',
+      scopeType: "Property",
       scopeId: lease.propertyId,
       memo: recurringChargeMemo({
         leaseNumber: lease.leaseNumber,
@@ -188,29 +177,29 @@ export async function POST(
       lines: [
         {
           accountId: accountsReceivableCoaId,
-          scopeType: 'Property',
+          scopeType: "Property",
           scopeId: lease.propertyId,
           unitId: lease.unitId,
-          description: 'Recurring rent receivable',
+          description: "Recurring rent receivable",
           debit: charge.amount,
           credit: 0,
         },
         {
           accountId: charge.accountId,
-          scopeType: 'Property',
+          scopeType: "Property",
           scopeId: lease.propertyId,
           unitId: lease.unitId,
-          description: 'Recurring rent income',
+          description: "Recurring rent income",
           debit: 0,
           credit: charge.amount,
         },
       ],
-      status: 'Posted',
+      status: "Posted",
       postedAt: new Date(),
       createdByUserId: new Types.ObjectId(ctx.userId),
     });
 
-    const newNext = advance(charge.nextDate, charge.frequency);
+    const newNext = advanceRentDate(charge.nextDate, charge.frequency);
     charge.nextDate = newNext;
     // Persist the advanced nextDate ATOMICALLY with this charge's committed JE
     // before moving on. If a later iteration throws, the JEs already posted in
@@ -219,7 +208,7 @@ export async function POST(
     // JEs with un-advanced nextDates → double-posting on the next run.)
     await lease.save();
     posted.push({
-      chargeId: String((charge as { _id?: unknown })._id ?? ''),
+      chargeId: String((charge as { _id?: unknown })._id ?? ""),
       amount: charge.amount,
       journalEntryId: String(je._id),
       newNextDate: newNext.toISOString(),
@@ -245,7 +234,7 @@ export async function POST(
     } catch (err) {
       if (err instanceof LockedPeriodError) {
         locked = true;
-        skipped.push({ chargeId: 'primary-rent', reason: err.policyMessage });
+        skipped.push({ chargeId: "primary-rent", reason: err.policyMessage });
       } else {
         throw err;
       }
@@ -264,24 +253,24 @@ export async function POST(
         const je = await JournalEntry.create({
           organizationId: orgId,
           date: dueDate,
-          scopeType: 'Property',
+          scopeType: "Property",
           scopeId: lease.propertyId,
           memo: rentChargeMemo({
             leaseNumber: lease.leaseNumber,
             tenantLabel,
           }),
           lines: built.lines,
-          status: 'Posted',
+          status: "Posted",
           postedAt: new Date(),
           createdByUserId: new Types.ObjectId(ctx.userId),
         });
-        const newNext = advance(dueDate, lease.rentCycle);
+        const newNext = advanceRentDate(dueDate, lease.rentCycle);
         lease.primaryRent.nextDueDate = newNext;
         // Persist the advanced cursor ATOMICALLY with its committed JE before
         // returning, so a re-run cannot double-post this period.
         await lease.save();
         posted.push({
-          chargeId: 'primary-rent',
+          chargeId: "primary-rent",
           amount: built.total,
           journalEntryId: String(je._id),
           newNextDate: newNext.toISOString(),
@@ -293,9 +282,9 @@ export async function POST(
   if (posted.length > 0) {
     await logActivity({
       orgId: ctx.orgId,
-      parentType: 'Lease',
+      parentType: "Lease",
       parentId: lease._id,
-      eventType: 'Recurring charges posted',
+      eventType: "Recurring charges posted",
       actorUserId: ctx.userId,
       payload: { count: posted.length, asOfDate: asOf.toISOString() },
     });

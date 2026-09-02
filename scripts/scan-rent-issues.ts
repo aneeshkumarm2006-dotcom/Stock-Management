@@ -8,25 +8,41 @@
  *
  * Run from site/:  npx --yes tsx scripts/scan-rent-issues.ts
  */
-import dns from 'node:dns';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import mongoose from 'mongoose';
-import { connectToDatabase } from '../lib/db/mongoose';
+// MEMO MATCHING. These used to anchor on `^Move-in JE for lease #N` and
+// `^Rent charge for lease #N`, a format that stopped shipping when memos became
+// tenant-prefixed ("Alebrijes — rent charge (lease #36)"). Anchored patterns
+// match zero current rows, so this detector silently reported "nothing wrong"
+// no matter what the data held. The matchers now live beside the builders in
+// lib/pm/journalMemo.ts and accept BOTH formats, because production holds both.
+
+import dns from "node:dns";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import mongoose from "mongoose";
+import { connectToDatabase } from "../lib/db/mongoose";
+import {
+  moveInMemoMatcher,
+  parseLeaseNumberFromMemo,
+  rentChargeMemoMatcher,
+} from "../lib/pm/journalMemo";
 
 function loadEnvLocal() {
   try {
-    for (const line of readFileSync(resolve('.env.local'), 'utf8').split(/\r?\n/)) {
+    for (const line of readFileSync(resolve(".env.local"), "utf8").split(
+      /\r?\n/,
+    )) {
       const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-      if (m && m[1] && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+      if (m && m[1] && process.env[m[1]] === undefined)
+        process.env[m[1]] = m[2];
     }
   } catch {
     /* optional */
   }
 }
-const ORG_ID = '6a15a84e5bac3c1113395eb4';
+const ORG_ID = "6a15a84e5bac3c1113395eb4";
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
-const ymd = (x: unknown) => (x ? new Date(x as string).toISOString().slice(0, 10) : '—');
+const ymd = (x: unknown) =>
+  x ? new Date(x as string).toISOString().slice(0, 10) : "—";
 const ym = (x: unknown) => ymd(x).slice(0, 7);
 
 interface JeLine {
@@ -47,30 +63,38 @@ interface Je {
 async function main() {
   loadEnvLocal();
   if (process.env.MONGODB_DNS_SERVERS)
-    dns.setServers(process.env.MONGODB_DNS_SERVERS.split(',').map((s) => s.trim()));
+    dns.setServers(
+      process.env.MONGODB_DNS_SERVERS.split(",").map((s) => s.trim()),
+    );
   await connectToDatabase();
   const db = mongoose.connection.db;
-  if (!db) throw new Error('no db handle');
+  if (!db) throw new Error("no db handle");
   const orgId = new mongoose.Types.ObjectId(ORG_ID);
 
   const incomeCoas = await db
-    .collection('pm_chart_of_accounts')
-    .find({ organizationId: orgId, type: 'Income' })
+    .collection("pm_chart_of_accounts")
+    .find({ organizationId: orgId, type: "Income" })
     .toArray();
   const incomeIds = new Set(incomeCoas.map((c) => String(c._id)));
 
   const posted = (await db
-    .collection('pm_journal_entries')
-    .find({ organizationId: orgId, status: 'Posted' })
+    .collection("pm_journal_entries")
+    .find({ organizationId: orgId, status: "Posted" })
     .toArray()) as unknown as Je[];
 
   // ---------- (A) duplicate first-month rent ----------
-  console.log('=== (A) Duplicate first-month rent (Move-in JE + Rent charge, same lease+month) ===');
-  const moveIns = posted.filter((j) => /^Move-in JE for lease #(\d+)/.test(j.memo ?? ''));
+  console.log(
+    "=== (A) Duplicate first-month rent (Move-in JE + Rent charge, same lease+month) ===",
+  );
+  const moveIns = posted.filter((j) => {
+    const n = parseLeaseNumberFromMemo(j.memo);
+    return n !== null && moveInMemoMatcher(n).test(j.memo ?? "");
+  });
   let dupCount = 0;
   for (const mi of moveIns) {
-    const num = (mi.memo ?? '').match(/lease #(\d+)/)?.[1];
-    if (!num) continue;
+    const num = parseLeaseNumberFromMemo(mi.memo);
+    if (num === null) continue;
+    const rentMatcher = rentChargeMemoMatcher(num);
     const miMonth = ym(mi.date);
     const miIncome = (mi.lines ?? [])
       .filter((l) => incomeIds.has(String(l.accountId)))
@@ -78,9 +102,7 @@ async function main() {
     // A recurring "Rent charge for lease #N" in the same month.
     const rc = posted.find(
       (j) =>
-        j !== mi &&
-        new RegExp(`^Rent charge for lease #${num}\\b`).test(j.memo ?? '') &&
-        ym(j.date) === miMonth,
+        j !== mi && rentMatcher.test(j.memo ?? "") && ym(j.date) === miMonth,
     );
     if (rc && miIncome > 0) {
       const rcIncome = (rc.lines ?? [])
@@ -92,18 +114,18 @@ async function main() {
       );
     }
   }
-  if (dupCount === 0) console.log('  none found');
+  if (dupCount === 0) console.log("  none found");
 
   // ---------- (B) historical rent coverage ----------
   const leases = await db
-    .collection('pm_leases')
-    .find({ organizationId: orgId, status: { $in: ['Active', 'Future'] } })
+    .collection("pm_leases")
+    .find({ organizationId: orgId, status: { $in: ["Active", "Future"] } })
     .toArray();
 
   // months (YYYY-MM) that already have a base-rent JE, per property+unit scope, from any lease.
   // We key rent JEs by month only per lease propertyId for a coarse coverage picture.
   const now = new Date();
-  const thisMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  const thisMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 
   // Build a set of "propertyId|YYYY-MM" that have ANY income posting.
   // `scopeType` must be checked, not just truthiness of scopeId: a Company-
@@ -115,7 +137,7 @@ async function main() {
       if (
         incomeIds.has(String(l.accountId)) &&
         (l.credit ?? 0) > 0 &&
-        l.scopeType === 'Property' &&
+        l.scopeType === "Property" &&
         l.scopeId
       ) {
         coveredPropMonth.add(`${String(l.scopeId)}|${ym(j.date)}`);
@@ -123,40 +145,57 @@ async function main() {
     }
   }
 
-  const horizons = ['2024-01', '2025-01', '2026-01'];
-  const horizonTotals: Record<string, number> = { '2024-01': 0, '2025-01': 0, '2026-01': 0 };
+  const horizons = ["2024-01", "2025-01", "2026-01"];
+  const horizonTotals: Record<string, number> = {
+    "2024-01": 0,
+    "2025-01": 0,
+    "2026-01": 0,
+  };
 
-  console.log('\n=== (B) Active/Future leases: missing base-rent months (per property scope) ===');
+  console.log(
+    "\n=== (B) Active/Future leases: missing base-rent months (per property scope) ===",
+  );
   for (const l of leases) {
     const start = l.startDate ? new Date(l.startDate as string) : null;
-    const rent = (l.primaryRent && (l.primaryRent as { amount?: number }).amount) ?? 0;
+    const rent =
+      (l.primaryRent && (l.primaryRent as { amount?: number }).amount) ?? 0;
     if (!start || rent <= 0) continue;
     const pid = String(l.propertyId);
     // enumerate months from start to last month (exclusive of current month)
     const missing: string[] = [];
-    const cur = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
-    const endExcl = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)); // first of this month
+    const cur = new Date(
+      Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1),
+    );
+    const endExcl = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    ); // first of this month
     while (cur < endExcl) {
-      const mk = `${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, '0')}`;
+      const mk = `${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, "0")}`;
       if (!coveredPropMonth.has(`${pid}|${mk}`)) missing.push(mk);
       cur.setUTCMonth(cur.getUTCMonth() + 1);
     }
     for (const h of horizons) {
-      horizonTotals[h] = (horizonTotals[h] ?? 0) + missing.filter((m) => m >= h).length;
+      horizonTotals[h] =
+        (horizonTotals[h] ?? 0) + missing.filter((m) => m >= h).length;
     }
-    const recent = missing.filter((m) => m >= '2025-01');
+    const recent = missing.filter((m) => m >= "2025-01");
     console.log(
       `  #${l.leaseNumber} ${l.status} start=${ymd(l.startDate)} rent=${money(rent)} | missing months total=${missing.length}, since2025=${recent.length}`,
     );
   }
 
-  console.log('\n=== (B) Backfill volume (approx JE count) by horizon — property-month gaps ===');
-  for (const h of horizons) console.log(`  since ${h}: ~${horizonTotals[h]} lease-months missing (excluding ${thisMonth})`);
+  console.log(
+    "\n=== (B) Backfill volume (approx JE count) by horizon — property-month gaps ===",
+  );
+  for (const h of horizons)
+    console.log(
+      `  since ${h}: ~${horizonTotals[h]} lease-months missing (excluding ${thisMonth})`,
+    );
 
   await mongoose.disconnect();
-  console.log('\n✓ done');
+  console.log("\n✓ done");
 }
 main().catch((e) => {
-  console.error('✗', e);
+  console.error("✗", e);
   process.exitCode = 1;
 });

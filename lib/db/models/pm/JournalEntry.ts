@@ -29,22 +29,19 @@
 // Locked-period gating (BR-AC-3) lives in `lib/pm/lockedPeriod.ts` and is
 // invoked by the API routes — not the schema layer — so admin Financial
 // Administrators can override.
-import { Schema, model, models, Types, type Model } from 'mongoose';
-import { PARENT_TYPES } from '@/lib/pm/parentTypes';
-import type {
-  JournalEntryScopeType,
-  JournalEntryStatus,
-} from '@/types/pm';
+import { Schema, model, models, Types, type Model } from "mongoose";
+import { PARENT_TYPES } from "@/lib/pm/parentTypes";
+import type { JournalEntryScopeType, JournalEntryStatus } from "@/types/pm";
 
 export const JOURNAL_ENTRY_STATUSES: JournalEntryStatus[] = [
-  'Posted',
-  'Draft',
-  'Voided',
+  "Posted",
+  "Draft",
+  "Voided",
 ];
 
 export const JOURNAL_ENTRY_SCOPE_TYPES: JournalEntryScopeType[] = [
-  'Property',
-  'Company',
+  "Property",
+  "Company",
 ];
 
 /** Memo char cap — DECISIONS.md [G-S-27] resolved at 256 (PDR §3.19 inference). */
@@ -93,6 +90,30 @@ export interface IJournalEntry {
   recurringTransactionId?: Types.ObjectId | null;
   /** The rule's nextDate this entry was posted against. */
   recurringPeriodDate?: Date | null;
+  /**
+   * Lease-rent provenance — the trio below is the duplicate guard for rent.
+   *
+   * Rent had NONE. The recurring poster is protected by the unique index on
+   * (recurringTransactionId, recurringPeriodDate), but lease rent leaves both
+   * null, so nothing stopped the same month posting twice — which is why
+   * `scripts/fix-duplicate-firstmonth-rent.ts` had to exist. The memo was the
+   * only link back to a lease, and matching on it is fragile: it has already
+   * changed format once, and `/lease #N/` also matches move-in JEs and
+   * `recurringCharges[]` extras.
+   *
+   * `leaseChargeKey` is NOT optional decoration. One lease can post base rent
+   * AND several `recurringCharges[]` rows on the same date; without a
+   * per-charge discriminator they would collide on the index and the second one
+   * would be swallowed as "already posted".
+   *
+   * Deliberately NOT folded into `recurringTransactionId`: that index has no
+   * charge-row component, so reusing it would produce exactly that collision.
+   */
+  leaseId?: Types.ObjectId | null;
+  /** `'primary-rent'`, or the `recurringCharges[]` row's `_id` as a string. */
+  leaseChargeKey?: string | null;
+  /** The period this entry covers, normalised to UTC midnight. */
+  leasePeriodDate?: Date | null;
   createdByUserId: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -102,7 +123,7 @@ const JournalLineSchema = new Schema<IJournalLine>(
   {
     accountId: {
       type: Schema.Types.ObjectId,
-      ref: 'PmChartOfAccount',
+      ref: "PmChartOfAccount",
       required: true,
     },
     scopeType: {
@@ -113,7 +134,7 @@ const JournalLineSchema = new Schema<IJournalLine>(
     scopeId: { type: Schema.Types.ObjectId, default: null },
     unitId: {
       type: Schema.Types.ObjectId,
-      ref: 'PmUnit',
+      ref: "PmUnit",
       default: null,
     },
     name: { type: String, trim: true },
@@ -124,7 +145,7 @@ const JournalLineSchema = new Schema<IJournalLine>(
     clearedDate: { type: Date, default: null },
     reconciliationId: {
       type: Schema.Types.ObjectId,
-      ref: 'PmReconciliation',
+      ref: "PmReconciliation",
       default: null,
     },
   },
@@ -135,7 +156,7 @@ const JournalEntrySchema = new Schema<IJournalEntry>(
   {
     organizationId: {
       type: Schema.Types.ObjectId,
-      ref: 'PmOrganization',
+      ref: "PmOrganization",
       required: true,
     },
     date: { type: Date, required: true },
@@ -148,7 +169,7 @@ const JournalEntrySchema = new Schema<IJournalEntry>(
     memo: { type: String, trim: true, maxlength: JOURNAL_ENTRY_MEMO_MAX },
     attachmentFileId: {
       type: Schema.Types.ObjectId,
-      ref: 'PmFile',
+      ref: "PmFile",
       default: null,
     },
     lines: {
@@ -162,38 +183,45 @@ const JournalEntrySchema = new Schema<IJournalEntry>(
       type: String,
       enum: JOURNAL_ENTRY_STATUSES,
       required: true,
-      default: 'Posted',
+      default: "Posted",
     },
     postedAt: { type: Date, default: null },
     voidedAt: { type: Date, default: null },
     voidedByUserId: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       default: null,
     },
     reversesJournalEntryId: {
       type: Schema.Types.ObjectId,
-      ref: 'PmJournalEntry',
+      ref: "PmJournalEntry",
       default: null,
     },
     reversedByJournalEntryId: {
       type: Schema.Types.ObjectId,
-      ref: 'PmJournalEntry',
+      ref: "PmJournalEntry",
       default: null,
     },
     recurringTransactionId: {
       type: Schema.Types.ObjectId,
-      ref: 'PmRecurringTransaction',
+      ref: "PmRecurringTransaction",
       default: null,
     },
     recurringPeriodDate: { type: Date, default: null },
+    leaseId: {
+      type: Schema.Types.ObjectId,
+      ref: "PmLease",
+      default: null,
+    },
+    leaseChargeKey: { type: String, default: null },
+    leasePeriodDate: { type: Date, default: null },
     createdByUserId: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
   },
-  { timestamps: true, collection: 'pm_journal_entries' },
+  { timestamps: true, collection: "pm_journal_entries" },
 );
 
 // Index suite tuned for the three big read paths:
@@ -203,7 +231,7 @@ const JournalEntrySchema = new Schema<IJournalEntry>(
 JournalEntrySchema.index({ organizationId: 1, date: -1 });
 JournalEntrySchema.index({
   organizationId: 1,
-  'lines.accountId': 1,
+  "lines.accountId": 1,
   date: -1,
 });
 JournalEntrySchema.index({
@@ -222,29 +250,52 @@ JournalEntrySchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      recurringTransactionId: { $type: 'objectId' },
+      recurringTransactionId: { $type: "objectId" },
     },
+  },
+);
+
+// One lease charge → one JE per period, enforced by the database rather than by
+// the poster remembering to check. Partial so only rent-generated rows
+// participate: every entry written before this field existed has `leaseId:
+// null` and is excluded, which is also why the catch-up backfills the trio onto
+// historical rent entries BEFORE its first run — an unmarked row is invisible
+// to this index and would be posted over.
+//
+// Separate from the recurring index above, not folded into it: the key spec
+// differs, so Mongo builds two independent indexes and neither partial filter
+// overlaps the other (a lease JE never carries a recurringTransactionId).
+JournalEntrySchema.index(
+  {
+    organizationId: 1,
+    leaseId: 1,
+    leaseChargeKey: 1,
+    leasePeriodDate: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: { leaseId: { $type: "objectId" } },
   },
 );
 
 // Belt-and-braces sanity check on the PARENT_TYPES enum — the audit-log writer
 // uses 'JournalEntry' as its parentType; ensure it's spelled the same way.
-if (!(PARENT_TYPES as readonly string[]).includes('JournalEntry')) {
+if (!(PARENT_TYPES as readonly string[]).includes("JournalEntry")) {
   throw new Error(
     "PARENT_TYPES is missing 'JournalEntry'. Update lib/pm/parentTypes.ts before importing JournalEntry.",
   );
 }
 
-JournalEntrySchema.pre('validate', function (next) {
+JournalEntrySchema.pre("validate", function (next) {
   // Skip when re-saving an already-voided JE (status flip writes happen via
   // direct field assignment in the route handler; lines are not mutated).
-  if (this.status === 'Voided' && this.lines && this.lines.length > 0) {
+  if (this.status === "Voided" && this.lines && this.lines.length > 0) {
     // still recompute totals for safety
   }
 
   const lines = this.lines ?? [];
   if (lines.length < 2) {
-    return next(new Error('A journal entry requires at least two lines.'));
+    return next(new Error("A journal entry requires at least two lines."));
   }
 
   let totalDebits = 0;
@@ -273,7 +324,9 @@ JournalEntrySchema.pre('validate', function (next) {
     }
     if (!debitSet && !creditSet) {
       return next(
-        new Error(`Line ${idx + 1}: each line needs either a debit or a credit.`),
+        new Error(
+          `Line ${idx + 1}: each line needs either a debit or a credit.`,
+        ),
       );
     }
     if (debitSet) hasDebit = true;
@@ -285,7 +338,7 @@ JournalEntrySchema.pre('validate', function (next) {
   if (!hasDebit || !hasCredit) {
     return next(
       new Error(
-        'A journal entry must contain at least one debit and one credit line.',
+        "A journal entry must contain at least one debit and one credit line.",
       ),
     );
   }
@@ -301,7 +354,7 @@ JournalEntrySchema.pre('validate', function (next) {
   this.totalDebits = totalDebits;
   this.totalCredits = totalCredits;
 
-  if (this.status === 'Posted' && !this.postedAt) {
+  if (this.status === "Posted" && !this.postedAt) {
     this.postedAt = new Date();
   }
 
@@ -310,6 +363,6 @@ JournalEntrySchema.pre('validate', function (next) {
 
 export const JournalEntry: Model<IJournalEntry> =
   (models.PmJournalEntry as Model<IJournalEntry>) ??
-  model<IJournalEntry>('PmJournalEntry', JournalEntrySchema);
+  model<IJournalEntry>("PmJournalEntry", JournalEntrySchema);
 
 export default JournalEntry;

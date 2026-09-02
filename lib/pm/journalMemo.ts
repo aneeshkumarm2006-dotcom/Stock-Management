@@ -64,7 +64,8 @@ function withTenantLabel(label: string, body: string): string {
   // Body alone already fills the cap: drop the label rather than corrupt the
   // `lease #N` tail. Guard at a few chars so we never emit "N… — body".
   if (room < 4) return body.slice(0, JOURNAL_ENTRY_MEMO_MAX);
-  const clipped = name.length <= room ? name : `${name.slice(0, room - 1)}\u2026`;
+  const clipped =
+    name.length <= room ? name : `${name.slice(0, room - 1)}\u2026`;
   return `${clipped} \u2014 ${body}`;
 }
 
@@ -89,8 +90,7 @@ export function recurringChargeMemo(opts: {
   detail?: string | null;
 }): string {
   const detail = (opts.detail ?? "").trim();
-  const body =
-    `recurring charge${detail ? `: ${detail}` : ""} (lease #${opts.leaseNumber})`;
+  const body = `recurring charge${detail ? `: ${detail}` : ""} (lease #${opts.leaseNumber})`;
   return withTenantLabel(opts.tenantLabel, body);
 }
 
@@ -107,4 +107,82 @@ export function moveInMemo(opts: {
     opts.tenantLabel,
     `move-in (lease #${opts.leaseNumber})`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Matchers — the parsing counterpart of the builders above.
+//
+// Before these existed, four scripts each hand-rolled their own regex and three
+// of them ANCHORED on a memo format that no longer ships: `scan-rent-issues.ts`
+// and `fix-duplicate-firstmonth-rent.ts` still test `/^Move-in JE for lease #N/`
+// and `/^Rent charge for lease #N\b/`, which match zero rows now that every
+// memo is tenant-prefixed. A "duplicate detector" that silently matches nothing
+// is worse than none, so the patterns live here beside the builders that have
+// to stay in step with them.
+//
+// Both the CURRENT and the LEGACY shapes are accepted, because production holds
+// rows written by both:
+//   current  "Alebrijes — rent charge (lease #36)"
+//   legacy   "Rent charge for lease #36 (backfill)"
+// ---------------------------------------------------------------------------
+
+/** Pull the lease number out of any lease-generated memo, or null. */
+export function parseLeaseNumberFromMemo(
+  memo: string | null | undefined,
+): number | null {
+  const m = /lease #(\d+)/i.exec(memo ?? "");
+  return m?.[1] ? Number(m[1]) : null;
+}
+
+/**
+ * A lease number is always digits, so the "escape" is a strip. Anything else
+ * would be a caller bug, and interpolating it raw into a RegExp would turn that
+ * bug into a pattern that quietly matches the wrong rows.
+ */
+function leaseNumberPattern(leaseNumber: number | string): string {
+  const digits = String(leaseNumber).replace(/[^0-9]/g, "");
+  if (!digits) throw new Error(`Invalid lease number: ${String(leaseNumber)}`);
+  return digits;
+}
+
+/**
+ * Matches the PRIMARY rent accrual for one lease.
+ *
+ * Deliberately narrower than `/lease #N/`: that also matches move-in JEs,
+ * `recurringCharges[]` extras, late fees and deposits, so a month whose only
+ * entry is a $50 parking charge would look like rent had already been posted.
+ * `scripts/backfill-historical-rent.ts` keys its "seen" set that loosely, which
+ * is why a backfill can skip a month that genuinely owes rent.
+ *
+ * The `(?!ed)` guards against "recurring charge", which also ends in
+ * "charge (lease #N)" — matching it would make an extras-only month look like
+ * base rent had posted.
+ */
+export function rentChargeMemoMatcher(leaseNumber: number | string): RegExp {
+  const n = leaseNumberPattern(leaseNumber);
+  return new RegExp(
+    "(?:^|[^a-z])rent charge[^(]*\\(lease #" +
+      n +
+      "\\)|^Rent charge for lease #" +
+      n +
+      "\\b",
+    "i",
+  );
+}
+
+/** Matches the move-in JE raised when a draft lease is executed. */
+export function moveInMemoMatcher(leaseNumber: number | string): RegExp {
+  const n = leaseNumberPattern(leaseNumber);
+  return new RegExp(
+    "move-in \\(lease #" + n + "\\)|^Move-in JE for lease #" + n + "\\b",
+    "i",
+  );
+}
+
+/** Matches one `recurringCharges[]` row's accrual for a lease. */
+export function recurringChargeMemoMatcher(
+  leaseNumber: number | string,
+): RegExp {
+  const n = leaseNumberPattern(leaseNumber);
+  return new RegExp("recurring charge[^(]*\\(lease #" + n + "\\)", "i");
 }

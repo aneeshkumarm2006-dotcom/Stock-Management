@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface PlannedPeriod {
   ruleId: string;
@@ -161,7 +162,7 @@ export function RecurringCatchUpModal({
     ).toFixed(2);
     if (
       !confirm(
-        `Post ${postable.length} entries totalling ${totalDollars} through ${new Date(throughDate).toLocaleDateString()}?` +
+        `Post ${postable.length} entries totalling ${totalDollars} through ${formatDateOnly(throughDate)}?` +
           (dupes > 0
             ? `\n\n${dupes} of these look like possible duplicates of existing records.`
             : ""),
@@ -181,7 +182,9 @@ export function RecurringCatchUpModal({
     toast({
       title: `Posted ${data.posted} entries`,
       description:
-        data.skipped > 0 ? `${data.skipped} skipped — re-preview to see why.` : undefined,
+        data.skipped > 0
+          ? `${data.skipped} skipped — re-preview to see why.`
+          : undefined,
       variant: "success",
     });
     onClose();
@@ -199,7 +202,10 @@ export function RecurringCatchUpModal({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-4xl">
-        <DialogHeader title="Catch up recurring transactions" onClose={onClose} />
+        <DialogHeader
+          title="Catch up recurring transactions"
+          onClose={onClose}
+        />
         <div className="space-y-4">
           <p className="text-sm text-fg-muted">
             Posts every missed period for the selected rules, up to and
@@ -305,7 +311,7 @@ export function RecurringCatchUpModal({
                         }
                       >
                         <td className="px-2 py-1 tabular-nums">
-                          {new Date(p.periodDate).toLocaleDateString()}
+                          {formatDateOnly(p.periodDate)}
                         </td>
                         <td className="px-2 py-1">
                           {p.memo || p.type}
@@ -342,7 +348,10 @@ export function RecurringCatchUpModal({
                           ))}
                         </td>
                         <td className="px-2 py-1 text-right">
-                          <CurrencyAmount cents={p.amountCents} convert={false} />
+                          <CurrencyAmount
+                            cents={p.amountCents}
+                            convert={false}
+                          />
                         </td>
                         <td className="px-2 py-1 text-xs">
                           {p.note ?? p.status}

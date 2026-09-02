@@ -21,51 +21,81 @@
  *   npx --yes tsx scripts/fix-duplicate-firstmonth-rent.ts            # preview
  *   npx --yes tsx scripts/fix-duplicate-firstmonth-rent.ts --apply    # execute
  */
-import dns from 'node:dns';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import mongoose from 'mongoose';
-import { connectToDatabase } from '../lib/db/mongoose';
+// MEMO MATCHING. These used to anchor on `^Move-in JE for lease #N` and
+// `^Rent charge for lease #N`, a format that stopped shipping when memos became
+// tenant-prefixed ("Alebrijes — rent charge (lease #36)"). Anchored patterns
+// match zero current rows, so this detector silently reported "nothing wrong"
+// no matter what the data held. The matchers now live beside the builders in
+// lib/pm/journalMemo.ts and accept BOTH formats, because production holds both.
+
+import dns from "node:dns";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import mongoose from "mongoose";
+import { connectToDatabase } from "../lib/db/mongoose";
+import {
+  moveInMemoMatcher,
+  parseLeaseNumberFromMemo,
+  rentChargeMemoMatcher,
+} from "../lib/pm/journalMemo";
 
 function loadEnvLocal() {
   try {
-    for (const line of readFileSync(resolve('.env.local'), 'utf8').split(/\r?\n/)) {
+    for (const line of readFileSync(resolve(".env.local"), "utf8").split(
+      /\r?\n/,
+    )) {
       const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-      if (m && m[1] && process.env[m[1]] === undefined) process.env[m[1]] = m[2];
+      if (m && m[1] && process.env[m[1]] === undefined)
+        process.env[m[1]] = m[2];
     }
   } catch {
     /* optional */
   }
 }
-const ORG_ID = '6a15a84e5bac3c1113395eb4';
+const ORG_ID = "6a15a84e5bac3c1113395eb4";
 // The signed-in PM (LISA CONG) — recorded as the actor who voided the entry.
-const VOIDED_BY_USER_ID = '6a15a84d5bac3c1113395eae';
+const VOIDED_BY_USER_ID = "6a15a84d5bac3c1113395eae";
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
-const ym = (x: unknown) => (x ? new Date(x as string).toISOString().slice(0, 7) : '—');
+const ym = (x: unknown) =>
+  x ? new Date(x as string).toISOString().slice(0, 7) : "—";
 
-interface JeLine { accountId?: unknown; debit?: number; credit?: number }
-interface Je { _id: unknown; date?: unknown; status?: string; memo?: string; lines?: JeLine[] }
+interface JeLine {
+  accountId?: unknown;
+  debit?: number;
+  credit?: number;
+}
+interface Je {
+  _id: unknown;
+  date?: unknown;
+  status?: string;
+  memo?: string;
+  lines?: JeLine[];
+}
 
 async function main() {
   loadEnvLocal();
-  const apply = process.argv.includes('--apply');
+  const apply = process.argv.includes("--apply");
   if (process.env.MONGODB_DNS_SERVERS)
-    dns.setServers(process.env.MONGODB_DNS_SERVERS.split(',').map((s) => s.trim()));
+    dns.setServers(
+      process.env.MONGODB_DNS_SERVERS.split(",").map((s) => s.trim()),
+    );
   await connectToDatabase();
   const db = mongoose.connection.db;
-  if (!db) throw new Error('no db handle');
+  if (!db) throw new Error("no db handle");
   const orgId = new mongoose.Types.ObjectId(ORG_ID);
-  console.log(`Mode: ${apply ? 'APPLY' : 'DRY-RUN (pass --apply to execute)'}\n`);
+  console.log(
+    `Mode: ${apply ? "APPLY" : "DRY-RUN (pass --apply to execute)"}\n`,
+  );
 
   const incomeCoas = await db
-    .collection('pm_chart_of_accounts')
-    .find({ organizationId: orgId, type: 'Income' })
+    .collection("pm_chart_of_accounts")
+    .find({ organizationId: orgId, type: "Income" })
     .toArray();
   const incomeIds = new Set(incomeCoas.map((c) => String(c._id)));
 
   const posted = (await db
-    .collection('pm_journal_entries')
-    .find({ organizationId: orgId, status: 'Posted' })
+    .collection("pm_journal_entries")
+    .find({ organizationId: orgId, status: "Posted" })
     .toArray()) as unknown as Je[];
 
   const incomeOf = (j: Je) =>
@@ -73,15 +103,19 @@ async function main() {
       .filter((l) => incomeIds.has(String(l.accountId)))
       .reduce((s, l) => s + ((l.credit ?? 0) - (l.debit ?? 0)), 0);
 
-  const moveIns = posted.filter((j) => /^Move-in JE for lease #(\d+)/.test(j.memo ?? ''));
+  const moveIns = posted.filter((j) => {
+    const n = parseLeaseNumberFromMemo(j.memo);
+    return n !== null && moveInMemoMatcher(n).test(j.memo ?? "");
+  });
   const toVoid: Je[] = [];
   for (const mi of moveIns) {
-    const num = (mi.memo ?? '').match(/lease #(\d+)/)?.[1];
-    if (!num || incomeOf(mi) <= 0) continue;
+    const num = parseLeaseNumberFromMemo(mi.memo);
+    if (num === null || incomeOf(mi) <= 0) continue;
+    const rentMatcher = rentChargeMemoMatcher(num);
     const dup = posted.find(
       (j) =>
         j !== mi &&
-        new RegExp(`^Rent charge for lease #${num}\\b`).test(j.memo ?? '') &&
+        rentMatcher.test(j.memo ?? "") &&
         ym(j.date) === ym(mi.date) &&
         incomeOf(j) > 0,
     );
@@ -94,18 +128,22 @@ async function main() {
   }
 
   if (toVoid.length === 0) {
-    console.log('No un-voided duplicates found — nothing to do.');
+    console.log("No un-voided duplicates found — nothing to do.");
     await mongoose.disconnect();
     return;
   }
 
   if (apply) {
     for (const dup of toVoid) {
-      await db.collection('pm_journal_entries').updateOne(
-        { _id: dup._id as mongoose.Types.ObjectId, organizationId: orgId, status: 'Posted' },
+      await db.collection("pm_journal_entries").updateOne(
+        {
+          _id: dup._id as mongoose.Types.ObjectId,
+          organizationId: orgId,
+          status: "Posted",
+        },
         {
           $set: {
-            status: 'Voided',
+            status: "Voided",
             voidedAt: new Date(),
             voidedByUserId: new mongoose.Types.ObjectId(VOIDED_BY_USER_ID),
             memo: `${dup.memo} (voided: duplicate of move-in first-month rent)`,
@@ -115,12 +153,14 @@ async function main() {
     }
     console.log(`\n✓ Voided ${toVoid.length} duplicate JE(s).`);
   } else {
-    console.log(`\nWould void ${toVoid.length} duplicate JE(s). Re-run with --apply.`);
+    console.log(
+      `\nWould void ${toVoid.length} duplicate JE(s). Re-run with --apply.`,
+    );
   }
 
   await mongoose.disconnect();
 }
 main().catch((e) => {
-  console.error('✗', e);
+  console.error("✗", e);
   process.exitCode = 1;
 });

@@ -34,26 +34,61 @@ import { resolveScheduledRentForDate } from "@/lib/pm/rentSchedule";
 import type { PmContext } from "@/lib/auth/getCurrentUser";
 import type { RentCycle } from "@/types/pm";
 
+/**
+ * Advance a rent cursor by one cycle.
+ *
+ * UTC arithmetic, and CLAMPED to the target month's length.
+ *
+ * The previous implementation used local getters/setters on a date that is
+ * stored at UTC midnight, so on any host west of GMT `2026-07-01T00:00Z` + 1
+ * month resolved to `2026-07-31T00:00Z` — the cursor walked to the last day of
+ * the same month instead of the first of the next one. Vercel runs UTC so
+ * production was spared, but every script and dev run was not.
+ *
+ * It also had no month-length clamp, which is a bug on EVERY host: a lease
+ * anchored on the 31st resolved Jan 31 + 1 month to Mar 3 (JS rolls the
+ * overflow forward), silently skipping February for the life of the lease.
+ * Clamping to Feb 28 matches `addMonthsClamped` in lib/pm/recurringPoster.ts.
+ *
+ * Like `addMonthsClamped`, the anchor is read from `current`, so a cursor that
+ * has ALREADY been clamped stays on the shorter day (Jan 31 → Feb 28 → Mar 28).
+ * Recovering the original anchor would need the lease start date, which callers
+ * do not pass; the two engines drift identically, which is what matters.
+ */
 export function advanceRentDate(current: Date, frequency: RentCycle): Date {
-  const next = new Date(current);
   switch (frequency) {
     case "Weekly":
-      next.setDate(next.getDate() + 7);
-      break;
+      return addUtcDays(current, 7);
     case "Bi-weekly":
-      next.setDate(next.getDate() + 14);
-      break;
+      return addUtcDays(current, 14);
     case "Monthly":
-      next.setMonth(next.getMonth() + 1);
-      break;
+      return addUtcMonths(current, 1);
     case "Quarterly":
-      next.setMonth(next.getMonth() + 3);
-      break;
+      return addUtcMonths(current, 3);
     case "Yearly":
-      next.setFullYear(next.getFullYear() + 1);
-      break;
+      // Via months, not setFullYear, so Feb 29 clamps to Feb 28 rather than
+      // rolling into March.
+      return addUtcMonths(current, 12);
   }
-  return next;
+}
+
+function addUtcDays(current: Date, days: number): Date {
+  return new Date(current.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+/** Days in the UTC month `monthsAhead` after `current`. */
+function daysInUtcMonth(year: number, monthIndex: number): number {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function addUtcMonths(current: Date, months: number): Date {
+  const anchorDay = current.getUTCDate();
+  const targetMonthStart = new Date(
+    Date.UTC(current.getUTCFullYear(), current.getUTCMonth() + months, 1),
+  );
+  const y = targetMonthStart.getUTCFullYear();
+  const m = targetMonthStart.getUTCMonth();
+  return new Date(Date.UTC(y, m, Math.min(anchorDay, daysInUtcMonth(y, m))));
 }
 
 export interface LeasePostResult {

@@ -32,21 +32,21 @@
  *   npx --yes tsx scripts/verify-pm-indexes.ts
  *   npx --yes tsx scripts/verify-pm-indexes.ts --collection=pm_bills
  */
-import dns from 'node:dns';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import mongoose from 'mongoose';
-import { connectToDatabase } from '../lib/db/mongoose';
-import { Bill } from '../lib/db/models/pm/Bill';
-import { JournalEntry } from '../lib/db/models/pm/JournalEntry';
-import { Budget } from '../lib/db/models/pm/Budget';
-import { CompanyAccount } from '../lib/db/models/pm/CompanyAccount';
-import { RecurringTransaction } from '../lib/db/models/pm/RecurringTransaction';
-import { Property } from '../lib/db/models/pm/Property';
+import dns from "node:dns";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import mongoose from "mongoose";
+import { connectToDatabase } from "../lib/db/mongoose";
+import { Bill } from "../lib/db/models/pm/Bill";
+import { JournalEntry } from "../lib/db/models/pm/JournalEntry";
+import { Budget } from "../lib/db/models/pm/Budget";
+import { CompanyAccount } from "../lib/db/models/pm/CompanyAccount";
+import { RecurringTransaction } from "../lib/db/models/pm/RecurringTransaction";
+import { Property } from "../lib/db/models/pm/Property";
 
 function loadEnvLocal() {
   try {
-    for (const line of readFileSync(resolve('.env.local'), 'utf8').split(
+    for (const line of readFileSync(resolve(".env.local"), "utf8").split(
       /\r?\n/,
     )) {
       const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
@@ -68,44 +68,49 @@ function argValue(flag: string): string | undefined {
 function keySignature(key: Record<string, unknown>): string {
   return Object.entries(key)
     .map(([k, v]) => `${k}:${String(v)}`)
-    .join(',');
+    .join(",");
 }
 
 const MODELS = [
-  { name: 'pm_bills', model: Bill },
-  { name: 'pm_journal_entries', model: JournalEntry },
-  { name: 'pm_budgets', model: Budget },
-  { name: 'pm_company_accounts', model: CompanyAccount },
-  { name: 'pm_recurring_transactions', model: RecurringTransaction },
-  { name: 'pm_properties', model: Property },
+  { name: "pm_bills", model: Bill },
+  { name: "pm_journal_entries", model: JournalEntry },
+  { name: "pm_budgets", model: Budget },
+  { name: "pm_company_accounts", model: CompanyAccount },
+  { name: "pm_recurring_transactions", model: RecurringTransaction },
+  { name: "pm_properties", model: Property },
 ] as const;
 
 /** Indexes the ledger's correctness actually depends on. */
 const CRITICAL: Record<string, string[]> = {
   pm_bills: [
-    'organizationId:1,recurringTransactionId:1,recurringPeriodDate:1,scope.id:1',
+    "organizationId:1,recurringTransactionId:1,recurringPeriodDate:1,scope.id:1",
   ],
   pm_journal_entries: [
-    'organizationId:1,recurringTransactionId:1,recurringPeriodDate:1',
+    "organizationId:1,recurringTransactionId:1,recurringPeriodDate:1",
+    // The lease-rent duplicate guard. A unique index does NOT build when the
+    // collection already holds duplicates, and Mongoose surfaces that on the
+    // connection's error event rather than at query time — so without this
+    // check you would ship believing rent was protected when it is not.
+    "organizationId:1,leaseId:1,leaseChargeKey:1,leasePeriodDate:1",
   ],
-  pm_company_accounts: ['organizationId:1,name:1'],
+  pm_company_accounts: ["organizationId:1,name:1"],
 };
 
 async function main() {
   loadEnvLocal();
-  const only = argValue('--collection');
+  const only = argValue("--collection");
 
   if (process.env.MONGODB_DNS_SERVERS) {
     dns.setServers(
-      process.env.MONGODB_DNS_SERVERS.split(',').map((s) => s.trim()),
+      process.env.MONGODB_DNS_SERVERS.split(",").map((s) => s.trim()),
     );
   }
 
   await connectToDatabase();
-  console.log('✓ connected (read-only — this script never writes)');
+  console.log("✓ connected (read-only — this script never writes)");
 
   const conn = mongoose.connection;
-  if (!conn?.db) throw new Error('No database handle on the connection.');
+  if (!conn?.db) throw new Error("No database handle on the connection.");
 
   let problems = 0;
 
@@ -120,27 +125,29 @@ async function main() {
 
     const schemaIndexes = model.schema.indexes();
     const schemaKeys = new Set(
-      schemaIndexes.map(([key]) => keySignature(key as Record<string, unknown>)),
+      schemaIndexes.map(([key]) =>
+        keySignature(key as Record<string, unknown>),
+      ),
     );
 
     for (const [key, opts] of schemaIndexes) {
       const sig = keySignature(key as Record<string, unknown>);
       const hit = liveByKey.get(sig);
       const flags = [
-        (opts as { unique?: boolean })?.unique ? 'unique' : null,
+        (opts as { unique?: boolean })?.unique ? "unique" : null,
         (opts as { partialFilterExpression?: unknown })?.partialFilterExpression
-          ? 'partial'
+          ? "partial"
           : null,
       ]
         .filter(Boolean)
-        .join(' ');
+        .join(" ");
       if (hit) {
-        console.log(`  ✓ ${sig}${flags ? `  [${flags}]` : ''}`);
+        console.log(`  ✓ ${sig}${flags ? `  [${flags}]` : ""}`);
       } else {
         // The dangerous case: the schema declares it, autoIndex was supposed to
         // create it, and it silently isn't there.
         console.log(
-          `  ✗ MISSING IN MONGO  ${sig}${flags ? `  [${flags}]` : ''}`,
+          `  ✗ MISSING IN MONGO  ${sig}${flags ? `  [${flags}]` : ""}`,
         );
         problems += 1;
       }
@@ -148,7 +155,7 @@ async function main() {
 
     for (const idx of live) {
       const sig = keySignature(idx.key as Record<string, unknown>);
-      if (sig === '_id:1') continue;
+      if (sig === "_id:1") continue;
       if (!schemaKeys.has(sig)) {
         // Not an error by itself — but syncIndexes() would DROP these, which is
         // exactly why we never run it against a PM collection.
@@ -170,7 +177,7 @@ async function main() {
 
   console.log(
     problems === 0
-      ? '\n✓ Every schema index is present in Mongo.'
+      ? "\n✓ Every schema index is present in Mongo."
       : `\n‼ ${problems} problem(s). A missing unique index on pm_bills or pm_journal_entries means the recurring poster has NO protection against double-posting — resolve that before shipping anything else.`,
   );
 
@@ -179,6 +186,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('verify-pm-indexes failed:', err);
+  console.error("verify-pm-indexes failed:", err);
   process.exitCode = 1;
 });
