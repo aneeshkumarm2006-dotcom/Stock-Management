@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { ScopePicker, useCompanyAccounts } from "@/components/pm/ScopePicker";
+import { scopeFromInput, toJournalLineScope } from "@/lib/pm/scope";
 
 interface AccountOption {
   id: string;
@@ -90,6 +92,8 @@ export function JournalEntryModal({
     newLine(),
   ]);
   const [saving, setSaving] = React.useState(false);
+
+  const companies = useCompanyAccounts(open);
 
   // Load reference data on open.
   React.useEffect(() => {
@@ -212,13 +216,16 @@ export function JournalEntryModal({
     setSaving(true);
     const body = {
       date,
-      scopeType,
-      scopeId: scopeType === "Property" ? scopeId : null,
+      ...toJournalLineScope(scopeFromInput(scopeType, scopeId)),
       memo: memo.trim() || undefined,
+      // The PER-LINE scope is the one that decides which Financials column this
+      // entry lands in: both P&L aggregators unwind `lines` and group on
+      // `lines.scopeId`, and never read the entry-level scope. An entry headed
+      // "Ramco" whose lines are all unscoped shows up entirely under
+      // "Company (unassigned)".
       lines: lines.map((l) => ({
         accountId: l.accountId,
-        scopeType: l.scopeType,
-        scopeId: l.scopeType === "Property" ? l.scopeId : null,
+        ...toJournalLineScope(scopeFromInput(l.scopeType, l.scopeId)),
         description: l.description.trim() || undefined,
         debit: Number.isFinite(Number(l.debit || 0)) ? Number(l.debit || 0) : 0,
         credit: Number.isFinite(Number(l.credit || 0))
@@ -264,38 +271,20 @@ export function JournalEntryModal({
                 onChange={(e) => setDate(e.target.value)}
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="je-scope">Scope *</Label>
-              <select
+            <div className="space-y-1 md:col-span-2">
+              <Label htmlFor="je-scope">Property or company *</Label>
+              <ScopePicker
                 id="je-scope"
-                value={scopeType}
-                onChange={(e) =>
-                  setScopeType(e.target.value as "Property" | "Company")
-                }
+                scopeType={scopeType}
+                scopeId={scopeId}
+                properties={properties}
+                companies={companies}
                 className="h-10 w-full rounded border border-border bg-surface-highest px-3 text-sm text-fg"
-              >
-                <option value="Company">Company</option>
-                <option value="Property">Property</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="je-property">
-                {scopeType === "Property" ? "Property *" : "Property"}
-              </Label>
-              <select
-                id="je-property"
-                value={scopeId}
-                onChange={(e) => setScopeId(e.target.value)}
-                disabled={scopeType !== "Property"}
-                className="h-10 w-full rounded border border-border bg-surface-highest px-3 text-sm text-fg disabled:opacity-50"
-              >
-                <option value="">— select —</option>
-                {properties.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(next) => {
+                  setScopeType(next.scopeType);
+                  setScopeId(next.scopeId);
+                }}
+              />
             </div>
           </div>
           <div className="space-y-1">
@@ -341,37 +330,21 @@ export function JournalEntryModal({
                       </select>
                     </td>
                     <td className="px-2 py-1">
-                      <div className="flex gap-1">
-                        <select
-                          value={l.scopeType}
-                          onChange={(e) =>
-                            updateLine(idx, {
-                              scopeType: e.target.value as
-                                | "Property"
-                                | "Company",
-                            })
-                          }
-                          className="h-9 rounded border border-border bg-surface-highest px-1 text-xs text-fg"
-                        >
-                          <option value="Company">Co.</option>
-                          <option value="Property">Prop.</option>
-                        </select>
-                        <select
-                          value={l.scopeId}
-                          onChange={(e) =>
-                            updateLine(idx, { scopeId: e.target.value })
-                          }
-                          disabled={l.scopeType !== "Property"}
-                          className="h-9 min-w-0 flex-1 rounded border border-border bg-surface-highest px-1 text-xs text-fg disabled:opacity-50"
-                        >
-                          <option value="">—</option>
-                          {properties.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      <ScopePicker
+                        scopeType={l.scopeType}
+                        scopeId={l.scopeId}
+                        properties={properties}
+                        companies={companies}
+                        placeholder="—"
+                        aria-label={`Line ${idx + 1} property or company`}
+                        className="h-9 w-full min-w-0 rounded border border-border bg-surface-highest px-1 text-xs text-fg"
+                        onChange={(next) =>
+                          updateLine(idx, {
+                            scopeType: next.scopeType,
+                            scopeId: next.scopeId,
+                          })
+                        }
+                      />
                     </td>
                     <td className="px-2 py-1">
                       <Input

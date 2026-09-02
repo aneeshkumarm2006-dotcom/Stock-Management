@@ -19,6 +19,8 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { ScopePicker, useCompanyAccounts } from "@/components/pm/ScopePicker";
+import { scopeFromInput, toBillScope } from "@/lib/pm/scope";
 
 interface VendorOption {
   id: string;
@@ -80,6 +82,14 @@ export function EditBillModal({
   const [status, setStatus] = React.useState("");
   const [lines, setLines] = React.useState<LineRow[]>([]);
   const [saving, setSaving] = React.useState(false);
+
+  const companies = useCompanyAccounts(open);
+  // ScopePicker wants {id, name}; this modal holds {id, propertyName}. Skipping
+  // the rename renders every option blank, with no error to say why.
+  const scopeOptions = React.useMemo(
+    () => properties.map((p) => ({ id: p.id, name: p.propertyName })),
+    [properties],
+  );
 
   // Partially paid / Paid bills have separate, immutable payment JEs that a
   // re-post can't keep in sync — only vendor and reference are editable.
@@ -166,10 +176,16 @@ export function EditBillModal({
         invoiceDate: new Date(invoiceDate).toISOString(),
         refNo: refNo.trim() || undefined,
         memo: memo.trim() || undefined,
-        scope:
-          scopeType === "Property" && scopeId
-            ? { type: "Property", id: scopeId }
-            : { type: "Company", id: null },
+        // Sent ONLY when the picker names something. An empty scopeId means
+        // either the placeholder or the legacy "Company (not specified)" entry,
+        // and both normalize to {Company, null} — which, sent, would rewrite a
+        // bill filed against a named company back into the legacy bucket AND
+        // repost its journal entry. That is how editing nothing but a memo used
+        // to move money out of a company's column. `scope` is optional in
+        // billUpdateSchema, so omitting it is a true no-op.
+        ...(scopeId
+          ? { scope: toBillScope(scopeFromInput(scopeType, scopeId)) }
+          : {}),
         lines: lines
           .filter((l) => l.accountId)
           .map((l) => ({
@@ -256,36 +272,18 @@ export function EditBillModal({
 
             <div className="space-y-1">
               <Label htmlFor="edit-bill-scope">Scope</Label>
-              <div className="flex gap-2">
-                <select
-                  id="edit-bill-scope"
-                  className="rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg"
-                  value={scopeType}
-                  disabled={lockedFinancials}
-                  onChange={(e) => {
-                    setScopeType(e.target.value as "Property" | "Company");
-                    setScopeId("");
-                  }}
-                >
-                  <option value="Company">Company</option>
-                  <option value="Property">Property</option>
-                </select>
-                {scopeType === "Property" && (
-                  <select
-                    className="flex-1 rounded border border-border bg-surface px-3 py-1.5 text-sm text-fg"
-                    value={scopeId}
-                    disabled={lockedFinancials}
-                    onChange={(e) => setScopeId(e.target.value)}
-                  >
-                    <option value="">Choose property…</option>
-                    {properties.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.propertyName}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
+              <ScopePicker
+                id="edit-bill-scope"
+                scopeType={scopeType}
+                scopeId={scopeId}
+                properties={scopeOptions}
+                companies={companies}
+                disabled={lockedFinancials}
+                onChange={(next) => {
+                  setScopeType(next.scopeType);
+                  setScopeId(next.scopeId);
+                }}
+              />
             </div>
 
             <div className="space-y-1">

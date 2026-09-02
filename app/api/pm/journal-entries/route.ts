@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { CompanyAccount } from "@/lib/db/models/pm/CompanyAccount";
 import { getPmContext, unauthorizedResponse } from "@/lib/auth/getCurrentUser";
 import { journalEntryCreateSchema } from "@/lib/validation/pm/journalEntry";
 import { logActivity } from "@/lib/pm/activity";
@@ -160,6 +161,35 @@ export async function POST(request: Request) {
   }
 
   await connectToDatabase();
+
+  // Every named-company scope must belong to THIS org. Zod checks ObjectId
+  // shape only, and the ids were written straight through — harmless while no
+  // client could send one, but the journal entry modal now can, so a crafted
+  // request could otherwise stamp another tenant's CompanyAccount onto GL
+  // lines. Mirrors the guard in app/api/pm/bills/route.ts. One batched query,
+  // not one per line.
+  const companyScopeIds = new Set<string>();
+  if (parsed.data.scopeType === "Company" && parsed.data.scopeId) {
+    companyScopeIds.add(parsed.data.scopeId);
+  }
+  for (const line of parsed.data.lines) {
+    if (line.scopeType === "Company" && line.scopeId) {
+      companyScopeIds.add(line.scopeId);
+    }
+  }
+  if (companyScopeIds.size > 0) {
+    const ids = Array.from(companyScopeIds).map((id) => new Types.ObjectId(id));
+    const found = await CompanyAccount.countDocuments({
+      _id: { $in: ids },
+      organizationId: new Types.ObjectId(ctx.orgId),
+    });
+    if (found !== ids.length) {
+      return NextResponse.json(
+        { error: "scopeId does not reference a company in this org" },
+        { status: 400 },
+      );
+    }
+  }
 
   try {
     const doc = await JournalEntry.create({
