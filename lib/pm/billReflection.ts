@@ -35,6 +35,7 @@ import {
 } from "@/lib/pm/currency";
 import { addMoney, type MoneyByCurrency } from "@/lib/pm/moneyByCurrency";
 import type { PmCurrency } from "@/types/pm";
+import { parseDateWindow, withinDateWindow } from "@/lib/pm/dateWindow";
 
 export type BillReflectionReason =
   /** Draft, or no `journalEntryId` — never posted to the ledger. */
@@ -133,8 +134,9 @@ export async function classifyBills(
   opts: ClassifyBillsOptions,
 ): Promise<ClassifyBillsResult> {
   const orgObjectId = new Types.ObjectId(opts.orgId);
-  const fromDate = opts.from ? new Date(opts.from) : null;
-  const toDate = opts.to ? new Date(opts.to) : null;
+  // Identical bounds to the matrix aggregation (lib/pm/dateWindow.ts), so
+  // "reflected" here keeps meaning exactly "would show in the matrix".
+  const window = parseDateWindow(opts.from, opts.to);
 
   // Same account source the matrix route uses (active Income/Operating-Expense
   // accounts), so "reflected" here means exactly "would show in the matrix".
@@ -205,13 +207,8 @@ export async function classifyBills(
     : [];
   const jeById = new Map(jes.map((j) => [String(j._id), j]));
 
-  const dateOk = (d: Date | null | undefined): boolean => {
-    if (!d) return false;
-    const t = new Date(d).getTime();
-    if (fromDate && t < fromDate.getTime()) return false;
-    if (toDate && t > toDate.getTime()) return false;
-    return true;
-  };
+  const dateOk = (d: Date | null | undefined): boolean =>
+    withinDateWindow(d, window);
 
   const reflections: BillReflection[] = bills.map((b) => {
     const scope = {

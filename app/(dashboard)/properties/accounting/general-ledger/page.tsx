@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { JournalEntryModal } from "@/components/pm/JournalEntryModal";
 import type { PmCurrency } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface JELine {
   accountId: string;
@@ -59,6 +60,11 @@ interface PropertyOption {
   currency: PmCurrency | null;
 }
 
+interface CompanyOption {
+  id: string;
+  name: string;
+}
+
 function GeneralLedgerContent() {
   const searchParams = useSearchParams();
   const [accounts, setAccounts] = React.useState<AccountOption[]>([]);
@@ -69,9 +75,15 @@ function GeneralLedgerContent() {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set());
 
+  const [companies, setCompanies] = React.useState<CompanyOption[]>([]);
+
   const [filter, setFilter] = React.useState({
     accountId: searchParams.get("accountId") ?? "",
     propertyId: searchParams.get("propertyId") ?? "",
+    // Drill-through from a Financials company column. "none" is the legacy
+    // bucket (Company-scoped lines carrying no company) — a narrower question
+    // than "any company", so it is kept distinct from "".
+    companyId: searchParams.get("companyId") ?? "",
     from: searchParams.get("from") ?? "",
     to: searchParams.get("to") ?? "",
     status: searchParams.get("status") ?? "",
@@ -83,8 +95,10 @@ function GeneralLedgerContent() {
     Promise.all([
       fetch("/api/pm/chart-of-accounts").then((r) => (r.ok ? r.json() : [])),
       fetch("/api/pm/properties").then((r) => (r.ok ? r.json() : [])),
-    ]).then(([a, p]) => {
+      fetch("/api/pm/company-accounts").then((r) => (r.ok ? r.json() : [])),
+    ]).then(([a, p, c]) => {
       setAccounts(a as AccountOption[]);
+      setCompanies(c as CompanyOption[]);
       setProperties(
         (
           p as {
@@ -107,6 +121,7 @@ function GeneralLedgerContent() {
     const params = new URLSearchParams();
     if (filter.accountId) params.set("accountId", filter.accountId);
     if (filter.propertyId) params.set("propertyId", filter.propertyId);
+    if (filter.companyId) params.set("companyId", filter.companyId);
     if (filter.from) params.set("from", filter.from);
     if (filter.to) params.set("to", filter.to);
     if (filter.status) params.set("status", filter.status);
@@ -145,6 +160,33 @@ function GeneralLedgerContent() {
     for (const p of properties) m.set(p.id, p.name);
     return m;
   }, [properties]);
+  const companyNameById = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of companies) m.set(c.id, c.name);
+    return m;
+  }, [companies]);
+  /**
+   * The scope label for an entry or a line.
+   *
+   * A Company scope carrying a real CompanyAccount id used to render as the
+   * bare literal "Company" — indistinguishable from the legacy no-company
+   * bucket, and from every OTHER company. That is exactly the confusion the
+   * recurring-transactions list already avoids by resolving the name, and it
+   * matters more now that the Financials matrix gives each company its own
+   * column: a row drilled from the Greene column must say Greene.
+   */
+  const scopeLabel = React.useCallback(
+    (scopeType: string, scopeId: string | null): string => {
+      if (scopeType === "Property" && scopeId) {
+        return propertyNameById.get(scopeId) ?? "Property";
+      }
+      if (scopeType === "Company" && scopeId) {
+        return companyNameById.get(scopeId) ?? "Unknown company";
+      }
+      return "Company (unassigned)";
+    },
+    [propertyNameById, companyNameById],
+  );
   // A journal entry is denominated in its scope's currency. This is the
   // drill-through target of every Financials cell, so rendering a USD entry
   // under a C$ symbol here would undo the fix one click later. Company-scoped
@@ -186,20 +228,40 @@ function GeneralLedgerContent() {
               </select>
             </div>
             <div className="space-y-1">
-              <Label>Property</Label>
+              <Label>Property or company</Label>
               <select
-                value={filter.propertyId}
-                onChange={(e) =>
-                  setFilter({ ...filter, propertyId: e.target.value })
+                value={
+                  filter.propertyId
+                    ? `property:${filter.propertyId}`
+                    : filter.companyId
+                      ? `company:${filter.companyId}`
+                      : ""
                 }
+                onChange={(e) => {
+                  // One control, two mutually exclusive filters — picking a
+                  // company must clear the property and vice versa, or the API
+                  // would receive both and silently prefer the property.
+                  const v = e.target.value;
+                  setFilter({
+                    ...filter,
+                    propertyId: v.startsWith("property:") ? v.slice(9) : "",
+                    companyId: v.startsWith("company:") ? v.slice(8) : "",
+                  });
+                }}
                 className="h-9 w-full rounded border border-border bg-surface-highest px-2 text-sm text-fg"
               >
-                <option value="">All properties</option>
+                <option value="">All properties &amp; companies</option>
                 {properties.map((p) => (
-                  <option key={p.id} value={p.id}>
+                  <option key={p.id} value={`property:${p.id}`}>
                     {p.name}
                   </option>
                 ))}
+                {companies.map((c) => (
+                  <option key={c.id} value={`company:${c.id}`}>
+                    {c.name} (Co.)
+                  </option>
+                ))}
+                <option value="company:none">Company (unassigned)</option>
               </select>
             </div>
             <div className="space-y-1">
@@ -224,7 +286,9 @@ function GeneralLedgerContent() {
               <Label>Status</Label>
               <select
                 value={filter.status}
-                onChange={(e) => setFilter({ ...filter, status: e.target.value })}
+                onChange={(e) =>
+                  setFilter({ ...filter, status: e.target.value })
+                }
                 className="h-9 w-full rounded border border-border bg-surface-highest px-2 text-sm text-fg"
               >
                 <option value="">Posted + Draft</option>
@@ -287,8 +351,10 @@ function GeneralLedgerContent() {
                     <React.Fragment key={r.id}>
                       <tr
                         className={
-                          "border-b border-border/40 hover:bg-surface-high cursor-pointer " +
-                          (r.status === "Voided" ? "opacity-50 line-through" : "")
+                          "cursor-pointer border-b border-border/40 hover:bg-surface-high " +
+                          (r.status === "Voided"
+                            ? "line-through opacity-50"
+                            : "")
                         }
                         onClick={() => toggleExpand(r.id)}
                       >
@@ -305,13 +371,11 @@ function GeneralLedgerContent() {
                             onClick={(e) => e.stopPropagation()}
                             className="hover:underline"
                           >
-                            {new Date(r.date).toLocaleDateString()}
+                            {formatDateOnly(r.date)}
                           </Link>
                         </td>
                         <td className="text-fg-muted">
-                          {r.scopeType === "Property" && r.scopeId
-                            ? (propertyNameById.get(r.scopeId) ?? "Property")
-                            : "Company"}
+                          {scopeLabel(r.scopeType, r.scopeId)}
                         </td>
                         <td className="text-fg-muted">{r.memo || "—"}</td>
                         <td>
@@ -348,14 +412,15 @@ function GeneralLedgerContent() {
                               </thead>
                               <tbody>
                                 {r.lines.map((l, i) => (
-                                  <tr key={i} className="border-t border-border/30">
+                                  <tr
+                                    key={i}
+                                    className="border-t border-border/30"
+                                  >
                                     <td className="py-1">
                                       {accountNameById.get(l.accountId) ?? "—"}
                                     </td>
                                     <td className="text-fg-muted">
-                                      {l.scopeType === "Property" && l.scopeId
-                                        ? (propertyNameById.get(l.scopeId) ?? "Property")
-                                        : "Company"}
+                                      {scopeLabel(l.scopeType, l.scopeId)}
                                     </td>
                                     <td className="text-fg-muted">
                                       {l.description || "—"}
@@ -426,7 +491,9 @@ function StatusBadge({ status }: { status: "Posted" | "Draft" | "Voided" }) {
         ? "bg-warning/15 text-warning"
         : "bg-error/15 text-error";
   return (
-    <span className={"rounded px-1.5 py-0.5 text-[10px] font-bold uppercase " + cls}>
+    <span
+      className={"rounded px-1.5 py-0.5 text-[10px] font-bold uppercase " + cls}
+    >
       {status}
     </span>
   );

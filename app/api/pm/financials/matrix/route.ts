@@ -25,31 +25,50 @@
 // unlabelled. The page uses this to render each column natively and to bucket
 // row/grand totals into a MoneyByCurrency instead of adding CAD to USD.
 //
-// The 'company' column is the org's own books, so it takes the org default
-// currency. `scopeReportKey` is called with splitByCompany off, which collapses
-// every Company-scoped line onto that one column; if that is ever turned on,
-// each `company:<id>` column should resolve via resolveCompanyCurrency instead.
-import { NextResponse } from 'next/server';
-import { Types } from 'mongoose';
-import { connectToDatabase } from '@/lib/db/mongoose';
-import { ChartOfAccount } from '@/lib/db/models/pm/ChartOfAccount';
-import { JournalEntry } from '@/lib/db/models/pm/JournalEntry';
-import { Property } from '@/lib/db/models/pm/Property';
-import { Organization } from '@/lib/db/models/pm/Organization';
-import { BankAccount } from '@/lib/db/models/pm/BankAccount';
+// COMPANY COLUMNS. `scopeReportKey` is called with splitByCompany ON, so every
+// Company-scoped line naming a real CompanyAccount gets its own `company:<id>`
+// column resolved via resolveCompanyCurrency (a legal entity books in its own
+// currency, which need not be the org default). The bare `company` sentinel
+// survives as the legacy bucket for rows written before named companies
+// existed — those carry `scopeId: null` and mean "the organization's own
+// books", and are never rewritten (see lib/db/models/pm/JournalEntry.ts).
+//
+// The company column list is derived from the AGGREGATION ROWS, not from the
+// CompanyAccount table, for the same reason the archived-property columns are:
+// a cell whose column was filtered out is dropped from every total.
+import { NextResponse } from "next/server";
+import { Types } from "mongoose";
+import { connectToDatabase } from "@/lib/db/mongoose";
+import { ChartOfAccount } from "@/lib/db/models/pm/ChartOfAccount";
+import { JournalEntry } from "@/lib/db/models/pm/JournalEntry";
+import { Property } from "@/lib/db/models/pm/Property";
+import { Organization } from "@/lib/db/models/pm/Organization";
+import { BankAccount } from "@/lib/db/models/pm/BankAccount";
+import { getPmContext, unauthorizedResponse } from "@/lib/auth/getCurrentUser";
 import {
-  getPmContext,
-  unauthorizedResponse,
-} from '@/lib/auth/getCurrentUser';
-import { resolvePropertyCurrency } from '@/lib/pm/currency';
-import { ledgerVisibleMatch } from '@/lib/pm/ledgerVisibility';
-import type { PmCurrency } from '@/types/pm';
+  resolveCompanyCurrency,
+  resolvePropertyCurrency,
+} from "@/lib/pm/currency";
+import {
+  COMPANY_SENTINEL,
+  companyIdFromColumnId,
+  scopeReportKey,
+} from "@/lib/pm/scope";
+import { CompanyAccount } from "@/lib/db/models/pm/CompanyAccount";
+import { ledgerVisibleMatch } from "@/lib/pm/ledgerVisibility";
+import { dateWindowClause, parseDateWindow } from "@/lib/pm/dateWindow";
+import type { PmCurrency } from "@/types/pm";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 
 interface CellKey {
   accountId: string;
-  propertyId: string; // or "company"
+  /**
+   * A column id, not necessarily a property: a Property `_id`, the bare
+   * `company` sentinel, or `company:<CompanyAccount _id>`. The field keeps its
+   * historical name because it is the wire contract the page reads.
+   */
+  propertyId: string;
 }
 
 export async function GET(request: Request) {
@@ -57,8 +76,8 @@ export async function GET(request: Request) {
   if (!ctx) return unauthorizedResponse();
 
   const { searchParams } = new URL(request.url);
-  const from = searchParams.get('from');
-  const to = searchParams.get('to');
+  const from = searchParams.get("from");
+  const to = searchParams.get("to");
 
   await connectToDatabase();
   const orgObjectId = new Types.ObjectId(ctx.orgId);
@@ -68,7 +87,7 @@ export async function GET(request: Request) {
     ChartOfAccount.find({
       organizationId: orgObjectId,
       active: true,
-      type: { $in: ['Income', 'Operating Expense'] },
+      type: { $in: ["Income", "Operating Expense"] },
     })
       .sort({ type: 1, name: 1 })
       .lean(),
@@ -88,35 +107,45 @@ export async function GET(request: Request) {
   ]);
 
   const orgDefaultCurrency: PmCurrency =
-    (org as { defaultCurrency?: PmCurrency } | null)?.defaultCurrency ?? 'USD';
+    (org as { defaultCurrency?: PmCurrency } | null)?.defaultCurrency ?? "USD";
 
   const accountIds = accounts.map((a) => a._id);
 
-  const dateClause: Record<string, Date> = {};
-  if (from) dateClause.$gte = new Date(from);
-  if (to) dateClause.$lte = new Date(to);
+  // Half-open UTC interval — `to` is inclusive of its whole calendar day. The
+  // old `$lte: new Date(to)` was midnight on that day, silently dropping any
+  // entry dated on the window's last day that carries a time. See
+  // lib/pm/dateWindow.ts; lib/pm/billReflection.ts uses the same bounds so the
+  // "not reflected here" banner still agrees with this matrix exactly.
+  const dateClause = dateWindowClause(parseDateWindow(from, to));
 
   const matchStage: Record<string, unknown> = {
     organizationId: orgObjectId,
     ...ledgerVisibleMatch(),
   };
-  if (Object.keys(dateClause).length > 0) matchStage.date = dateClause;
+  if (dateClause) matchStage.date = dateClause;
 
-  const rows: { _id: { accountId: Types.ObjectId; scopeId: Types.ObjectId | null; scopeType: string }; net: number }[] =
+  const rows: {
+    _id: {
+      accountId: Types.ObjectId;
+      scopeId: Types.ObjectId | null;
+      scopeType: string;
+    };
+    net: number;
+  }[] =
     accountIds.length === 0
       ? []
       : await JournalEntry.aggregate([
           { $match: matchStage },
-          { $unwind: '$lines' },
-          { $match: { 'lines.accountId': { $in: accountIds } } },
+          { $unwind: "$lines" },
+          { $match: { "lines.accountId": { $in: accountIds } } },
           {
             $group: {
               _id: {
-                accountId: '$lines.accountId',
-                scopeId: '$lines.scopeId',
-                scopeType: '$lines.scopeType',
+                accountId: "$lines.accountId",
+                scopeId: "$lines.scopeId",
+                scopeType: "$lines.scopeType",
               },
-              net: { $sum: { $subtract: ['$lines.credit', '$lines.debit'] } },
+              net: { $sum: { $subtract: ["$lines.credit", "$lines.debit"] } },
             },
           },
         ]);
@@ -124,16 +153,24 @@ export async function GET(request: Request) {
   // For Income (credit-natural), net = credit − debit reads positive when
   // money flowed in. For Operating Expense (debit-natural), reverse the sign
   // so expenses display positive too (matching Buildium P&L convention).
+  //
+  // Column keys come from `scopeReportKey` with splitByCompany ON, so a line
+  // naming a real CompanyAccount lands on `company:<id>` and gets its own
+  // column, while every legacy `scopeId: null` row still collapses onto the
+  // bare `company` sentinel. Deriving the key here rather than re-inlining the
+  // Property/Company test is what keeps this route and the recurring list from
+  // disagreeing about where a rule posts.
   const cells = new Map<string, number>();
   for (const row of rows) {
     const accountId = String(row._id.accountId);
     const accountType = accounts.find((a) => String(a._id) === accountId)?.type;
-    const propertyId =
-      row._id.scopeType === 'Property' && row._id.scopeId
-        ? String(row._id.scopeId)
-        : 'company';
-    const signedNet = accountType === 'Operating Expense' ? -row.net : row.net;
-    const key: CellKey = { accountId, propertyId };
+    const columnId = scopeReportKey(
+      { scopeType: row._id.scopeType, scopeId: row._id.scopeId },
+      COMPANY_SENTINEL.matrix,
+      { splitByCompany: true },
+    );
+    const signedNet = accountType === "Operating Expense" ? -row.net : row.net;
+    const key: CellKey = { accountId, propertyId: columnId };
     const k = `${key.accountId}|${key.propertyId}`;
     cells.set(k, (cells.get(k) ?? 0) + signedNet);
   }
@@ -148,7 +185,7 @@ export async function GET(request: Request) {
   const activePropIds = new Set(properties.map((p) => String(p._id)));
   const orphanPropIds = new Set<string>();
   for (const row of rows) {
-    if (row._id.scopeType === 'Property' && row._id.scopeId) {
+    if (row._id.scopeType === "Property" && row._id.scopeId) {
       const pid = String(row._id.scopeId);
       if (!activePropIds.has(pid)) orphanPropIds.add(pid);
     }
@@ -169,10 +206,65 @@ export async function GET(request: Request) {
           }>
         >()
     : [];
+  // One column per CompanyAccount that actually has activity in the window.
+  //
+  // Derived from the AGGREGATION ROWS, never from `CompanyAccount.find({active:
+  // true})` — same reasoning as the archived-property block above. A company
+  // that was archived (or deleted) after being posted to still owns real money;
+  // sourcing the column list from the live table would leave those cells with
+  // no column, and a cell without a column is dropped from every column and
+  // grand total. So every `company:<id>` seen in the data gets a column, and
+  // one whose CompanyAccount no longer exists is labelled rather than lost.
+  const companyIdsWithActivity = new Set<string>();
+  for (const row of rows) {
+    const id = companyIdFromColumnId(
+      scopeReportKey(
+        { scopeType: row._id.scopeType, scopeId: row._id.scopeId },
+        COMPANY_SENTINEL.matrix,
+        { splitByCompany: true },
+      ),
+      COMPANY_SENTINEL.matrix,
+    );
+    if (id) companyIdsWithActivity.add(id);
+  }
+  const companyDocs = companyIdsWithActivity.size
+    ? await CompanyAccount.find({
+        organizationId: orgObjectId,
+        _id: {
+          $in: Array.from(companyIdsWithActivity).map(
+            (id) => new Types.ObjectId(id),
+          ),
+        },
+      })
+        .select({ _id: 1, name: 1, currency: 1 })
+        .sort({ name: 1 })
+        .lean<
+          Array<{
+            _id: Types.ObjectId;
+            name?: string;
+            currency?: PmCurrency | null;
+          }>
+        >()
+    : [];
+  const companyById = new Map(companyDocs.map((c) => [String(c._id), c]));
+  const companyColumns = Array.from(companyIdsWithActivity)
+    .map((id) => {
+      const doc = companyById.get(id);
+      return {
+        id: `${COMPANY_SENTINEL.matrix}:${id}`,
+        name: doc?.name ?? "Unknown company",
+        // A company books in its OWN currency (CompanyAccount.currency, which
+        // falls back to the org default) — not unconditionally the org default
+        // the way the legacy bucket does.
+        currency: resolveCompanyCurrency(doc?.currency, orgDefaultCurrency),
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const archivedById = new Map(archivedProps.map((p) => [String(p._id), p]));
   const archivedColumns = Array.from(orphanPropIds).map((id) => ({
     id,
-    name: `${archivedById.get(id)?.propertyName || 'Archived property'} (archived)`,
+    name: `${archivedById.get(id)?.propertyName || "Archived property"} (archived)`,
     // An archived property still booked in a real currency; falling back to the
     // org default here would silently relabel its history.
     currency: resolvePropertyCurrency(
@@ -188,9 +280,7 @@ export async function GET(request: Request) {
   const banks = await BankAccount.find(
     { organizationId: orgObjectId, active: true },
     { _id: 1, associationName: 1 },
-  ).lean<
-    Array<{ _id: Types.ObjectId; associationName?: string | null }>
-  >();
+  ).lean<Array<{ _id: Types.ObjectId; associationName?: string | null }>>();
   const tagged = banks.filter((b) => b.associationName);
   const associationNames = Array.from(
     new Set(tagged.map((b) => b.associationName as string)),
@@ -201,12 +291,15 @@ export async function GET(request: Request) {
   // company-financials report). Defaults 0 ⇒ the footer reads $0.
   const estimatedIncomeTaxRatePct = Math.min(
     100,
-    Math.max(0, (org as { estimatedIncomeTaxRatePct?: number } | null)
-      ?.estimatedIncomeTaxRatePct ?? 0),
+    Math.max(
+      0,
+      (org as { estimatedIncomeTaxRatePct?: number } | null)
+        ?.estimatedIncomeTaxRatePct ?? 0,
+    ),
   );
 
   return NextResponse.json({
-    accountingMode: org?.accountingMode ?? 'accrual',
+    accountingMode: org?.accountingMode ?? "accrual",
     estimatedIncomeTaxRatePct,
     accounts: accounts.map((a) => ({
       id: String(a._id),
@@ -215,7 +308,18 @@ export async function GET(request: Request) {
     })),
     orgDefaultCurrency,
     columns: [
-      { id: 'company', name: 'Company', currency: orgDefaultCurrency },
+      {
+        // The legacy bucket: Company-scoped rows written before named
+        // companies existed, which carry `scopeId: null` and mean "the
+        // organization's own books". Kept on the bare sentinel so the wire
+        // contract is unchanged. Once real company columns sit beside it the
+        // bare label is ambiguous, so say what it actually holds — everything
+        // in here is money that has not been attributed to a legal entity yet.
+        id: COMPANY_SENTINEL.matrix,
+        name: companyColumns.length > 0 ? "Company (unassigned)" : "Company",
+        currency: orgDefaultCurrency,
+      },
+      ...companyColumns,
       ...properties.map((p) => ({
         id: String(p._id),
         name: p.propertyName,
@@ -224,7 +328,7 @@ export async function GET(request: Request) {
       ...archivedColumns,
     ],
     cells: Array.from(cells.entries()).map(([k, v]) => {
-      const [accountId, propertyId] = k.split('|');
+      const [accountId, propertyId] = k.split("|");
       return { accountId, propertyId, amount: v };
     }),
     associations: associationNames,

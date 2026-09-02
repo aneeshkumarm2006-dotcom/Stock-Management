@@ -34,6 +34,11 @@ import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { MoneyTotal } from "@/components/pm/MoneyTotal";
 import { addMoney, type MoneyByCurrency } from "@/lib/pm/moneyByCurrency";
+import {
+  COMPANY_SENTINEL,
+  companyIdFromColumnId,
+  isCompanyColumnId,
+} from "@/lib/pm/scope";
 import type { PmCurrency } from "@/types/pm";
 
 interface Account {
@@ -126,7 +131,10 @@ function monthBounds(ym: string): { from: string; to: string } {
   const [y, m] = ym.split("-").map(Number) as [number, number];
   const lastDay = new Date(y, m, 0).getDate(); // day 0 of next month = last of this
   const mm = String(m).padStart(2, "0");
-  return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(lastDay).padStart(2, "0")}` };
+  return {
+    from: `${y}-${mm}-01`,
+    to: `${y}-${mm}-${String(lastDay).padStart(2, "0")}`,
+  };
 }
 
 function yearBounds(y: number): { from: string; to: string } {
@@ -150,22 +158,42 @@ export default function FinancialsPage() {
   const [loading, setLoading] = React.useState(true);
   const [toggling, setToggling] = React.useState(false);
 
+  // Every in-flight load carries a sequence number, and only the newest one is
+  // allowed to write state.
+  //
+  // Without this, switching period raced: the request for the OLD window could
+  // land after the new one and overwrite it, leaving the table showing a period
+  // nobody asked for — silently, because the header still reads the new dates.
+  // It shows up whenever the first request is slower than the second, so the
+  // symptom is an apparently empty P&L that fixes itself on reload. A stale
+  // financial report that looks current is worse than a slow one.
+  const loadSeq = React.useRef(0);
+
   const load = React.useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     const params = new URLSearchParams();
     if (from) params.set("from", from);
     if (to) params.set("to", to);
     // Pull the matrix and the bill-reconciliation summary for the same window
     // together, so the banner reflects exactly what this view does/doesn't show.
-    const [matrixRes, reconRes] = await Promise.all([
-      fetch(`/api/pm/financials/matrix?${params.toString()}`),
-      fetch(`/api/pm/financials/reconciliation?${params.toString()}`),
-    ]);
-    if (matrixRes.ok) setData((await matrixRes.json()) as Matrix);
-    if (reconRes.ok) {
-      setRecon(((await reconRes.json()) as { summary: ReconSummary }).summary);
+    try {
+      const [matrixRes, reconRes] = await Promise.all([
+        fetch(`/api/pm/financials/matrix?${params.toString()}`),
+        fetch(`/api/pm/financials/reconciliation?${params.toString()}`),
+      ]);
+      const [matrix, recon] = await Promise.all([
+        matrixRes.ok ? (matrixRes.json() as Promise<Matrix>) : null,
+        reconRes.ok
+          ? (reconRes.json() as Promise<{ summary: ReconSummary }>)
+          : null,
+      ]);
+      if (seq !== loadSeq.current) return; // superseded — drop the result
+      if (matrix) setData(matrix);
+      if (recon) setRecon(recon.summary);
+    } finally {
+      if (seq === loadSeq.current) setLoading(false);
     }
-    setLoading(false);
   }, [from, to]);
 
   React.useEffect(() => {
@@ -238,11 +266,13 @@ export default function FinancialsPage() {
   const cellMap = React.useMemo(() => {
     const m = new Map<string, number>();
     if (!data) return m;
-    for (const c of data.cells) m.set(`${c.accountId}|${c.propertyId}`, c.amount);
+    for (const c of data.cells)
+      m.set(`${c.accountId}|${c.propertyId}`, c.amount);
     return m;
   }, [data]);
 
-  const incomeAccounts = data?.accounts.filter((a) => a.type === "Income") ?? [];
+  const incomeAccounts =
+    data?.accounts.filter((a) => a.type === "Income") ?? [];
   const expenseAccounts =
     data?.accounts.filter((a) => a.type === "Operating Expense") ?? [];
 
@@ -265,10 +295,7 @@ export default function FinancialsPage() {
     return s;
   }
   /** Sum of the columns booking in one currency — same unit throughout. */
-  function currencySubtotal(
-    currency: PmCurrency,
-    accounts: Account[],
-  ): number {
+  function currencySubtotal(currency: PmCurrency, accounts: Account[]): number {
     if (!data) return 0;
     let s = 0;
     for (const col of data.columns) {
@@ -358,7 +385,12 @@ export default function FinancialsPage() {
                 {data.accountingMode} basis
               </span>
             )}
-            <Button size="sm" variant="outline" onClick={toggleAccountingMode} disabled={toggling || !data}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={toggleAccountingMode}
+              disabled={toggling || !data}
+            >
               {toggling
                 ? "Switching…"
                 : `Switch to ${data?.accountingMode === "cash" ? "accrual" : "cash"}`}
@@ -381,7 +413,11 @@ export default function FinancialsPage() {
                         : "bg-surface text-fg-muted hover:text-fg")
                     }
                   >
-                    {m === "month" ? "Month" : m === "year" ? "Year" : "Custom range"}
+                    {m === "month"
+                      ? "Month"
+                      : m === "year"
+                        ? "Year"
+                        : "Custom range"}
                   </button>
                 ))}
               </div>
@@ -468,8 +504,7 @@ export default function FinancialsPage() {
             )}
 
             <p className="text-xs text-fg-muted">
-              Showing{" "}
-              <span className="font-medium text-fg">{periodLabel}</span>
+              Showing <span className="font-medium text-fg">{periodLabel}</span>
             </p>
           </div>
 
@@ -542,9 +577,7 @@ export default function FinancialsPage() {
                       account={a}
                       renderCols={renderCols}
                       cellAmount={cellAmount}
-                      currencySubtotal={(cur) =>
-                        currencySubtotal(cur, [a])
-                      }
+                      currencySubtotal={(cur) => currencySubtotal(cur, [a])}
                       from={from}
                       to={to}
                       totals={rowTotals(a.id)}
@@ -566,9 +599,7 @@ export default function FinancialsPage() {
                       account={a}
                       renderCols={renderCols}
                       cellAmount={cellAmount}
-                      currencySubtotal={(cur) =>
-                        currencySubtotal(cur, [a])
-                      }
+                      currencySubtotal={(cur) => currencySubtotal(cur, [a])}
                       from={from}
                       to={to}
                       totals={rowTotals(a.id)}
@@ -578,7 +609,9 @@ export default function FinancialsPage() {
                     label="Expense subtotal"
                     renderCols={renderCols}
                     valueFor={(colId) => columnTotal(colId, expenseAccounts)}
-                    subtotalFor={(cur) => currencySubtotal(cur, expenseAccounts)}
+                    subtotalFor={(cur) =>
+                      currencySubtotal(cur, expenseAccounts)
+                    }
                   />
                   <TotalsRow
                     label="Net (Income − Expense)"
@@ -672,10 +705,11 @@ export default function FinancialsPage() {
               {currencies.length > 1 && (
                 <>
                   {" "}
-                  The <strong>{data.orgDefaultCurrency} total</strong> column
-                  includes the Company column, which is kept on the
-                  organisation&apos;s own books — so the subtotals still add up
-                  to the Total.
+                  Company columns are grouped with the other columns booking in
+                  the same currency, so each <strong>
+                    currency total
+                  </strong>{" "}
+                  still adds up to the <strong>Total</strong>.
                 </>
               )}
             </p>
@@ -840,7 +874,19 @@ function drillHref(
 ): string {
   const params = new URLSearchParams();
   params.set("accountId", accountId);
-  if (columnId !== "company") params.set("propertyId", columnId);
+  // Three kinds of column now: a property id, the bare `company` sentinel
+  // (legacy rows with no company), and `company:<id>` for a named legal
+  // entity. `columnId !== "company"` used to be enough; with named companies
+  // it would send a CompanyAccount id as `propertyId` and the GL would match
+  // nothing.
+  if (isCompanyColumnId(columnId, COMPANY_SENTINEL.matrix)) {
+    const companyId = companyIdFromColumnId(columnId, COMPANY_SENTINEL.matrix);
+    // No id ⇒ the legacy bucket. Ask for it explicitly, or the GL would show
+    // every company's rows and fail to tie back to the cell that linked here.
+    params.set("companyId", companyId ?? "none");
+  } else {
+    params.set("propertyId", columnId);
+  }
   if (from) params.set("from", from);
   if (to) params.set("to", to);
   return `/properties/accounting/general-ledger?${params.toString()}`;

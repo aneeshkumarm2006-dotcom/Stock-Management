@@ -14,6 +14,7 @@ import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import type { PmCurrency } from "@/types/pm";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface JELine {
   accountId: string;
@@ -100,7 +101,7 @@ export default function JournalEntryDetailPage() {
   const accountName = (id: string) =>
     accounts.find((a) => a.id === id)?.name ?? "—";
   const propertyName = (id: string | null) =>
-    id ? properties.find((p) => p.id === id)?.name ?? "Property" : "Company";
+    id ? (properties.find((p) => p.id === id)?.name ?? "Property") : "Company";
   // An entry is denominated in its scope's currency. This page is the
   // drill-through target of the Financials matrix, so a USD entry must not
   // render under a C$ symbol. Company scope falls through to the org default.
@@ -115,12 +116,14 @@ export default function JournalEntryDetailPage() {
   async function voidEntry() {
     if (!doc) return;
     if (doc.status === "Voided") return;
-    if (!confirm(
+    if (
+      !confirm(
         doc.status === "Posted"
           ? "Void this entry? A reversing journal entry will be posted automatically."
           : "Void this draft?",
       )
-    ) return;
+    )
+      return;
     setVoiding(true);
     const res = await fetch(`/api/pm/journal-entries/${id}/void`, {
       method: "POST",
@@ -145,7 +148,12 @@ export default function JournalEntryDetailPage() {
           <ArrowLeft className="h-4 w-4" /> General ledger
         </Link>
         {doc.status !== "Voided" && (
-          <Button variant="outline" size="sm" onClick={voidEntry} disabled={voiding}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={voidEntry}
+            disabled={voiding}
+          >
             <XCircle className="h-3.5 w-3.5" />{" "}
             {voiding ? "Voiding…" : "Void entry"}
           </Button>
@@ -154,9 +162,7 @@ export default function JournalEntryDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>
-            Journal entry · {new Date(doc.date).toLocaleDateString()}
-          </CardTitle>
+          <CardTitle>Journal entry · {formatDateOnly(doc.date)}</CardTitle>
           <StatusBadge status={doc.status} />
         </CardHeader>
         <CardContent className="space-y-3">
@@ -211,10 +217,12 @@ export default function JournalEntryDetailPage() {
           {doc.status === "Draft" ? (
             <InlineFieldEditor
               endpoint={`/api/pm/journal-entries/${doc.id}`}
-              data={{
-                memo: doc.memo,
-                date: doc.date,
-              } as Record<string, unknown>}
+              data={
+                {
+                  memo: doc.memo,
+                  date: doc.date,
+                } as Record<string, unknown>
+              }
               fields={[
                 { key: "date", label: "Date", type: "date" },
                 { key: "memo", label: "Memo", type: "textarea" },
@@ -231,14 +239,10 @@ export default function JournalEntryDetailPage() {
             </Field>
             <Field label="Memo">{doc.memo || "—"}</Field>
             <Field label="Posted at">
-              {doc.postedAt
-                ? new Date(doc.postedAt).toLocaleString()
-                : "—"}
+              {doc.postedAt ? new Date(doc.postedAt).toLocaleString() : "—"}
             </Field>
             <Field label="Voided at">
-              {doc.voidedAt
-                ? new Date(doc.voidedAt).toLocaleString()
-                : "—"}
+              {doc.voidedAt ? new Date(doc.voidedAt).toLocaleString() : "—"}
             </Field>
           </dl>
 
@@ -282,7 +286,10 @@ export default function JournalEntryDetailPage() {
                   </tr>
                 ))}
                 <tr className="bg-surface">
-                  <td colSpan={3} className="px-2 py-2 text-right text-xs font-bold uppercase tracking-widest text-fg-muted">
+                  <td
+                    colSpan={3}
+                    className="px-2 py-2 text-right text-xs font-bold uppercase tracking-widest text-fg-muted"
+                  >
                     Totals
                   </td>
                   <td className="px-2 py-2 text-right">
@@ -309,7 +316,13 @@ export default function JournalEntryDetailPage() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <dt className="text-[10px] uppercase tracking-widest text-fg-muted">
