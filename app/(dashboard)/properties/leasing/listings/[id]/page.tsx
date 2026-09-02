@@ -6,12 +6,7 @@ import Link from "next/link";
 import { useParams, notFound } from "next/navigation";
 import { ArrowLeft, ExternalLink, Megaphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { ActivityLog } from "@/components/pm/ActivityLog";
@@ -19,6 +14,7 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { ListingFormModal } from "@/components/pm/ListingFormModal";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface ListingDetail {
   id: string;
@@ -68,7 +64,8 @@ export default function ListingDetailPage() {
     load();
   }, [load]);
 
-  if (loading || !data) return <div className="p-4 text-fg-muted">Loading…</div>;
+  if (loading || !data)
+    return <div className="p-4 text-fg-muted">Loading…</div>;
 
   async function toggle() {
     const res = await fetch(`/api/pm/listings/${data!.id}/list-toggle`, {
@@ -163,14 +160,17 @@ export default function ListingDetailPage() {
                   <div className="text-xs text-fg-muted">Available</div>
                   <div>
                     {data.availableDate
-                      ? new Date(data.availableDate).toLocaleDateString()
+                      ? formatDateOnly(data.availableDate)
                       : "—"}
                   </div>
                 </div>
                 <div>
                   <div className="text-xs text-fg-muted">Contact</div>
                   <div>
-                    {data.contactName || data.contactEmail || data.contactPhone || "—"}
+                    {data.contactName ||
+                      data.contactEmail ||
+                      data.contactPhone ||
+                      "—"}
                   </div>
                 </div>
               </div>
@@ -238,14 +238,14 @@ export default function ListingDetailPage() {
               <div>
                 <div className="text-xs text-fg-muted">Listed date</div>
                 <div>
-                  {data.listedDate
-                    ? new Date(data.listedDate).toLocaleDateString()
-                    : "—"}
+                  {data.listedDate ? formatDateOnly(data.listedDate) : "—"}
                 </div>
               </div>
               <div>
                 <div className="text-xs text-fg-muted">Days listed</div>
-                <div>{data.daysListed != null ? `${data.daysListed}d` : "—"}</div>
+                <div>
+                  {data.daysListed != null ? `${data.daysListed}d` : "—"}
+                </div>
               </div>
               {data.property && (
                 <div>

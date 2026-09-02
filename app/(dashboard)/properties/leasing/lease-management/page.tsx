@@ -5,12 +5,8 @@ import * as React from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface LeaseSummary {
   id: string;
@@ -37,8 +33,8 @@ export default function LeaseManagementPage() {
   React.useEffect(() => {
     Promise.all([
       fetch("/api/pm/leases").then((r) => (r.ok ? r.json() : [])),
-      fetch("/api/pm/draft-leases?executionStatus=Ready to execute").then((r) =>
-        r.ok ? r.json() : [],
+      fetch("/api/pm/draft-leases?executionStatus=Ready to execute").then(
+        (r) => (r.ok ? r.json() : []),
       ),
     ]).then(([l, d]) => {
       setLeases(l as LeaseSummary[]);
@@ -47,7 +43,8 @@ export default function LeaseManagementPage() {
   }, []);
 
   const moveOuts = leases.filter(
-    (l) => l.endDate && new Date(l.endDate).getTime() <= Date.now() + 30 * DAY_MS,
+    (l) =>
+      l.endDate && new Date(l.endDate).getTime() <= Date.now() + 30 * DAY_MS,
   );
   const moveIns = drafts;
   const occupiedUnitIds = new Set(leases.map((l) => l.unitId));
@@ -62,16 +59,22 @@ export default function LeaseManagementPage() {
           <Tabs defaultValue="moveOuts">
             <TabsList>
               <TabsTrigger value="moveOuts">
-                Move outs <Badge variant="muted" className="ml-1">{moveOuts.length}</Badge>
+                Move outs{" "}
+                <Badge variant="muted" className="ml-1">
+                  {moveOuts.length}
+                </Badge>
               </TabsTrigger>
               <TabsTrigger value="moveIns">
-                Move ins <Badge variant="muted" className="ml-1">{moveIns.length}</Badge>
+                Move ins{" "}
+                <Badge variant="muted" className="ml-1">
+                  {moveIns.length}
+                </Badge>
               </TabsTrigger>
               <TabsTrigger value="vacancies">Vacancies</TabsTrigger>
             </TabsList>
 
             <TabsContent value="moveOuts">
-              <p className="text-xs text-fg-muted mb-2">
+              <p className="mb-2 text-xs text-fg-muted">
                 Active leases with endDate within the next 30 days.
               </p>
               {moveOuts.length === 0 ? (
@@ -87,10 +90,7 @@ export default function LeaseManagementPage() {
                         Lease #{l.leaseNumber}
                       </Link>{" "}
                       <span className="text-fg-muted">
-                        ends{" "}
-                        {l.endDate
-                          ? new Date(l.endDate).toLocaleDateString()
-                          : "—"}
+                        ends {l.endDate ? formatDateOnly(l.endDate) : "—"}
                       </span>
                     </li>
                   ))}
@@ -99,7 +99,7 @@ export default function LeaseManagementPage() {
             </TabsContent>
 
             <TabsContent value="moveIns">
-              <p className="text-xs text-fg-muted mb-2">
+              <p className="mb-2 text-xs text-fg-muted">
                 Draft leases ready to execute.
               </p>
               {moveIns.length === 0 ? (
@@ -122,14 +122,17 @@ export default function LeaseManagementPage() {
             </TabsContent>
 
             <TabsContent value="vacancies">
-              <p className="text-xs text-fg-muted mb-2">
+              <p className="mb-2 text-xs text-fg-muted">
                 Units with no Active or Future lease. (Occupied unit count:{" "}
                 {occupiedUnitIds.size})
               </p>
               <p className="text-sm text-fg-muted">
                 Cross-property vacancy aggregation surfaces on the Property
                 detail vacancy widget.{" "}
-                <Link href="/properties/rentals/properties" className="underline">
+                <Link
+                  href="/properties/rentals/properties"
+                  className="underline"
+                >
                   Browse properties
                 </Link>
               </p>

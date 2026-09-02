@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { ListingFormModal } from "@/components/pm/ListingFormModal";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface ListingRow {
   id: string;
@@ -54,10 +55,7 @@ export default function ListingsPage() {
     load();
   }, [load]);
 
-  const listedRows = React.useMemo(
-    () => rows.filter((r) => r.listed),
-    [rows],
-  );
+  const listedRows = React.useMemo(() => rows.filter((r) => r.listed), [rows]);
   const unlistedRows = React.useMemo(
     () => rows.filter((r) => !r.listed),
     [rows],
@@ -84,10 +82,9 @@ export default function ListingsPage() {
   }
 
   async function postToCraigslist(row: ListingRow) {
-    const res = await fetch(
-      `/api/pm/listings/${row.id}/post-to-craigslist`,
-      { method: "POST" },
-    );
+    const res = await fetch(`/api/pm/listings/${row.id}/post-to-craigslist`, {
+      method: "POST",
+    });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       toast({
@@ -178,7 +175,7 @@ export default function ListingsPage() {
                   </td>
                   <td className="text-fg-muted">
                     {row.availableDate
-                      ? new Date(row.availableDate).toLocaleDateString()
+                      ? formatDateOnly(row.availableDate)
                       : "—"}
                   </td>
                   <td className="text-fg-muted">

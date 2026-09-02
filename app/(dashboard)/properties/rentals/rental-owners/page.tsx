@@ -16,6 +16,7 @@ import {
   DialogHeader,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface OwnerRow {
   id: string;
@@ -125,7 +126,8 @@ export default function RentalOwnersPage() {
                 <tr
                   key={o.id}
                   className={
-                    "border-b border-border/40 " + (o.active ? "" : "opacity-50")
+                    "border-b border-border/40 " +
+                    (o.active ? "" : "opacity-50")
                   }
                 >
                   <td className="py-2 text-fg">
@@ -205,7 +207,7 @@ function AgreementChip({
   days: number | null;
 }) {
   if (!endDate) return <span>—</span>;
-  const formatted = new Date(endDate).toLocaleDateString();
+  const formatted = formatDateOnly(endDate);
   if (days !== null && days <= 90 && days >= 0) {
     return (
       <span className="inline-flex items-center gap-2">
@@ -264,7 +266,10 @@ function AddRentalOwnerModal({
       return;
     }
     if (form.isCompany && !form.companyName.trim()) {
-      toast({ title: "Company name required when isCompany", variant: "error" });
+      toast({
+        title: "Company name required when isCompany",
+        variant: "error",
+      });
       return;
     }
     setSaving(true);
@@ -334,9 +339,7 @@ function AddRentalOwnerModal({
               <Input
                 id="ro-last"
                 value={form.lastName}
-                onChange={(e) =>
-                  setForm({ ...form, lastName: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
               />
             </div>
           </div>

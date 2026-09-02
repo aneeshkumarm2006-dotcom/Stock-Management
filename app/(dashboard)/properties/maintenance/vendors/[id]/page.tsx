@@ -14,12 +14,7 @@ import { useParams, useRouter, notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
@@ -30,6 +25,7 @@ import { EditVendorModal } from "@/components/pm/EditVendorModal";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { useToast } from "@/components/ui/toast";
 import type { TaxIdentityType } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface Phone {
   number: string;
@@ -114,10 +110,16 @@ export default function VendorDetailPage() {
       body: JSON.stringify({ active }),
     });
     if (!res.ok) {
-      toast({ title: active ? "Reactivate failed" : "Inactivate failed", variant: "error" });
+      toast({
+        title: active ? "Reactivate failed" : "Inactivate failed",
+        variant: "error",
+      });
       return;
     }
-    toast({ title: active ? "Vendor reactivated" : "Vendor inactivated", variant: "success" });
+    toast({
+      title: active ? "Vendor reactivated" : "Vendor inactivated",
+      variant: "success",
+    });
     await load();
   }
 
@@ -147,11 +149,7 @@ export default function VendorDetailPage() {
               Inactivate
             </Button>
           ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setActive(true)}
-            >
+            <Button variant="primary" size="sm" onClick={() => setActive(true)}>
               Reactivate
             </Button>
           )}
@@ -201,7 +199,10 @@ export default function VendorDetailPage() {
             <CardContent className="space-y-4">
               <dl className="grid gap-3 md:grid-cols-2">
                 <Field label="Primary email" value={doc.primaryEmail || "—"} />
-                <Field label="Alternate email" value={doc.alternateEmail || "—"} />
+                <Field
+                  label="Alternate email"
+                  value={doc.alternateEmail || "—"}
+                />
                 <Field label="Website" value={doc.website || "—"} />
                 <Field
                   label="Account number with vendor"
@@ -257,7 +258,7 @@ export default function VendorDetailPage() {
                   label="Expiration date"
                   value={
                     doc.insurance.expirationDate
-                      ? new Date(doc.insurance.expirationDate).toLocaleDateString()
+                      ? formatDateOnly(doc.insurance.expirationDate)
                       : "—"
                   }
                 />
@@ -342,8 +343,8 @@ export default function VendorDetailPage() {
             <CardContent>
               <p className="text-sm text-fg-muted">
                 Bill + payment activity for this vendor will surface here once
-                the first Bill is recorded. Use the A/P Record bill modal on
-                the Accounting → Bills page.
+                the first Bill is recorded. Use the A/P Record bill modal on the
+                Accounting → Bills page.
               </p>
             </CardContent>
           </Card>
@@ -397,7 +398,9 @@ export default function VendorDetailPage() {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-widest text-fg-muted">{label}</dt>
+      <dt className="text-xs uppercase tracking-widest text-fg-muted">
+        {label}
+      </dt>
       <dd className="text-sm text-fg">{value}</dd>
     </div>
   );
@@ -408,7 +411,7 @@ function AddressDisplay({ address }: { address: Address }) {
     return <span className="text-sm text-fg-muted">No address on file.</span>;
   }
   return (
-    <address className="not-italic text-sm text-fg">
+    <address className="text-sm not-italic text-fg">
       <div>{address.line1}</div>
       {address.line2 && <div>{address.line2}</div>}
       {address.line3 && <div>{address.line3}</div>}
@@ -416,7 +419,9 @@ function AddressDisplay({ address }: { address: Address }) {
         {address.city ? `${address.city}, ` : ""}
         {address.state ?? ""} {address.zip ?? ""}
       </div>
-      {address.country && address.country !== "US" && <div>{address.country}</div>}
+      {address.country && address.country !== "US" && (
+        <div>{address.country}</div>
+      )}
     </address>
   );
 }

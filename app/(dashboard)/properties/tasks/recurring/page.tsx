@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { AddRecurringTaskModal } from "@/components/pm/AddRecurringTaskModal";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface Row {
   id: string;
@@ -119,12 +120,10 @@ export default function RecurringTasksPage() {
                   <td className="text-fg-muted">{r.taskType}</td>
                   <td className="text-fg-muted">{r.cadence}</td>
                   <td className="text-fg-muted">
-                    {new Date(r.nextDate).toLocaleDateString()}
+                    {formatDateOnly(r.nextDate)}
                   </td>
                   <td className="text-fg-muted">
-                    {r.lastPostedDate
-                      ? new Date(r.lastPostedDate).toLocaleDateString()
-                      : "—"}
+                    {r.lastPostedDate ? formatDateOnly(r.lastPostedDate) : "—"}
                   </td>
                   <td className="tabular-nums text-fg-muted">
                     {r.postedCount}

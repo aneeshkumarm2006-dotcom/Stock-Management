@@ -14,6 +14,7 @@ import {
   DRAFT_LEASE_EXECUTION_STATUSES,
   type DraftLeaseExecutionStatus,
 } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface DraftRow {
   id: string;
@@ -37,8 +38,9 @@ export default function DraftLeasesPage() {
   const router = useRouter();
   const [rows, setRows] = React.useState<DraftRow[]>([]);
   const [loading, setLoading] = React.useState(true);
-  const [filter, setFilter] =
-    React.useState<DraftLeaseExecutionStatus | "all">("all");
+  const [filter, setFilter] = React.useState<DraftLeaseExecutionStatus | "all">(
+    "all",
+  );
   const [modalOpen, setModalOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
@@ -133,9 +135,9 @@ export default function DraftLeasesPage() {
                     {d.leaseType}
                     {d.startDate && (
                       <span className="ml-2">
-                        {new Date(d.startDate).toLocaleDateString()}
+                        {formatDateOnly(d.startDate)}
                         {d.endDate
-                          ? ` → ${new Date(d.endDate).toLocaleDateString()}`
+                          ? ` → ${formatDateOnly(d.endDate)}`
                           : " → (At-will)"}
                       </span>
                     )}

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface EftRow {
   id: string;
@@ -84,9 +85,7 @@ export default function EftApprovalsPage() {
 
   const visible = React.useMemo(() => {
     if (filter === "all") return rows;
-    return rows.filter(
-      (r) => r.status.toLowerCase() === filter.toLowerCase(),
-    );
+    return rows.filter((r) => r.status.toLowerCase() === filter.toLowerCase());
   }, [rows, filter]);
 
   async function act(eftId: string, action: "approve" | "reject") {
@@ -97,7 +96,11 @@ export default function EftApprovalsPage() {
     });
     if (!res.ok) {
       const err = (await res.json().catch(() => ({}))) as { error?: string };
-      toast({ title: `${action} failed`, description: err.error, variant: "error" });
+      toast({
+        title: `${action} failed`,
+        description: err.error,
+        variant: "error",
+      });
       return;
     }
     toast({
@@ -127,21 +130,23 @@ export default function EftApprovalsPage() {
             </div>
           )}
           <div className="flex flex-wrap items-center gap-3">
-            {(["pending", "approved", "rejected", "all"] as Filter[]).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFilter(f)}
-                className={
-                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold uppercase transition-colors " +
-                  (filter === f
-                    ? "border-primary bg-primary text-primary-fg"
-                    : "border-border bg-surface text-fg-muted hover:text-fg")
-                }
-              >
-                {f}
-              </button>
-            ))}
+            {(["pending", "approved", "rejected", "all"] as Filter[]).map(
+              (f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFilter(f)}
+                  className={
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold uppercase transition-colors " +
+                    (filter === f
+                      ? "border-primary bg-primary text-primary-fg"
+                      : "border-border bg-surface text-fg-muted hover:text-fg")
+                  }
+                >
+                  {f}
+                </button>
+              ),
+            )}
           </div>
 
           <table className="w-full text-sm">
@@ -180,11 +185,11 @@ export default function EftApprovalsPage() {
                 return (
                   <tr key={e.id} className="border-b border-border/40">
                     <td className="py-2 text-fg-muted">
-                      {new Date(e.date).toLocaleDateString()}
+                      {formatDateOnly(e.date)}
                     </td>
                     <td className="text-fg">{e.paidToName}</td>
                     <td className="text-fg-muted">{e.payee.type}</td>
-                    <td className="tabular-nums font-bold text-fg">
+                    <td className="font-bold tabular-nums text-fg">
                       <CurrencyAmount cents={e.amount} />
                     </td>
                     <td>
@@ -235,7 +240,9 @@ function StatusChip({ status }: { status: string }) {
   };
   const cls = map[status] ?? "bg-surface-high text-fg-muted";
   return (
-    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${cls}`}>
+    <span
+      className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${cls}`}
+    >
       {status}
     </span>
   );

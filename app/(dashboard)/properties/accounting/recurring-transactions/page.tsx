@@ -11,6 +11,7 @@ import { useToast } from "@/components/ui/toast";
 import { EditRecurringCheckModal } from "@/components/pm/EditRecurringCheckModal";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { RecurringCatchUpModal } from "@/components/pm/RecurringCatchUpModal";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 /** Collapsed per-line scope; see summariseScope in the list route. */
 type RtScope =
@@ -169,82 +170,84 @@ export default function RecurringTransactionsPage() {
                     : true,
                 )
                 .map((r) => (
-                <tr key={r.id} className="border-b border-border/40">
-                  <td className="py-2 text-fg">{r.type}</td>
-                  <td className="text-fg-muted">
-                    {r.scope?.type === "Property" ? (
-                      r.scope.propertyName
-                    ) : r.scope?.type === "Multiple" ? (
-                      `Multiple (${r.scope.count})`
-                    ) : r.scope?.companyName ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        {r.scope.companyName}
-                        {/* "Immeubles Greene Inc." and "IMMEUBLES GREENE I" are
+                  <tr key={r.id} className="border-b border-border/40">
+                    <td className="py-2 text-fg">{r.type}</td>
+                    <td className="text-fg-muted">
+                      {r.scope?.type === "Property" ? (
+                        r.scope.propertyName
+                      ) : r.scope?.type === "Multiple" ? (
+                        `Multiple (${r.scope.count})`
+                      ) : r.scope?.companyName ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          {r.scope.companyName}
+                          {/* "Immeubles Greene Inc." and "IMMEUBLES GREENE I" are
                             otherwise indistinguishable in a text column, and
                             confusing them puts a whole mortgage on one
                             building. */}
-                        <span className="rounded bg-surface-high px-1 text-[10px] uppercase tracking-widest text-fg-muted">
-                          Co.
-                        </span>
-                        {r.scope.split ? (
                           <span className="rounded bg-surface-high px-1 text-[10px] uppercase tracking-widest text-fg-muted">
-                            Split
+                            Co.
                           </span>
-                        ) : null}
-                      </span>
-                    ) : (
-                      "Company"
-                    )}
-                  </td>
-                  <td className="max-w-[22rem] text-fg-muted">
-                    {r.memo ? (
-                      <span className="block truncate" title={r.memo}>
-                        {r.memo}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-4 text-right text-fg-muted tabular-nums">
-                    {/* convert={false}: a rule's amount is stored in the
+                          {r.scope.split ? (
+                            <span className="rounded bg-surface-high px-1 text-[10px] uppercase tracking-widest text-fg-muted">
+                              Split
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        "Company"
+                      )}
+                    </td>
+                    <td className="max-w-[22rem] text-fg-muted">
+                      {r.memo ? (
+                        <span className="block truncate" title={r.memo}>
+                          {r.memo}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-4 text-right tabular-nums text-fg-muted">
+                      {/* convert={false}: a rule's amount is stored in the
                         currency of whatever it books to, and a rule can be
                         company-scoped (no property, so no currency) or span
                         properties. There is no per-row native currency to
                         convert FROM, so converting off the org default would
                         misstate the figure that actually posts. */}
-                    <CurrencyAmount cents={r.amount} convert={false} />
-                  </td>
-                  <td className="text-fg-muted">{r.frequency}</td>
-                  <td className="text-fg-muted">
-                    {new Date(r.nextDate).toLocaleDateString()}
-                  </td>
-                  <td className="text-fg-muted tabular-nums">{r.postedCount}</td>
-                  <td className="text-fg-muted tabular-nums">
-                    {r.remainingOccurrences ?? "—"}
-                  </td>
-                  <td>
-                    <span
-                      className={
-                        "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase " +
-                        (r.active
-                          ? "bg-success/10 text-success"
-                          : "bg-surface-high text-fg-muted")
-                      }
-                    >
-                      {r.active ? "Active" : "Cancelled"}
-                    </span>
-                  </td>
-                  <td className="text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setEditing(r.id)}
-                    >
-                      Edit
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+                      <CurrencyAmount cents={r.amount} convert={false} />
+                    </td>
+                    <td className="text-fg-muted">{r.frequency}</td>
+                    <td className="text-fg-muted">
+                      {formatDateOnly(r.nextDate)}
+                    </td>
+                    <td className="tabular-nums text-fg-muted">
+                      {r.postedCount}
+                    </td>
+                    <td className="tabular-nums text-fg-muted">
+                      {r.remainingOccurrences ?? "—"}
+                    </td>
+                    <td>
+                      <span
+                        className={
+                          "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase " +
+                          (r.active
+                            ? "bg-success/10 text-success"
+                            : "bg-surface-high text-fg-muted")
+                        }
+                      >
+                        {r.active ? "Active" : "Cancelled"}
+                      </span>
+                    </td>
+                    <td className="text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setEditing(r.id)}
+                      >
+                        Edit
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </CardContent>
@@ -268,9 +271,9 @@ export default function RecurringTransactionsPage() {
             .filter((r) => r.active)
             .map((r) => ({
               id: r.id,
-              label: `${r.memo || r.type} — ${r.frequency}, next ${new Date(
+              label: `${r.memo || r.type} — ${r.frequency}, next ${formatDateOnly(
                 r.nextDate,
-              ).toLocaleDateString()}`,
+              )}`,
             }))}
           onClose={() => setCatchingUp(false)}
           onPosted={async () => {

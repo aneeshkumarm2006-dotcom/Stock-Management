@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ProspectFormModal } from "@/components/pm/ProspectFormModal";
 import { PROSPECT_STATUSES, type ProspectStatus } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface ProspectRow {
   id: string;
@@ -29,8 +30,9 @@ export default function ProspectsPage() {
   const [rows, setRows] = React.useState<ProspectRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState("");
-  const [statusFilter, setStatusFilter] =
-    React.useState<ProspectStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = React.useState<
+    ProspectStatus | "all"
+  >("all");
   const [modalOpen, setModalOpen] = React.useState(false);
 
   const load = React.useCallback(async () => {
@@ -142,18 +144,16 @@ export default function ProspectsPage() {
                       </Badge>
                     )}
                   </td>
-                  <td className="text-fg-muted">
-                    {p.email || p.phone || "—"}
-                  </td>
+                  <td className="text-fg-muted">{p.email || p.phone || "—"}</td>
                   <td>
-                    <Badge variant={p.status === "Converted" ? "gain" : "muted"}>
+                    <Badge
+                      variant={p.status === "Converted" ? "gain" : "muted"}
+                    >
                       {p.status}
                     </Badge>
                   </td>
                   <td className="text-fg-muted">
-                    {p.movingDate
-                      ? new Date(p.movingDate).toLocaleDateString()
-                      : "—"}
+                    {p.movingDate ? formatDateOnly(p.movingDate) : "—"}
                   </td>
                   <td className="text-fg-muted">{p.beds ?? "—"}</td>
                   <td className="text-fg-muted">

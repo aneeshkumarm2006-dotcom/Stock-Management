@@ -8,12 +8,7 @@ import { useParams, useRouter, notFound } from "next/navigation";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +30,7 @@ import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import { AssignLeaseModal } from "@/components/pm/AssignLeaseModal";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
 import type { PropertyClass, TenantType } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface UnitDetail {
   id: string;
@@ -135,7 +131,9 @@ export default function UnitDetailPage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => router.push(`/properties/rentals/properties/${params.id}`)}
+          onClick={() =>
+            router.push(`/properties/rentals/properties/${params.id}`)
+          }
         >
           <ArrowLeft className="h-3.5 w-3.5" /> {doc.propertyName}
         </Button>
@@ -174,13 +172,15 @@ export default function UnitDetailPage() {
             <CardContent>
               <InlineFieldEditor
                 endpoint={`/api/pm/units/${doc.id}`}
-                data={{
-                  unitId: doc.unitId,
-                  bedrooms: doc.bedrooms,
-                  bathrooms: doc.bathrooms,
-                  sizeSqft: doc.sizeSqft,
-                  description: doc.description,
-                } as Record<string, unknown>}
+                data={
+                  {
+                    unitId: doc.unitId,
+                    bedrooms: doc.bedrooms,
+                    bathrooms: doc.bathrooms,
+                    sizeSqft: doc.sizeSqft,
+                    description: doc.description,
+                  } as Record<string, unknown>
+                }
                 fields={[
                   { key: "unitId", label: "Unit ID", required: true },
                   ...(isCommercial
@@ -345,7 +345,7 @@ export default function UnitDetailPage() {
                         <td className="py-2 text-fg">{a.name}</td>
                         <td className="text-fg-muted">
                           {a.installedDate
-                            ? new Date(a.installedDate).toLocaleDateString()
+                            ? formatDateOnly(a.installedDate)
                             : "—"}
                         </td>
                         <td className="text-right">

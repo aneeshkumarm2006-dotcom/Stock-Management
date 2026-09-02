@@ -14,6 +14,7 @@ import { NotesPanel } from "@/components/pm/NotesPanel";
 import { FilesPanel } from "@/components/pm/FilesPanel";
 import { ProspectFormModal } from "@/components/pm/ProspectFormModal";
 import type { ProspectStatus } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface ProspectDetail {
   id: string;
@@ -55,7 +56,8 @@ export default function ProspectDetailPage() {
     load();
   }, [load]);
 
-  if (loading || !data) return <div className="p-4 text-fg-muted">Loading…</div>;
+  if (loading || !data)
+    return <div className="p-4 text-fg-muted">Loading…</div>;
 
   async function convert() {
     setConverting(true);
@@ -126,9 +128,7 @@ export default function ProspectDetailPage() {
               <div>
                 <div className="text-xs text-fg-muted">Moving date</div>
                 <div>
-                  {data.movingDate
-                    ? new Date(data.movingDate).toLocaleDateString()
-                    : "—"}
+                  {data.movingDate ? formatDateOnly(data.movingDate) : "—"}
                 </div>
               </div>
               <div>

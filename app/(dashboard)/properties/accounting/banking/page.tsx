@@ -9,12 +9,7 @@ import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { fromCents } from "@/lib/pm/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import type { BankAccountType } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface BankRow {
   id: string;
@@ -96,7 +92,9 @@ function BankAccountsTab() {
   }, [load]);
 
   async function archive(id: string) {
-    const res = await fetch(`/api/pm/bank-accounts/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/pm/bank-accounts/${id}`, {
+      method: "DELETE",
+    });
     if (!res.ok) {
       toast({ title: "Archive failed", variant: "error" });
       return;
@@ -150,7 +148,8 @@ function BankAccountsTab() {
                 <tr
                   key={r.id}
                   className={
-                    "border-b border-border/40 " + (r.active ? "" : "opacity-50")
+                    "border-b border-border/40 " +
+                    (r.active ? "" : "opacity-50")
                   }
                 >
                   <td className="py-2 text-fg">
@@ -178,7 +177,7 @@ function BankAccountsTab() {
                     </Link>
                   </td>
                   <td className="text-fg-muted">{r.type}</td>
-                  <td className="text-fg-muted tabular-nums">
+                  <td className="tabular-nums text-fg-muted">
                     {r.accountNumberMasked}
                   </td>
                   <td className="text-right tabular-nums">
@@ -272,9 +271,13 @@ function AddBankAccountModal({
             r.type === "Current Asset (cash)" || r.type === "Current Asset",
         );
         setCoas(cashRows);
-        const operating = cashRows.find((r) => r.defaultFor === "Operating Cash");
+        const operating = cashRows.find(
+          (r) => r.defaultFor === "Operating Cash",
+        );
         if (operating) {
-          setForm((f) => (f.chartOfAccountId ? f : { ...f, chartOfAccountId: operating.id }));
+          setForm((f) =>
+            f.chartOfAccountId ? f : { ...f, chartOfAccountId: operating.id },
+          );
         }
       });
   }, [open]);
@@ -536,13 +539,11 @@ function CreditCardsTab() {
                 <tr key={r.id} className="border-b border-border/40">
                   <td className="py-2 text-fg">{r.name}</td>
                   <td className="text-fg-muted">{r.issuer || "—"}</td>
-                  <td className="text-fg-muted tabular-nums">
+                  <td className="tabular-nums text-fg-muted">
                     {r.cardNumberMasked}
                   </td>
                   <td className="text-fg-muted">
-                    {r.expirationDate
-                      ? new Date(r.expirationDate).toLocaleDateString()
-                      : "—"}
+                    {r.expirationDate ? formatDateOnly(r.expirationDate) : "—"}
                   </td>
                   <td className="text-right">
                     <button
@@ -676,4 +677,3 @@ function AddCreditCardModal({
     </Dialog>
   );
 }
-

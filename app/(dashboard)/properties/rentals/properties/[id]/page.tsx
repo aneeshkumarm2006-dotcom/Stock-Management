@@ -14,12 +14,7 @@ import { useParams, useRouter, notFound } from "next/navigation";
 import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -28,7 +23,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatDateOnly } from "@/lib/utils/dateInput";
 import { useToast } from "@/components/ui/toast";
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
@@ -53,6 +47,7 @@ import type {
   PropertySubType,
   TenantType,
 } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface OwnerRef {
   rentalOwnerId: string;
@@ -236,7 +231,11 @@ export default function PropertyDetailPage() {
     });
     if (!res.ok) {
       const err = (await res.json().catch(() => ({}))) as { error?: string };
-      toast({ title: "Reactivate failed", description: err.error, variant: "error" });
+      toast({
+        title: "Reactivate failed",
+        description: err.error,
+        variant: "error",
+      });
       return;
     }
     toast({ title: "Reactivated", variant: "success" });
@@ -253,695 +252,699 @@ export default function PropertyDetailPage() {
     // below converts from it into the user's display currency without needing
     // a prop of its own.
     <PmNativeCurrency currency={doc.currency}>
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => router.push("/properties/rentals/properties")}
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> Properties
-        </Button>
-        <div className="flex items-center gap-2">
-          {doc.active ? (
-            <Button variant="destructive" size="sm" onClick={archive}>
-              Inactivate
-            </Button>
-          ) : (
-            <Button size="sm" onClick={reactivate}>
-              Reactivate
-            </Button>
-          )}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/properties/rentals/properties")}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Properties
+          </Button>
+          <div className="flex items-center gap-2">
+            {doc.active ? (
+              <Button variant="destructive" size="sm" onClick={archive}>
+                Inactivate
+              </Button>
+            ) : (
+              <Button size="sm" onClick={reactivate}>
+                Reactivate
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
 
-      {!doc.active && (
-        <Card className="border-warning bg-warning/5">
-          <CardContent className="py-3 text-sm text-warning">
-            This property is inactive. Click <strong>Reactivate</strong> to
-            restore it.
-          </CardContent>
+        {!doc.active && (
+          <Card className="border-warning bg-warning/5">
+            <CardContent className="py-3 text-sm text-warning">
+              This property is inactive. Click <strong>Reactivate</strong> to
+              restore it.
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{doc.propertyName}</CardTitle>
+            <span className="text-xs text-fg-muted">
+              {doc.propertyClass} · {doc.propertySubType}
+            </span>
+          </CardHeader>
         </Card>
-      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{doc.propertyName}</CardTitle>
-          <span className="text-xs text-fg-muted">
-            {doc.propertyClass} · {doc.propertySubType}
-          </span>
-        </CardHeader>
-      </Card>
+        <Tabs defaultValue="summary">
+          <TabsList>
+            <TabsTrigger value="summary">Summary</TabsTrigger>
+            <TabsTrigger value="financials">Financials</TabsTrigger>
+            <TabsTrigger value="units">Units ({units.length})</TabsTrigger>
+            <TabsTrigger value="tasks">Tasks</TabsTrigger>
+            <TabsTrigger value="communications">Communications</TabsTrigger>
+            <TabsTrigger value="events">Event history</TabsTrigger>
+            <TabsTrigger value="notes">Notes</TabsTrigger>
+            <TabsTrigger value="files">Files</TabsTrigger>
+          </TabsList>
 
-      <Tabs defaultValue="summary">
-        <TabsList>
-          <TabsTrigger value="summary">Summary</TabsTrigger>
-          <TabsTrigger value="financials">Financials</TabsTrigger>
-          <TabsTrigger value="units">Units ({units.length})</TabsTrigger>
-          <TabsTrigger value="tasks">Tasks</TabsTrigger>
-          <TabsTrigger value="communications">Communications</TabsTrigger>
-          <TabsTrigger value="events">Event history</TabsTrigger>
-          <TabsTrigger value="notes">Notes</TabsTrigger>
-          <TabsTrigger value="files">Files</TabsTrigger>
-        </TabsList>
-
-        {/* ------------------------------ Summary ------------------------------ */}
-        <TabsContent value="summary" className="mt-4 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Identity</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <InlineFieldEditor
-                endpoint={`/api/pm/properties/${doc.id}`}
-                data={{
-                  propertyName: doc.propertyName,
-                  line1: doc.address.line1,
-                  line2: doc.address.line2 ?? "",
-                  city: doc.address.city,
-                  state: doc.address.state,
-                  zip: doc.address.zip,
-                  country: doc.address.country || "US",
-                  // "" = inherit the org default (the pre-field behaviour).
-                  currency: doc.currency ?? "",
-                  // "" = not assigned to any company.
-                  companyAccountId: doc.companyAccountId ?? "",
-                  listingDescription: doc.listingDescription,
-                } as Record<string, unknown>}
-                fields={[
-                  {
-                    key: "propertyName",
-                    label: "Property name",
-                    required: true,
-                  },
-                  { key: "line1", label: "Address line 1", required: true },
-                  { key: "line2", label: "Address line 2" },
-                  { key: "city", label: "City", required: true },
-                  { key: "state", label: "State", required: true },
-                  { key: "zip", label: "ZIP", required: true },
-                  {
-                    key: "country",
-                    label: "Country",
-                    type: "select",
-                    required: true,
-                    options: [
-                      { value: "US", label: "United States" },
-                      { value: "CA", label: "Canada" },
-                    ],
-                    display: (v) =>
-                      v === "CA"
-                        ? "Canada"
-                        : v === "US"
-                          ? "United States"
-                          : ((v as string) || "—"),
-                  },
-                  {
-                    key: "currency",
-                    label: "Booking currency",
-                    type: "select",
-                    options: [
-                      { value: "", label: "Use organisation default" },
-                      { value: "CAD", label: "CAD — Canadian dollar" },
-                      { value: "USD", label: "USD — US dollar" },
-                    ],
-                    display: (v) =>
-                      v ? String(v) : "Organisation default",
-                  },
-                  {
-                    // The legal entity that owns this building. Editable here
-                    // (not only at creation) because ownership moves between
-                    // entities, and because it decides which company-wide costs
-                    // — mortgage, blanket insurance — this property carries.
-                    key: "companyAccountId",
-                    label: "Company",
-                    type: "select",
-                    options: [
-                      { value: "", label: "— Not assigned —" },
-                      ...companies.map((c) => ({
-                        value: c.id,
-                        label: c.name,
-                      })),
-                    ],
-                    display: (v) =>
-                      v
-                        ? (companies.find((c) => c.id === v)?.name ??
-                          doc.companyName ??
-                          "(unknown company)")
-                        : "— Not assigned —",
-                  },
-                  {
-                    key: "listingDescription",
-                    label: "Listing description",
-                    type: "textarea",
-                  },
-                ]}
-                title="Property"
-                canEdit={doc.active}
-                onSaved={load}
-                payloadTransform={(p) => ({
-                  propertyName: p.propertyName,
-                  listingDescription: p.listingDescription,
-                  // Empty string clears the override back to "inherit org".
-                  currency: p.currency ? p.currency : null,
-                  // Empty string clears the company assignment.
-                  companyAccountId: p.companyAccountId
-                    ? p.companyAccountId
-                    : null,
-                  address: {
-                    line1: p.line1,
-                    line2: p.line2,
-                    city: p.city,
-                    state: p.state,
-                    zip: p.zip,
-                    country: p.country,
-                  },
-                })}
-              />
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Property manager"
-                  value={doc.propertyManagerUserId ?? "Unassigned"}
-                />
-              </dl>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Photos</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <EntityImageGallery
-                entityType="Property"
-                entityId={doc.id}
-                images={doc.images}
-                coverId={doc.photo}
-                parentEndpoint={`/api/pm/properties/${doc.id}`}
-                onChanged={load}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Vacancy</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <PropertyVacancyWidget propertyId={doc.id} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Cash on hand (derived)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid gap-3 md:grid-cols-3">
-                <Field
-                  label="Operating cash"
-                  value={<CurrencyAmount value={doc.cashBalance} />}
-                />
-                <Field
-                  label="Security deposits held"
-                  value={<CurrencyAmount value={doc.securityDepositsHeld} />}
-                />
-                <Field
-                  label="Property reserve"
-                  value={<CurrencyAmount value={doc.propertyReserve} />}
-                />
-                <Field
-                  label="Available cash"
-                  value={<CurrencyAmount value={doc.availableCash} />}
-                />
-              </dl>
-              <p className="mt-3 text-xs italic text-fg-muted">
-                Operating cash and security deposits roll up from Phase 2 ledger
-                entries — currently zero until Phase 2 lands. Available cash =
-                cash − deposits held − reserve (BR-PU-3).
-              </p>
-              <div
-                className="mt-4 flex flex-wrap gap-2"
-                title="Bulk charge/credit workflows post to the GL — wiring lands in Phase 2."
-              >
-                <Button size="sm" variant="outline" disabled>
-                  Enter bulk charges
-                </Button>
-                <Button size="sm" variant="outline" disabled>
-                  Enter bulk credits
-                </Button>
-                <span className="self-center text-xs italic text-fg-muted">
-                  Phase 2
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Rental owners</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {doc.rentalOwners.length === 0 ? (
-                <p className="text-sm text-fg-muted">No owners attached.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
-                    <tr>
-                      <th className="py-2">Owner</th>
-                      <th>Share</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {doc.rentalOwners.map((o) => (
-                      <tr
-                        key={o.rentalOwnerId}
-                        className="border-b border-border/40"
-                      >
-                        <td className="py-2 text-fg">
-                          <Link
-                            href={`/properties/rentals/rental-owners/${o.rentalOwnerId}`}
-                            className="hover:underline"
-                          >
-                            {o.displayName}
-                          </Link>
-                        </td>
-                        <td className="text-fg-muted tabular-nums">
-                          {o.ownershipPct}%
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Bank accounts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Operating"
-                  value={
-                    doc.operatingAccount ? (
-                      <Link
-                        href={`/properties/accounting/banking/${doc.operatingAccount.id}`}
-                        className="hover:underline"
-                      >
-                        {doc.operatingAccount.name}{" "}
-                        <span className="tabular-nums text-fg-muted">
-                          {doc.operatingAccount.accountNumberMasked}
-                        </span>
-                      </Link>
-                    ) : (
-                      <span className="text-amber-600">
-                        Not configured —{" "}
-                        <Link href="/properties/accounting/banking" className="underline">
-                          Set up
-                        </Link>
-                      </span>
-                    )
-                  }
-                />
-                <Field
-                  label="Deposit trust"
-                  value={
-                    doc.depositTrustAccount ? (
-                      <Link
-                        href={`/properties/accounting/banking/${doc.depositTrustAccount.id}`}
-                        className="hover:underline"
-                      >
-                        {doc.depositTrustAccount.name}{" "}
-                        <span className="tabular-nums text-fg-muted">
-                          {doc.depositTrustAccount.accountNumberMasked}
-                        </span>
-                      </Link>
-                    ) : (
-                      <Link
-                        href="/properties/accounting/banking"
-                        className="font-bold text-primary hover:underline"
-                      >
-                        Setup →
-                      </Link>
-                    )
-                  }
-                />
-              </dl>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Resident Center</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Payment history"
-                  value={doc.residentCenterPaymentHistory}
-                />
-                <Field
-                  label="Requests"
-                  value={
-                    doc.residentCenterRequests.enabled
-                      ? doc.residentCenterRequests.showEntryQuestions
-                        ? "Enabled · with entry questions"
-                        : "Enabled"
-                      : "Disabled"
-                  }
-                />
-                <Field
-                  label="Forums"
-                  value={doc.residentCenterForums ? "Enabled" : "Disabled"}
-                />
-                <Field
-                  label="Min liability (3rd party)"
-                  value={
-                    doc.rentersInsuranceMinLiability3rdParty !== null ? (
-                      <CurrencyAmount
-                        value={doc.rentersInsuranceMinLiability3rdParty}
-                      />
-                    ) : (
-                      "—"
-                    )
-                  }
-                />
-                <Field
-                  label="Min liability (MSI)"
-                  value={
-                    doc.rentersInsuranceMinLiabilityMSI !== null ? (
-                      <CurrencyAmount
-                        value={doc.rentersInsuranceMinLiabilityMSI}
-                      />
-                    ) : (
-                      "—"
-                    )
-                  }
-                />
-              </dl>
-            </CardContent>
-          </Card>
-
-          {(doc.amenities.length > 0 || doc.includedInRent.length > 0) && (
+          {/* ------------------------------ Summary ------------------------------ */}
+          <TabsContent value="summary" className="mt-4 space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Amenities</CardTitle>
+                <CardTitle>Identity</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {doc.amenities.length > 0 && (
-                  <div>
-                    <h5 className="mb-1 text-xs font-bold uppercase tracking-widest text-fg-muted">
-                      Amenities
-                    </h5>
-                    <div className="flex flex-wrap gap-2">
-                      {doc.amenities.map((a) => (
-                        <span
-                          key={a}
-                          className="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-fg"
-                        >
-                          {a}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {doc.includedInRent.length > 0 && (
-                  <div>
-                    <h5 className="mb-1 text-xs font-bold uppercase tracking-widest text-fg-muted">
-                      Included in rent
-                    </h5>
-                    <div className="flex flex-wrap gap-2">
-                      {doc.includedInRent.map((a) => (
-                        <span
-                          key={a}
-                          className="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-fg"
-                        >
-                          {a}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <InlineFieldEditor
+                  endpoint={`/api/pm/properties/${doc.id}`}
+                  data={
+                    {
+                      propertyName: doc.propertyName,
+                      line1: doc.address.line1,
+                      line2: doc.address.line2 ?? "",
+                      city: doc.address.city,
+                      state: doc.address.state,
+                      zip: doc.address.zip,
+                      country: doc.address.country || "US",
+                      // "" = inherit the org default (the pre-field behaviour).
+                      currency: doc.currency ?? "",
+                      // "" = not assigned to any company.
+                      companyAccountId: doc.companyAccountId ?? "",
+                      listingDescription: doc.listingDescription,
+                    } as Record<string, unknown>
+                  }
+                  fields={[
+                    {
+                      key: "propertyName",
+                      label: "Property name",
+                      required: true,
+                    },
+                    { key: "line1", label: "Address line 1", required: true },
+                    { key: "line2", label: "Address line 2" },
+                    { key: "city", label: "City", required: true },
+                    { key: "state", label: "State", required: true },
+                    { key: "zip", label: "ZIP", required: true },
+                    {
+                      key: "country",
+                      label: "Country",
+                      type: "select",
+                      required: true,
+                      options: [
+                        { value: "US", label: "United States" },
+                        { value: "CA", label: "Canada" },
+                      ],
+                      display: (v) =>
+                        v === "CA"
+                          ? "Canada"
+                          : v === "US"
+                            ? "United States"
+                            : (v as string) || "—",
+                    },
+                    {
+                      key: "currency",
+                      label: "Booking currency",
+                      type: "select",
+                      options: [
+                        { value: "", label: "Use organisation default" },
+                        { value: "CAD", label: "CAD — Canadian dollar" },
+                        { value: "USD", label: "USD — US dollar" },
+                      ],
+                      display: (v) => (v ? String(v) : "Organisation default"),
+                    },
+                    {
+                      // The legal entity that owns this building. Editable here
+                      // (not only at creation) because ownership moves between
+                      // entities, and because it decides which company-wide costs
+                      // — mortgage, blanket insurance — this property carries.
+                      key: "companyAccountId",
+                      label: "Company",
+                      type: "select",
+                      options: [
+                        { value: "", label: "— Not assigned —" },
+                        ...companies.map((c) => ({
+                          value: c.id,
+                          label: c.name,
+                        })),
+                      ],
+                      display: (v) =>
+                        v
+                          ? (companies.find((c) => c.id === v)?.name ??
+                            doc.companyName ??
+                            "(unknown company)")
+                          : "— Not assigned —",
+                    },
+                    {
+                      key: "listingDescription",
+                      label: "Listing description",
+                      type: "textarea",
+                    },
+                  ]}
+                  title="Property"
+                  canEdit={doc.active}
+                  onSaved={load}
+                  payloadTransform={(p) => ({
+                    propertyName: p.propertyName,
+                    listingDescription: p.listingDescription,
+                    // Empty string clears the override back to "inherit org".
+                    currency: p.currency ? p.currency : null,
+                    // Empty string clears the company assignment.
+                    companyAccountId: p.companyAccountId
+                      ? p.companyAccountId
+                      : null,
+                    address: {
+                      line1: p.line1,
+                      line2: p.line2,
+                      city: p.city,
+                      state: p.state,
+                      zip: p.zip,
+                      country: p.country,
+                    },
+                  })}
+                />
+                <dl className="grid gap-3 md:grid-cols-2">
+                  <Field
+                    label="Property manager"
+                    value={doc.propertyManagerUserId ?? "Unassigned"}
+                  />
+                </dl>
               </CardContent>
             </Card>
-          )}
 
-          {appliances.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Appliances</CardTitle>
+                <CardTitle>Photos</CardTitle>
               </CardHeader>
               <CardContent>
-                <table className="w-full text-sm">
-                  <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
-                    <tr>
-                      <th className="py-2">Appliance</th>
-                      <th>Unit</th>
-                      <th>Installed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {appliances.map((a) => (
-                      <tr key={a.id} className="border-b border-border/40">
-                        <td className="py-2 text-fg">{a.name}</td>
-                        <td className="text-fg-muted">{a.unitNumber}</td>
-                        <td className="text-fg-muted">
-                          {a.installedDate
-                            ? new Date(a.installedDate).toLocaleDateString()
-                            : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          )}
-
-          {Object.keys(doc.customFields).length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Custom fields</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CustomFieldsRenderer
+                <EntityImageGallery
                   entityType="Property"
-                  values={doc.customFields as Record<string, never>}
-                  onChange={() => undefined}
-                  disabled
+                  entityId={doc.id}
+                  images={doc.images}
+                  coverId={doc.photo}
+                  parentEndpoint={`/api/pm/properties/${doc.id}`}
+                  onChanged={load}
                 />
               </CardContent>
             </Card>
-          )}
-        </TabsContent>
 
-        {/* ----------------------------- Financials ---------------------------- */}
-        <TabsContent value="financials" className="mt-4 space-y-4">
-          <MarketValueCard
-            propertyId={doc.id}
-            incomeOverride={doc.valuationAnnualIncomeOverride}
-            expenseOverride={doc.valuationAnnualExpenseOverride}
-            capRatePct={doc.valuationCapRatePct}
-            canEdit={doc.active}
-            onSaved={load}
-          />
-          <Card>
-            <CardHeader>
-              <CardTitle>Financials snapshot</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <dl className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Operating cash"
-                  value={<CurrencyAmount value={doc.cashBalance} />}
-                />
-                <Field
-                  label="Trust cash"
-                  value={<CurrencyAmount value={0} />}
-                />
-                <Field
-                  label="Property reserve"
-                  value={<CurrencyAmount value={doc.propertyReserve} />}
-                />
-                <Field
-                  label="Available cash"
-                  value={<CurrencyAmount value={doc.availableCash} />}
-                />
-                <Field
-                  label="Outstanding balances"
-                  value={<CurrencyAmount value={0} />}
-                />
-              </dl>
-              <p className="text-xs italic text-fg-muted">
-                Live figures wire up in Phase 2 once the General Ledger ships.
-              </p>
-            </CardContent>
-          </Card>
-        </TabsContent>
+            <Card>
+              <CardHeader>
+                <CardTitle>Vacancy</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <PropertyVacancyWidget propertyId={doc.id} />
+              </CardContent>
+            </Card>
 
-        {/* ------------------------------- Units ------------------------------- */}
-        <TabsContent value="units" className="mt-4 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Units ({units.length})</CardTitle>
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!doc.active}
-                  onClick={() => {
-                    setAssignUnitId(undefined);
-                    setAssignOpen(true);
-                  }}
+            <Card>
+              <CardHeader>
+                <CardTitle>Cash on hand (derived)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="grid gap-3 md:grid-cols-3">
+                  <Field
+                    label="Operating cash"
+                    value={<CurrencyAmount value={doc.cashBalance} />}
+                  />
+                  <Field
+                    label="Security deposits held"
+                    value={<CurrencyAmount value={doc.securityDepositsHeld} />}
+                  />
+                  <Field
+                    label="Property reserve"
+                    value={<CurrencyAmount value={doc.propertyReserve} />}
+                  />
+                  <Field
+                    label="Available cash"
+                    value={<CurrencyAmount value={doc.availableCash} />}
+                  />
+                </dl>
+                <p className="mt-3 text-xs italic text-fg-muted">
+                  Operating cash and security deposits roll up from Phase 2
+                  ledger entries — currently zero until Phase 2 lands. Available
+                  cash = cash − deposits held − reserve (BR-PU-3).
+                </p>
+                <div
+                  className="mt-4 flex flex-wrap gap-2"
+                  title="Bulk charge/credit workflows post to the GL — wiring lands in Phase 2."
                 >
-                  Assign tenant
-                </Button>
-                <Button size="sm" onClick={() => setAddUnitOpen(true)}>
-                  <Plus className="h-3.5 w-3.5" /> Add unit
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {units.length === 0 ? (
-                <p className="text-sm text-fg-muted">No units yet.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
-                    <tr>
-                      <th className="py-2">Unit</th>
-                      {!isCommercial && <th>Beds</th>}
-                      {!isCommercial && <th>Baths</th>}
-                      <th>Size (sqft)</th>
-                      <th>Appliances</th>
-                      <th>Occupant(s)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {units.map((u) => {
-                      const occ = occupantsByUnit.get(u.id);
-                      return (
-                        <tr key={u.id} className="border-b border-border/40">
+                  <Button size="sm" variant="outline" disabled>
+                    Enter bulk charges
+                  </Button>
+                  <Button size="sm" variant="outline" disabled>
+                    Enter bulk credits
+                  </Button>
+                  <span className="self-center text-xs italic text-fg-muted">
+                    Phase 2
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Rental owners</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {doc.rentalOwners.length === 0 ? (
+                  <p className="text-sm text-fg-muted">No owners attached.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
+                      <tr>
+                        <th className="py-2">Owner</th>
+                        <th>Share</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {doc.rentalOwners.map((o) => (
+                        <tr
+                          key={o.rentalOwnerId}
+                          className="border-b border-border/40"
+                        >
                           <td className="py-2 text-fg">
                             <Link
-                              href={`/properties/rentals/properties/${doc.id}/units/${u.id}`}
-                              className="font-medium hover:underline"
+                              href={`/properties/rentals/rental-owners/${o.rentalOwnerId}`}
+                              className="hover:underline"
                             >
-                              {u.unitId}
+                              {o.displayName}
                             </Link>
                           </td>
-                          {!isCommercial && (
-                            <td className="text-fg-muted">
-                              {u.bedrooms ?? "—"}
-                            </td>
-                          )}
-                          {!isCommercial && (
-                            <td className="text-fg-muted">
-                              {u.bathrooms || "—"}
-                            </td>
-                          )}
-                          <td className="text-fg-muted">{u.sizeSqft ?? "—"}</td>
-                          <td className="text-fg-muted">{u.applianceCount}</td>
-                          <td className="text-fg-muted">
-                            {occ && occ.names.length > 0 ? (
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span>{occ.names.join(", ")}</span>
-                                {doc.active && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      setAssignUnitId(u.id);
-                                      setAssignOpen(true);
-                                    }}
-                                  >
-                                    Assign another
-                                  </Button>
-                                )}
-                              </div>
-                            ) : doc.active ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  setAssignUnitId(u.id);
-                                  setAssignOpen(true);
-                                }}
-                              >
-                                Assign tenant
-                              </Button>
-                            ) : (
-                              "Vacant"
-                            )}
+                          <td className="tabular-nums text-fg-muted">
+                            {o.ownershipPct}%
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </CardContent>
-          </Card>
-          <AddUnitModal
-            propertyId={doc.id}
-            isCommercial={isCommercial}
-            open={addUnitOpen}
-            onClose={() => setAddUnitOpen(false)}
-            onSaved={load}
-          />
-          <AssignLeaseModal
-            open={assignOpen}
-            onClose={() => {
-              setAssignOpen(false);
-              setAssignUnitId(undefined);
-            }}
-            presetPropertyId={doc.id}
-            presetUnitId={assignUnitId}
-            onSaved={async () => {
-              setAssignOpen(false);
-              setAssignUnitId(undefined);
-              await load();
-            }}
-          />
-        </TabsContent>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </CardContent>
+            </Card>
 
-        <TabsContent value="tasks" className="mt-4">
-          <PropertyTasksTab propertyId={doc.id} />
-        </TabsContent>
+            <Card>
+              <CardHeader>
+                <CardTitle>Bank accounts</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="grid gap-3 md:grid-cols-2">
+                  <Field
+                    label="Operating"
+                    value={
+                      doc.operatingAccount ? (
+                        <Link
+                          href={`/properties/accounting/banking/${doc.operatingAccount.id}`}
+                          className="hover:underline"
+                        >
+                          {doc.operatingAccount.name}{" "}
+                          <span className="tabular-nums text-fg-muted">
+                            {doc.operatingAccount.accountNumberMasked}
+                          </span>
+                        </Link>
+                      ) : (
+                        <span className="text-amber-600">
+                          Not configured —{" "}
+                          <Link
+                            href="/properties/accounting/banking"
+                            className="underline"
+                          >
+                            Set up
+                          </Link>
+                        </span>
+                      )
+                    }
+                  />
+                  <Field
+                    label="Deposit trust"
+                    value={
+                      doc.depositTrustAccount ? (
+                        <Link
+                          href={`/properties/accounting/banking/${doc.depositTrustAccount.id}`}
+                          className="hover:underline"
+                        >
+                          {doc.depositTrustAccount.name}{" "}
+                          <span className="tabular-nums text-fg-muted">
+                            {doc.depositTrustAccount.accountNumberMasked}
+                          </span>
+                        </Link>
+                      ) : (
+                        <Link
+                          href="/properties/accounting/banking"
+                          className="font-bold text-primary hover:underline"
+                        >
+                          Setup →
+                        </Link>
+                      )
+                    }
+                  />
+                </dl>
+              </CardContent>
+            </Card>
 
-        <TabsContent value="communications" className="mt-4">
-          <CommunicationsTab
-            relatedEntityType="Property"
-            relatedEntityId={doc.id}
-          />
-        </TabsContent>
+            <Card>
+              <CardHeader>
+                <CardTitle>Resident Center</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="grid gap-3 md:grid-cols-2">
+                  <Field
+                    label="Payment history"
+                    value={doc.residentCenterPaymentHistory}
+                  />
+                  <Field
+                    label="Requests"
+                    value={
+                      doc.residentCenterRequests.enabled
+                        ? doc.residentCenterRequests.showEntryQuestions
+                          ? "Enabled · with entry questions"
+                          : "Enabled"
+                        : "Disabled"
+                    }
+                  />
+                  <Field
+                    label="Forums"
+                    value={doc.residentCenterForums ? "Enabled" : "Disabled"}
+                  />
+                  <Field
+                    label="Min liability (3rd party)"
+                    value={
+                      doc.rentersInsuranceMinLiability3rdParty !== null ? (
+                        <CurrencyAmount
+                          value={doc.rentersInsuranceMinLiability3rdParty}
+                        />
+                      ) : (
+                        "—"
+                      )
+                    }
+                  />
+                  <Field
+                    label="Min liability (MSI)"
+                    value={
+                      doc.rentersInsuranceMinLiabilityMSI !== null ? (
+                        <CurrencyAmount
+                          value={doc.rentersInsuranceMinLiabilityMSI}
+                        />
+                      ) : (
+                        "—"
+                      )
+                    }
+                  />
+                </dl>
+              </CardContent>
+            </Card>
 
-        <TabsContent value="events" className="mt-4">
-          <ActivityLog parentType="Property" parentId={doc.id} />
-        </TabsContent>
-        <TabsContent value="notes" className="mt-4">
-          <NotesPanel parentType="Property" parentId={doc.id} />
-        </TabsContent>
-        <TabsContent value="files" className="mt-4">
-          <FilesPanel locationType="Property" locationId={doc.id} />
-        </TabsContent>
-      </Tabs>
-    </div>
+            {(doc.amenities.length > 0 || doc.includedInRent.length > 0) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Amenities</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {doc.amenities.length > 0 && (
+                    <div>
+                      <h5 className="mb-1 text-xs font-bold uppercase tracking-widest text-fg-muted">
+                        Amenities
+                      </h5>
+                      <div className="flex flex-wrap gap-2">
+                        {doc.amenities.map((a) => (
+                          <span
+                            key={a}
+                            className="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-fg"
+                          >
+                            {a}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {doc.includedInRent.length > 0 && (
+                    <div>
+                      <h5 className="mb-1 text-xs font-bold uppercase tracking-widest text-fg-muted">
+                        Included in rent
+                      </h5>
+                      <div className="flex flex-wrap gap-2">
+                        {doc.includedInRent.map((a) => (
+                          <span
+                            key={a}
+                            className="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-fg"
+                          >
+                            {a}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {appliances.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Appliances</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
+                      <tr>
+                        <th className="py-2">Appliance</th>
+                        <th>Unit</th>
+                        <th>Installed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {appliances.map((a) => (
+                        <tr key={a.id} className="border-b border-border/40">
+                          <td className="py-2 text-fg">{a.name}</td>
+                          <td className="text-fg-muted">{a.unitNumber}</td>
+                          <td className="text-fg-muted">
+                            {a.installedDate
+                              ? formatDateOnly(a.installedDate)
+                              : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </CardContent>
+              </Card>
+            )}
+
+            {Object.keys(doc.customFields).length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Custom fields</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CustomFieldsRenderer
+                    entityType="Property"
+                    values={doc.customFields as Record<string, never>}
+                    onChange={() => undefined}
+                    disabled
+                  />
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* ----------------------------- Financials ---------------------------- */}
+          <TabsContent value="financials" className="mt-4 space-y-4">
+            <MarketValueCard
+              propertyId={doc.id}
+              incomeOverride={doc.valuationAnnualIncomeOverride}
+              expenseOverride={doc.valuationAnnualExpenseOverride}
+              capRatePct={doc.valuationCapRatePct}
+              canEdit={doc.active}
+              onSaved={load}
+            />
+            <Card>
+              <CardHeader>
+                <CardTitle>Financials snapshot</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <dl className="grid gap-3 md:grid-cols-2">
+                  <Field
+                    label="Operating cash"
+                    value={<CurrencyAmount value={doc.cashBalance} />}
+                  />
+                  <Field
+                    label="Trust cash"
+                    value={<CurrencyAmount value={0} />}
+                  />
+                  <Field
+                    label="Property reserve"
+                    value={<CurrencyAmount value={doc.propertyReserve} />}
+                  />
+                  <Field
+                    label="Available cash"
+                    value={<CurrencyAmount value={doc.availableCash} />}
+                  />
+                  <Field
+                    label="Outstanding balances"
+                    value={<CurrencyAmount value={0} />}
+                  />
+                </dl>
+                <p className="text-xs italic text-fg-muted">
+                  Live figures wire up in Phase 2 once the General Ledger ships.
+                </p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ------------------------------- Units ------------------------------- */}
+          <TabsContent value="units" className="mt-4 space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Units ({units.length})</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!doc.active}
+                    onClick={() => {
+                      setAssignUnitId(undefined);
+                      setAssignOpen(true);
+                    }}
+                  >
+                    Assign tenant
+                  </Button>
+                  <Button size="sm" onClick={() => setAddUnitOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Add unit
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {units.length === 0 ? (
+                  <p className="text-sm text-fg-muted">No units yet.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="border-b border-border text-left text-xs uppercase tracking-widest text-fg-muted">
+                      <tr>
+                        <th className="py-2">Unit</th>
+                        {!isCommercial && <th>Beds</th>}
+                        {!isCommercial && <th>Baths</th>}
+                        <th>Size (sqft)</th>
+                        <th>Appliances</th>
+                        <th>Occupant(s)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {units.map((u) => {
+                        const occ = occupantsByUnit.get(u.id);
+                        return (
+                          <tr key={u.id} className="border-b border-border/40">
+                            <td className="py-2 text-fg">
+                              <Link
+                                href={`/properties/rentals/properties/${doc.id}/units/${u.id}`}
+                                className="font-medium hover:underline"
+                              >
+                                {u.unitId}
+                              </Link>
+                            </td>
+                            {!isCommercial && (
+                              <td className="text-fg-muted">
+                                {u.bedrooms ?? "—"}
+                              </td>
+                            )}
+                            {!isCommercial && (
+                              <td className="text-fg-muted">
+                                {u.bathrooms || "—"}
+                              </td>
+                            )}
+                            <td className="text-fg-muted">
+                              {u.sizeSqft ?? "—"}
+                            </td>
+                            <td className="text-fg-muted">
+                              {u.applianceCount}
+                            </td>
+                            <td className="text-fg-muted">
+                              {occ && occ.names.length > 0 ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span>{occ.names.join(", ")}</span>
+                                  {doc.active && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setAssignUnitId(u.id);
+                                        setAssignOpen(true);
+                                      }}
+                                    >
+                                      Assign another
+                                    </Button>
+                                  )}
+                                </div>
+                              ) : doc.active ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setAssignUnitId(u.id);
+                                    setAssignOpen(true);
+                                  }}
+                                >
+                                  Assign tenant
+                                </Button>
+                              ) : (
+                                "Vacant"
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </CardContent>
+            </Card>
+            <AddUnitModal
+              propertyId={doc.id}
+              isCommercial={isCommercial}
+              open={addUnitOpen}
+              onClose={() => setAddUnitOpen(false)}
+              onSaved={load}
+            />
+            <AssignLeaseModal
+              open={assignOpen}
+              onClose={() => {
+                setAssignOpen(false);
+                setAssignUnitId(undefined);
+              }}
+              presetPropertyId={doc.id}
+              presetUnitId={assignUnitId}
+              onSaved={async () => {
+                setAssignOpen(false);
+                setAssignUnitId(undefined);
+                await load();
+              }}
+            />
+          </TabsContent>
+
+          <TabsContent value="tasks" className="mt-4">
+            <PropertyTasksTab propertyId={doc.id} />
+          </TabsContent>
+
+          <TabsContent value="communications" className="mt-4">
+            <CommunicationsTab
+              relatedEntityType="Property"
+              relatedEntityId={doc.id}
+            />
+          </TabsContent>
+
+          <TabsContent value="events" className="mt-4">
+            <ActivityLog parentType="Property" parentId={doc.id} />
+          </TabsContent>
+          <TabsContent value="notes" className="mt-4">
+            <NotesPanel parentType="Property" parentId={doc.id} />
+          </TabsContent>
+          <TabsContent value="files" className="mt-4">
+            <FilesPanel locationType="Property" locationId={doc.id} />
+          </TabsContent>
+        </Tabs>
+      </div>
     </PmNativeCurrency>
   );
 }
 
-function Field({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-widest text-fg-muted">{label}</dt>
+      <dt className="text-xs uppercase tracking-widest text-fg-muted">
+        {label}
+      </dt>
       <dd className="text-sm text-fg">{value}</dd>
     </div>
   );
@@ -1034,14 +1037,10 @@ function PropertyTasksTab({ propertyId }: { propertyId: string }) {
                   <td className="text-fg-muted">{t.priority}</td>
                   <td
                     className={
-                      t.pastDue
-                        ? "font-bold text-error"
-                        : "text-fg-muted"
+                      t.pastDue ? "font-bold text-error" : "text-fg-muted"
                     }
                   >
-                    {t.dueDate
-                      ? formatDateOnly(t.dueDate)
-                      : "—"}
+                    {t.dueDate ? formatDateOnly(t.dueDate) : "—"}
                   </td>
                 </tr>
               ))}
@@ -1103,7 +1102,13 @@ function AddUnitModal({
       return;
     }
     toast({ title: "Unit added", variant: "success" });
-    setForm({ unitId: "", bedrooms: "", bathrooms: "", sizeSqft: "", description: "" });
+    setForm({
+      unitId: "",
+      bedrooms: "",
+      bathrooms: "",
+      sizeSqft: "",
+      description: "",
+    });
     onClose();
     await onSaved();
   }
@@ -1124,7 +1129,8 @@ function AddUnitModal({
           </div>
           <div
             className={
-              "grid gap-3 " + (isCommercial ? "md:grid-cols-1" : "md:grid-cols-3")
+              "grid gap-3 " +
+              (isCommercial ? "md:grid-cols-1" : "md:grid-cols-3")
             }
           >
             {!isCommercial && (
@@ -1161,9 +1167,7 @@ function AddUnitModal({
                 type="number"
                 min={0}
                 value={form.sizeSqft}
-                onChange={(e) =>
-                  setForm({ ...form, sizeSqft: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, sizeSqft: e.target.value })}
               />
             </div>
           </div>

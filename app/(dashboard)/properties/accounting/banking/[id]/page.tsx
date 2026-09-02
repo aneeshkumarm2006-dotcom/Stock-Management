@@ -9,12 +9,7 @@ import { useParams, useRouter, notFound } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { CurrencyAmount } from "@/components/pm/CurrencyAmount";
 import { fromCents } from "@/lib/pm/currency";
@@ -22,6 +17,7 @@ import { ReconciliationWizard } from "@/components/pm/ReconciliationWizard";
 import { BankFeedTab } from "@/components/pm/BankFeedTab";
 import { InlineFieldEditor } from "@/components/pm/InlineFieldEditor";
 import type { BankAccountType } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface Detail {
   id: string;
@@ -66,7 +62,9 @@ export default function BankAccountDetailPage() {
 
   async function archive() {
     setArchiving(true);
-    const res = await fetch(`/api/pm/bank-accounts/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/pm/bank-accounts/${id}`, {
+      method: "DELETE",
+    });
     setArchiving(false);
     if (!res.ok) {
       toast({ title: "Archive failed", variant: "error" });
@@ -100,8 +98,8 @@ export default function BankAccountDetailPage() {
         <Card className="border-warning bg-warning/5">
           <CardContent className="flex items-center gap-2 py-3 text-sm text-warning">
             <AlertTriangle className="h-4 w-4" />
-            Undeposited funds present — receipts have not yet been rolled into
-            a deposit (BR-AC-7).
+            Undeposited funds present — receipts have not yet been rolled into a
+            deposit (BR-AC-7).
           </CardContent>
         </Card>
       )}
@@ -109,15 +107,19 @@ export default function BankAccountDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle>{doc.name}</CardTitle>
-          <span className="text-xs italic text-fg-muted">{doc.purpose || ""}</span>
+          <span className="text-xs italic text-fg-muted">
+            {doc.purpose || ""}
+          </span>
         </CardHeader>
         <CardContent>
           <InlineFieldEditor
             endpoint={`/api/pm/bank-accounts/${doc.id}`}
-            data={{
-              name: doc.name,
-              purpose: doc.purpose,
-            } as Record<string, unknown>}
+            data={
+              {
+                name: doc.name,
+                purpose: doc.purpose,
+              } as Record<string, unknown>
+            }
             fields={[
               { key: "name", label: "Account name", required: true },
               { key: "purpose", label: "Purpose", type: "textarea" },
@@ -150,7 +152,7 @@ export default function BankAccountDetailPage() {
               label="Last reconciled"
               value={
                 doc.lastReconciliationDate
-                  ? new Date(doc.lastReconciliationDate).toLocaleDateString()
+                  ? formatDateOnly(doc.lastReconciliationDate)
                   : "Never"
               }
             />
@@ -179,7 +181,12 @@ export default function BankAccountDetailPage() {
                   No GL cash account mapped.
                 </p>
                 <p className="text-fg-muted">
-                  Set <code className="rounded bg-surface-high px-1">chartOfAccountId</code> on this bank account to enable register reads. The register sums JE lines posted to the linked Chart of Accounts row.
+                  Set{" "}
+                  <code className="rounded bg-surface-high px-1">
+                    chartOfAccountId
+                  </code>{" "}
+                  on this bank account to enable register reads. The register
+                  sums JE lines posted to the linked Chart of Accounts row.
                 </p>
               </CardContent>
             </Card>
@@ -212,8 +219,12 @@ function Field({
 }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-widest text-fg-muted">{label}</dt>
-      <dd className={"text-sm text-fg " + (mono ? "tabular-nums" : "")}>{value}</dd>
+      <dt className="text-xs uppercase tracking-widest text-fg-muted">
+        {label}
+      </dt>
+      <dd className={"text-sm text-fg " + (mono ? "tabular-nums" : "")}>
+        {value}
+      </dd>
     </div>
   );
 }
@@ -297,9 +308,7 @@ function ReconciliationsTab({ bankAccountId }: { bankAccountId: string }) {
                   <td className="text-right tabular-nums">
                     <CurrencyAmount cents={r.difference} />
                   </td>
-                  <td className="text-right tabular-nums">
-                    {r.clearedCount}
-                  </td>
+                  <td className="text-right tabular-nums">{r.clearedCount}</td>
                 </tr>
               ))}
             </tbody>
@@ -343,39 +352,49 @@ function BankRegister({ chartOfAccountId }: { chartOfAccountId: string }) {
     setLoading(true);
     fetch(`/api/pm/journal-entries?accountId=${chartOfAccountId}&limit=200`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((data: Array<{
-        id: string;
-        date: string;
-        memo: string;
-        status: "Posted" | "Draft" | "Voided";
-        lines: Array<{ accountId: string; debit: number; credit: number; description: string }>;
-      }>) => {
-        // Flatten each JE into one register row per matching line.
-        const out: RegisterRow[] = [];
-        let running = 0;
-        for (const je of [...data].reverse()) {
-          for (const line of je.lines) {
-            if (line.accountId !== chartOfAccountId) continue;
-            const net = line.debit - line.credit;
-            if (je.status === "Posted") running += net;
-            out.push({
-              journalEntryId: je.id,
-              date: je.date,
-              memo: je.memo,
-              description: line.description,
-              debit: line.debit,
-              credit: line.credit,
-              status: je.status,
-              net: running,
-            });
+      .then(
+        (
+          data: Array<{
+            id: string;
+            date: string;
+            memo: string;
+            status: "Posted" | "Draft" | "Voided";
+            lines: Array<{
+              accountId: string;
+              debit: number;
+              credit: number;
+              description: string;
+            }>;
+          }>,
+        ) => {
+          // Flatten each JE into one register row per matching line.
+          const out: RegisterRow[] = [];
+          let running = 0;
+          for (const je of [...data].reverse()) {
+            for (const line of je.lines) {
+              if (line.accountId !== chartOfAccountId) continue;
+              const net = line.debit - line.credit;
+              if (je.status === "Posted") running += net;
+              out.push({
+                journalEntryId: je.id,
+                date: je.date,
+                memo: je.memo,
+                description: line.description,
+                debit: line.debit,
+                credit: line.credit,
+                status: je.status,
+                net: running,
+              });
+            }
           }
-        }
-        setRows(out.reverse()); // most recent first for display
-      })
+          setRows(out.reverse()); // most recent first for display
+        },
+      )
       .finally(() => setLoading(false));
   }, [chartOfAccountId]);
 
-  if (loading) return <p className="text-sm text-fg-muted">Loading register…</p>;
+  if (loading)
+    return <p className="text-sm text-fg-muted">Loading register…</p>;
   if (rows.length === 0)
     return (
       <p className="text-sm text-fg-muted">
@@ -403,7 +422,7 @@ function BankRegister({ chartOfAccountId }: { chartOfAccountId: string }) {
                 key={i}
                 className={
                   "border-b border-border/30 " +
-                  (r.status === "Voided" ? "opacity-50 line-through" : "")
+                  (r.status === "Voided" ? "line-through opacity-50" : "")
                 }
               >
                 <td className="px-2 py-1 tabular-nums">
@@ -411,16 +430,24 @@ function BankRegister({ chartOfAccountId }: { chartOfAccountId: string }) {
                     href={`/properties/accounting/general-ledger/${r.journalEntryId}`}
                     className="hover:underline"
                   >
-                    {new Date(r.date).toLocaleDateString()}
+                    {formatDateOnly(r.date)}
                   </Link>
                 </td>
                 <td className="text-fg-muted">{r.memo || "—"}</td>
                 <td className="text-fg-muted">{r.description || "—"}</td>
                 <td className="px-2 py-1 text-right">
-                  {r.debit > 0 ? <CurrencyAmount value={fromCents(r.debit)} /> : "—"}
+                  {r.debit > 0 ? (
+                    <CurrencyAmount value={fromCents(r.debit)} />
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="px-2 py-1 text-right">
-                  {r.credit > 0 ? <CurrencyAmount value={fromCents(r.credit)} /> : "—"}
+                  {r.credit > 0 ? (
+                    <CurrencyAmount value={fromCents(r.credit)} />
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="px-2 py-1 text-right">
                   <CurrencyAmount value={fromCents(r.net)} />

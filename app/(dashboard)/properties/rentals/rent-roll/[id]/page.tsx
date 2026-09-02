@@ -12,19 +12,9 @@ import Link from "next/link";
 import { useParams, useRouter, notFound } from "next/navigation";
 import { ArrowLeft, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { ActivityLog } from "@/components/pm/ActivityLog";
 import { NotesPanel } from "@/components/pm/NotesPanel";
@@ -42,8 +32,8 @@ import {
 } from "@/components/pm/LeaseTermScheduleTable";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
 import { tenantDisplayName } from "@/lib/pm/tenantName";
-import { formatDateOnly } from "@/lib/utils/dateInput";
 import type { PmCurrency, TenantType } from "@/types/pm";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface LeaseDetail {
   id: string;
@@ -166,7 +156,8 @@ export default function LeaseDetailPage() {
     load();
   }, [load]);
 
-  if (loading || !data) return <div className="p-4 text-fg-muted">Loading…</div>;
+  if (loading || !data)
+    return <div className="p-4 text-fg-muted">Loading…</div>;
 
   const renewEligible =
     (data.status === "Active" || data.status === "Expired") &&
@@ -195,7 +186,11 @@ export default function LeaseDetailPage() {
   async function postRecurring() {
     const res = await fetch(
       `/api/pm/leases/${data!.id}/post-recurring-charges`,
-      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
     );
     if (!res.ok) {
       toast({ title: "Post failed", variant: "error" });
@@ -222,575 +217,601 @@ export default function LeaseDetailPage() {
   // FX-converted into a figure that matches no document the tenant holds.
   return (
     <PmNativeCurrency currency={data.currency} renderNative>
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        <Link href="/properties/rentals/rent-roll">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4" /> Rent roll
-          </Button>
-        </Link>
-        <h1 className="text-xl font-semibold">Lease #{data.leaseNumber}</h1>
-        <Badge
-          variant="outline"
-          title="Currency this lease is billed in — the currency of its property. Amounts below do not change with the display-currency switch."
-        >
-          {data.currency}
-        </Badge>
-        <Badge
-          variant={
-            data.status === "Active"
-              ? "gain"
-              : data.status === "Future"
-                ? "muted"
-                : "outline"
-          }
-        >
-          {data.status}
-        </Badge>
-        {data.daysRemaining != null && (
-          <Badge variant="loss">{data.daysRemaining}d remaining</Badge>
-        )}
-        {data.evictionPending && (
-          <Badge variant="loss">EVICTION PENDING</Badge>
-        )}
-        <div className="ml-auto flex gap-2">
-          <Button
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/properties/rentals/rent-roll">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="h-4 w-4" /> Rent roll
+            </Button>
+          </Link>
+          <h1 className="text-xl font-semibold">Lease #{data.leaseNumber}</h1>
+          <Badge
             variant="outline"
-            size="sm"
-            onClick={() => setEditLeaseOpen(true)}
+            title="Currency this lease is billed in — the currency of its property. Amounts below do not change with the display-currency switch."
           >
-            Edit lease
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setEvictionOpen(true)}
+            {data.currency}
+          </Badge>
+          <Badge
+            variant={
+              data.status === "Active"
+                ? "gain"
+                : data.status === "Future"
+                  ? "muted"
+                  : "outline"
+            }
           >
-            {data.evictionPending
-              ? "Clear eviction pending"
-              : "Flag eviction pending"}
-          </Button>
-          <Button
-            size="sm"
-            onClick={renew}
-            disabled={!renewEligible}
-            title={!renewEligible ? "Renewal requires Active/Expired + ≤ 90 days remaining" : ""}
-          >
-            Renew lease
-          </Button>
-        </div>
-      </div>
-
-      {data.evictionPending && data.evictionPendingNote && (
-        <div className="rounded border border-loss/40 bg-loss/5 px-3 py-2 text-sm text-loss">
-          {data.evictionPendingNote}
-        </div>
-      )}
-
-      <Tabs defaultValue="summary">
-        <TabsList>
-          <TabsTrigger value="summary">Summary</TabsTrigger>
-          <TabsTrigger value="financials">Financials</TabsTrigger>
-          {data.rentSchedule.length > 0 && (
-            <TabsTrigger value="terms">Lease terms</TabsTrigger>
+            {data.status}
+          </Badge>
+          {data.daysRemaining != null && (
+            <Badge variant="loss">{data.daysRemaining}d remaining</Badge>
           )}
-          <TabsTrigger value="tenant">Tenant</TabsTrigger>
-          <TabsTrigger value="communications">Communications</TabsTrigger>
-          <TabsTrigger value="history">Event history</TabsTrigger>
-        </TabsList>
+          {data.evictionPending && (
+            <Badge variant="loss">EVICTION PENDING</Badge>
+          )}
+          <div className="ml-auto flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEditLeaseOpen(true)}
+            >
+              Edit lease
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setEvictionOpen(true)}
+            >
+              {data.evictionPending
+                ? "Clear eviction pending"
+                : "Flag eviction pending"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={renew}
+              disabled={!renewEligible}
+              title={
+                !renewEligible
+                  ? "Renewal requires Active/Expired + ≤ 90 days remaining"
+                  : ""
+              }
+            >
+              Renew lease
+            </Button>
+          </div>
+        </div>
 
-        <TabsContent value="summary">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="col-span-2 space-y-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Terms</CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-xs text-fg-muted">Lease type</div>
-                    <div>{data.leaseType}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-fg-muted">Cycle</div>
-                    <div>{data.rentCycle}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-fg-muted">Start date</div>
-                    <div>{formatDateOnly(data.startDate)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-fg-muted">End date</div>
+        {data.evictionPending && data.evictionPendingNote && (
+          <div className="rounded border border-loss/40 bg-loss/5 px-3 py-2 text-sm text-loss">
+            {data.evictionPendingNote}
+          </div>
+        )}
+
+        <Tabs defaultValue="summary">
+          <TabsList>
+            <TabsTrigger value="summary">Summary</TabsTrigger>
+            <TabsTrigger value="financials">Financials</TabsTrigger>
+            {data.rentSchedule.length > 0 && (
+              <TabsTrigger value="terms">Lease terms</TabsTrigger>
+            )}
+            <TabsTrigger value="tenant">Tenant</TabsTrigger>
+            <TabsTrigger value="communications">Communications</TabsTrigger>
+            <TabsTrigger value="history">Event history</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="summary">
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-2 space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Terms</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      {data.endDate
-                        ? formatDateOnly(data.endDate)
-                        : "(At-will)"}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-fg-muted">
-                      Total monthly rent
+                      <div className="text-xs text-fg-muted">Lease type</div>
+                      <div>{data.leaseType}</div>
                     </div>
                     <div>
-                      <CurrencyAmount
-                        cents={
-                          data.primaryRent.amount +
-                          data.splitRentCharges.reduce(
-                            (s, c) => s + c.amount,
-                            0,
-                          )
-                        }
-                      />
+                      <div className="text-xs text-fg-muted">Cycle</div>
+                      <div>{data.rentCycle}</div>
                     </div>
-                    {/* §4 — Base + OPEX/Tax breakdown so the composition is clear. */}
-                    <div className="mt-0.5 space-y-0.5 text-xs text-fg-muted">
+                    <div>
+                      <div className="text-xs text-fg-muted">Start date</div>
+                      <div>{formatDateOnly(data.startDate)}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-fg-muted">End date</div>
                       <div>
-                        Base <CurrencyAmount cents={data.primaryRent.amount} />
-                        {data.primaryRent.memo ? ` · ${data.primaryRent.memo}` : ""}
+                        {data.endDate
+                          ? formatDateOnly(data.endDate)
+                          : "(At-will)"}
                       </div>
-                      {data.splitRentCharges.map((c, i) => (
-                        <div key={i}>
-                          {c.memo || "Recovery"}{" "}
-                          <CurrencyAmount cents={c.amount} />
-                        </div>
-                      ))}
                     </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-fg-muted">Next due</div>
-                    {/* Date-only field stored at UTC midnight — render via
+                    <div>
+                      <div className="text-xs text-fg-muted">
+                        Total monthly rent
+                      </div>
+                      <div>
+                        <CurrencyAmount
+                          cents={
+                            data.primaryRent.amount +
+                            data.splitRentCharges.reduce(
+                              (s, c) => s + c.amount,
+                              0,
+                            )
+                          }
+                        />
+                      </div>
+                      {/* §4 — Base + OPEX/Tax breakdown so the composition is clear. */}
+                      <div className="mt-0.5 space-y-0.5 text-xs text-fg-muted">
+                        <div>
+                          Base{" "}
+                          <CurrencyAmount cents={data.primaryRent.amount} />
+                          {data.primaryRent.memo
+                            ? ` · ${data.primaryRent.memo}`
+                            : ""}
+                        </div>
+                        {data.splitRentCharges.map((c, i) => (
+                          <div key={i}>
+                            {c.memo || "Recovery"}{" "}
+                            <CurrencyAmount cents={c.amount} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-fg-muted">Next due</div>
+                      {/* Date-only field stored at UTC midnight — render via
                         formatDateOnly, never new Date(x).toLocaleDateString(),
                         which shows the previous day west of GMT (e.g. a 7/01
                         cursor renders as 6/30). */}
-                    <div>{formatDateOnly(data.primaryRent.nextDueDate)}</div>
-                  </div>
-                  <div className="col-span-2">
-                    <div className="text-xs text-fg-muted">Security deposit</div>
-                    <div className="flex gap-4">
-                      <span>
-                        Received{" "}
-                        <CurrencyAmount cents={data.securityDeposit.received} />
-                      </span>
-                      <span>
-                        Withheld{" "}
-                        <CurrencyAmount cents={data.securityDeposit.withheld} />
-                      </span>
-                      <span>
-                        Refunded{" "}
-                        <CurrencyAmount cents={data.securityDeposit.refunded} />
-                      </span>
-                      <span className="font-medium">
-                        Held <CurrencyAmount cents={data.securityDeposit.held} />
-                      </span>
+                      <div>{formatDateOnly(data.primaryRent.nextDueDate)}</div>
                     </div>
-                    <div className="text-xs text-fg-muted">
-                      BR-LL-4 — Current = Received − Withheld − Refunded
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Renters insurance</CardTitle>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setInsuranceEditingId(undefined);
-                      setInsuranceOpen(true);
-                    }}
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Add policy
-                  </Button>
-                </CardHeader>
-                <CardContent className="text-sm space-y-2">
-                  {data.uninsuredResidents.length > 0 && (
-                    <div className="text-xs text-loss">
-                      Uninsured residents:{" "}
-                      {data.uninsuredResidents
-                        .map((r) => tenantDisplayName(r))
-                        .join(", ")}{" "}
-                      (BR-LL-6)
-                    </div>
-                  )}
-                  {data.rentersInsurancePolicies.length === 0 ? (
-                    <p className="text-fg-muted">No active policies.</p>
-                  ) : (
-                    <table className="w-full">
-                      <thead className="text-xs uppercase text-fg-muted border-b border-border">
-                        <tr>
-                          <th className="py-1 text-left">Carrier</th>
-                          <th>Policy #</th>
-                          <th>Liability</th>
-                          <th>Effective</th>
-                          <th>Expires</th>
-                          <th />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.rentersInsurancePolicies.map((p) => (
-                          <tr key={p.id} className="border-b border-border/40">
-                            <td className="py-1">{p.carrier}</td>
-                            <td className="text-fg-muted">
-                              {p.policyNumber || "—"}
-                            </td>
-                            <td>
-                              <CurrencyAmount cents={p.liabilityCoverage} />
-                            </td>
-                            <td className="text-fg-muted">
-                              {new Date(p.effectiveDate).toLocaleDateString()}
-                            </td>
-                            <td className="text-fg-muted">
-                              {new Date(p.expirationDate).toLocaleDateString()}
-                            </td>
-                            <td className="text-right">
-                              <EditEntityButton
-                                onClick={() => {
-                                  setInsuranceEditingId(p.id);
-                                  setInsuranceOpen(true);
-                                }}
-                              />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Pets</CardTitle>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setPetEditingId(undefined);
-                      setPetOpen(true);
-                    }}
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Add pet
-                  </Button>
-                </CardHeader>
-                <CardContent className="text-sm">
-                  {data.pets.length === 0 ? (
-                    <p className="text-fg-muted">No pets attached.</p>
-                  ) : (
-                    <ul className="space-y-1">
-                      {data.pets.map((p) => (
-                        <li
-                          key={p.id}
-                          className="flex items-center justify-between"
-                        >
-                          <span>
-                            {p.name} · {p.petType}
-                            {p.breed ? ` (${p.breed})` : ""}
-                            {p.assistanceAnimal && (
-                              <Badge variant="outline" className="ml-2">
-                                Assistance
-                              </Badge>
-                            )}
-                          </span>
-                          <EditEntityButton
-                            onClick={() => {
-                              setPetEditingId(p.id);
-                              setPetOpen(true);
-                            }}
+                    <div className="col-span-2">
+                      <div className="text-xs text-fg-muted">
+                        Security deposit
+                      </div>
+                      <div className="flex gap-4">
+                        <span>
+                          Received{" "}
+                          <CurrencyAmount
+                            cents={data.securityDeposit.received}
                           />
+                        </span>
+                        <span>
+                          Withheld{" "}
+                          <CurrencyAmount
+                            cents={data.securityDeposit.withheld}
+                          />
+                        </span>
+                        <span>
+                          Refunded{" "}
+                          <CurrencyAmount
+                            cents={data.securityDeposit.refunded}
+                          />
+                        </span>
+                        <span className="font-medium">
+                          Held{" "}
+                          <CurrencyAmount cents={data.securityDeposit.held} />
+                        </span>
+                      </div>
+                      <div className="text-xs text-fg-muted">
+                        BR-LL-4 — Current = Received − Withheld − Refunded
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Renters insurance</CardTitle>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setInsuranceEditingId(undefined);
+                        setInsuranceOpen(true);
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add policy
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    {data.uninsuredResidents.length > 0 && (
+                      <div className="text-xs text-loss">
+                        Uninsured residents:{" "}
+                        {data.uninsuredResidents
+                          .map((r) => tenantDisplayName(r))
+                          .join(", ")}{" "}
+                        (BR-LL-6)
+                      </div>
+                    )}
+                    {data.rentersInsurancePolicies.length === 0 ? (
+                      <p className="text-fg-muted">No active policies.</p>
+                    ) : (
+                      <table className="w-full">
+                        <thead className="border-b border-border text-xs uppercase text-fg-muted">
+                          <tr>
+                            <th className="py-1 text-left">Carrier</th>
+                            <th>Policy #</th>
+                            <th>Liability</th>
+                            <th>Effective</th>
+                            <th>Expires</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.rentersInsurancePolicies.map((p) => (
+                            <tr
+                              key={p.id}
+                              className="border-b border-border/40"
+                            >
+                              <td className="py-1">{p.carrier}</td>
+                              <td className="text-fg-muted">
+                                {p.policyNumber || "—"}
+                              </td>
+                              <td>
+                                <CurrencyAmount cents={p.liabilityCoverage} />
+                              </td>
+                              <td className="text-fg-muted">
+                                {formatDateOnly(p.effectiveDate)}
+                              </td>
+                              <td className="text-fg-muted">
+                                {formatDateOnly(p.expirationDate)}
+                              </td>
+                              <td className="text-right">
+                                <EditEntityButton
+                                  onClick={() => {
+                                    setInsuranceEditingId(p.id);
+                                    setInsuranceOpen(true);
+                                  }}
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Pets</CardTitle>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setPetEditingId(undefined);
+                        setPetOpen(true);
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add pet
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="text-sm">
+                    {data.pets.length === 0 ? (
+                      <p className="text-fg-muted">No pets attached.</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {data.pets.map((p) => (
+                          <li
+                            key={p.id}
+                            className="flex items-center justify-between"
+                          >
+                            <span>
+                              {p.name} · {p.petType}
+                              {p.breed ? ` (${p.breed})` : ""}
+                              {p.assistanceAnimal && (
+                                <Badge variant="outline" className="ml-2">
+                                  Assistance
+                                </Badge>
+                              )}
+                            </span>
+                            <EditEntityButton
+                              onClick={() => {
+                                setPetEditingId(p.id);
+                                setPetOpen(true);
+                              }}
+                            />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Notes</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <NotesPanel parentType="Lease" parentId={data.id} />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Files</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <FilesPanel locationType="Lease" locationId={data.id} />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Resident Center</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-xs text-fg-muted">
+                    Welcome email:{" "}
+                    {data.residentCenterWelcomeEmail ? "ON" : "OFF (default)"} —
+                    TODO Phase 6 dispatches.
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="financials">
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recurring charges</CardTitle>
+                  <Button size="sm" onClick={postRecurring}>
+                    Post recurring due now
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const splitTotal = data.splitRentCharges.reduce(
+                      (sum, c) => sum + c.amount,
+                      0,
+                    );
+                    const rentTotal = data.primaryRent.amount + splitTotal;
+                    if (rentTotal <= 0 && data.recurringCharges.length === 0) {
+                      return <p className="text-sm text-fg-muted">None.</p>;
+                    }
+                    return (
+                      <table className="w-full text-sm">
+                        <thead className="border-b border-border text-xs uppercase text-fg-muted">
+                          <tr>
+                            <th className="py-1 text-left">Memo</th>
+                            <th>Frequency</th>
+                            <th>Next date</th>
+                            <th>Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* Base rent posts from the lease TERMS (primaryRent +
+                            recovery split charges), not a recurringCharges row. */}
+                          {rentTotal > 0 && (
+                            <tr className="border-b border-border/40">
+                              <td className="py-1">
+                                {data.primaryRent.memo ||
+                                  "Rent (base + recovery)"}
+                              </td>
+                              <td>{data.rentCycle}</td>
+                              <td className="text-fg-muted">
+                                {formatDateOnly(data.primaryRent.nextDueDate)}
+                              </td>
+                              <td>
+                                <CurrencyAmount cents={rentTotal} />
+                              </td>
+                            </tr>
+                          )}
+                          {data.recurringCharges.map((c) => (
+                            <tr
+                              key={c.id}
+                              className="border-b border-border/40"
+                            >
+                              <td className="py-1">{c.memo || "—"}</td>
+                              <td>{c.frequency}</td>
+                              <td className="text-fg-muted">
+                                {formatDateOnly(c.nextDate)}
+                              </td>
+                              <td>
+                                <CurrencyAmount cents={c.amount} />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
+                  <p className="mt-2 text-xs text-fg-muted">
+                    Base rent posts from the lease terms; any extra rows are
+                    additional recurring charges. A nightly cron auto-posts each
+                    as it comes due — use <em>Post recurring due now</em> to
+                    post any due charges immediately without waiting for the
+                    sweep.
+                  </p>
+                  {/* Edits here are forward-looking: the amounts above are what
+                    WILL be charged, while Accounting → Financials reports what
+                    already WAS. Saying so on the card stops the recurring
+                    "I changed the rent but Financials didn't move" question. */}
+                  <p className="mt-1 text-xs text-fg-muted">
+                    Amounts shown are what will be charged from the next due
+                    date
+                    {data.primaryRent.nextDueDate
+                      ? ` (${formatDateOnly(data.primaryRent.nextDueDate)})`
+                      : ""}
+                    . Editing rent or the lease terms never changes a month that
+                    has already posted, so{" "}
+                    <strong>Accounting → Financials</strong> keeps showing the
+                    old figure for those months — it reports the ledger, not the
+                    current lease setup.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>One-time charges</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {data.oneTimeCharges.length === 0 ? (
+                    <p className="text-sm text-fg-muted">None.</p>
+                  ) : (
+                    <ul className="space-y-1 text-sm">
+                      {data.oneTimeCharges.map((c) => (
+                        <li key={c.id}>
+                          <CurrencyAmount cents={c.amount} />{" "}
+                          {c.memo && `· ${c.memo}`}
+                          {c.dueDate && (
+                            <span className="text-fg-muted">
+                              {" "}
+                              · due {formatDateOnly(c.dueDate)}
+                            </span>
+                          )}
+                          {c.posted && (
+                            <Badge variant="gain" className="ml-2">
+                              Posted
+                            </Badge>
+                          )}
                         </li>
                       ))}
                     </ul>
                   )}
                 </CardContent>
               </Card>
-            </div>
 
-            <div className="space-y-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>Notes</CardTitle>
+                  <CardTitle>eSignature documents</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <NotesPanel parentType="Lease" parentId={data.id} />
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Files</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <FilesPanel locationType="Lease" locationId={data.id} />
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Resident Center</CardTitle>
-                </CardHeader>
-                <CardContent className="text-xs text-fg-muted">
-                  Welcome email:{" "}
-                  {data.residentCenterWelcomeEmail ? "ON" : "OFF (default)"} —
-                  TODO Phase 6 dispatches.
+                <CardContent className="space-y-1 text-sm">
+                  {data.esignatureDocuments.length === 0 ? (
+                    <p className="text-fg-muted">None.</p>
+                  ) : (
+                    data.esignatureDocuments.map((d) => (
+                      <div key={d.id} className="flex items-center gap-2">
+                        <span>{d.label}</span>
+                        <Badge variant="muted">{d.status}</Badge>
+                      </div>
+                    ))
+                  )}
                 </CardContent>
               </Card>
             </div>
-          </div>
-        </TabsContent>
+          </TabsContent>
 
-        <TabsContent value="financials">
-          <div className="space-y-4">
+          {data.rentSchedule.length > 0 && (
+            <TabsContent value="terms">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Lease term schedule</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <LeaseTermScheduleTable
+                    periods={data.rentSchedule}
+                    proportionateSharePct={data.proportionateSharePct}
+                    salesTaxRatePct={data.salesTaxRatePct}
+                  />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          <TabsContent value="tenant">
             <Card>
               <CardHeader>
-                <CardTitle>Recurring charges</CardTitle>
-                <Button size="sm" onClick={postRecurring}>
-                  Post recurring due now
-                </Button>
+                <CardTitle>Tenants & cosigners</CardTitle>
               </CardHeader>
-              <CardContent>
-                {(() => {
-                  const splitTotal = data.splitRentCharges.reduce(
-                    (sum, c) => sum + c.amount,
-                    0,
-                  );
-                  const rentTotal = data.primaryRent.amount + splitTotal;
-                  if (rentTotal <= 0 && data.recurringCharges.length === 0) {
-                    return <p className="text-sm text-fg-muted">None.</p>;
-                  }
-                  return (
-                    <table className="w-full text-sm">
-                      <thead className="text-xs uppercase text-fg-muted border-b border-border">
-                        <tr>
-                          <th className="py-1 text-left">Memo</th>
-                          <th>Frequency</th>
-                          <th>Next date</th>
-                          <th>Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {/* Base rent posts from the lease TERMS (primaryRent +
-                            recovery split charges), not a recurringCharges row. */}
-                        {rentTotal > 0 && (
-                          <tr className="border-b border-border/40">
-                            <td className="py-1">
-                              {data.primaryRent.memo || "Rent (base + recovery)"}
-                            </td>
-                            <td>{data.rentCycle}</td>
-                            <td className="text-fg-muted">
-                              {formatDateOnly(data.primaryRent.nextDueDate)}
-                            </td>
-                            <td>
-                              <CurrencyAmount cents={rentTotal} />
-                            </td>
-                          </tr>
+              <CardContent className="space-y-3 text-sm">
+                <div>
+                  <div className="mb-1 text-xs text-fg-muted">Tenants</div>
+                  {data.tenants.length === 0 ? (
+                    <p className="text-fg-muted">None.</p>
+                  ) : (
+                    data.tenants.map((t) => (
+                      <div key={t.tenantId}>
+                        <Link
+                          href={`/properties/rentals/tenants/${t.tenantId}`}
+                          className="hover:underline"
+                        >
+                          {tenantDisplayName(t)}
+                        </Link>
+                        {t.email && (
+                          <span className="text-fg-muted"> · {t.email}</span>
                         )}
-                        {data.recurringCharges.map((c) => (
-                          <tr key={c.id} className="border-b border-border/40">
-                            <td className="py-1">{c.memo || "—"}</td>
-                            <td>{c.frequency}</td>
-                            <td className="text-fg-muted">
-                              {formatDateOnly(c.nextDate)}
-                            </td>
-                            <td>
-                              <CurrencyAmount cents={c.amount} />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  );
-                })()}
-                <p className="mt-2 text-xs text-fg-muted">
-                  Base rent posts from the lease terms; any extra rows are
-                  additional recurring charges. A nightly cron auto-posts each as
-                  it comes due — use <em>Post recurring due now</em> to post any
-                  due charges immediately without waiting for the sweep.
-                </p>
-                {/* Edits here are forward-looking: the amounts above are what
-                    WILL be charged, while Accounting → Financials reports what
-                    already WAS. Saying so on the card stops the recurring
-                    "I changed the rent but Financials didn't move" question. */}
-                <p className="mt-1 text-xs text-fg-muted">
-                  Amounts shown are what will be charged from the next due date
-                  {data.primaryRent.nextDueDate
-                    ? ` (${formatDateOnly(data.primaryRent.nextDueDate)})`
-                    : ""}
-                  . Editing rent or the lease terms never changes a month that
-                  has already posted, so <strong>Accounting → Financials</strong>{" "}
-                  keeps showing the old figure for those months — it reports the
-                  ledger, not the current lease setup.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>One-time charges</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {data.oneTimeCharges.length === 0 ? (
-                  <p className="text-sm text-fg-muted">None.</p>
-                ) : (
-                  <ul className="space-y-1 text-sm">
-                    {data.oneTimeCharges.map((c) => (
-                      <li key={c.id}>
-                        <CurrencyAmount cents={c.amount} />{" "}
-                        {c.memo && `· ${c.memo}`}
-                        {c.dueDate && (
-                          <span className="text-fg-muted">
-                            {" "}
-                            · due {formatDateOnly(c.dueDate)}
-                          </span>
-                        )}
-                        {c.posted && (
-                          <Badge variant="gain" className="ml-2">
-                            Posted
-                          </Badge>
-                        )}
-                      </li>
+                      </div>
+                    ))
+                  )}
+                </div>
+                {data.cosigners.length > 0 && (
+                  <div>
+                    <div className="mb-1 text-xs text-fg-muted">Cosigners</div>
+                    {data.cosigners.map((t) => (
+                      <div key={t.tenantId}>{tenantDisplayName(t)}</div>
                     ))}
-                  </ul>
+                  </div>
                 )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>eSignature documents</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm space-y-1">
-                {data.esignatureDocuments.length === 0 ? (
-                  <p className="text-fg-muted">None.</p>
-                ) : (
-                  data.esignatureDocuments.map((d) => (
-                    <div key={d.id} className="flex items-center gap-2">
-                      <span>{d.label}</span>
-                      <Badge variant="muted">{d.status}</Badge>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {data.rentSchedule.length > 0 && (
-          <TabsContent value="terms">
-            <Card>
-              <CardHeader>
-                <CardTitle>Lease term schedule</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <LeaseTermScheduleTable
-                  periods={data.rentSchedule}
-                  proportionateSharePct={data.proportionateSharePct}
-                  salesTaxRatePct={data.salesTaxRatePct}
-                />
               </CardContent>
             </Card>
           </TabsContent>
-        )}
 
-        <TabsContent value="tenant">
-          <Card>
-            <CardHeader>
-              <CardTitle>Tenants & cosigners</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div>
-                <div className="text-xs text-fg-muted mb-1">Tenants</div>
-                {data.tenants.length === 0 ? (
-                  <p className="text-fg-muted">None.</p>
-                ) : (
-                  data.tenants.map((t) => (
-                    <div key={t.tenantId}>
-                      <Link
-                        href={`/properties/rentals/tenants/${t.tenantId}`}
-                        className="hover:underline"
-                      >
-                        {tenantDisplayName(t)}
-                      </Link>
-                      {t.email && (
-                        <span className="text-fg-muted"> · {t.email}</span>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-              {data.cosigners.length > 0 && (
-                <div>
-                  <div className="text-xs text-fg-muted mb-1">Cosigners</div>
-                  {data.cosigners.map((t) => (
-                    <div key={t.tenantId}>{tenantDisplayName(t)}</div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+          <TabsContent value="communications" className="mt-4">
+            <CommunicationsTab
+              relatedEntityType="Lease"
+              relatedEntityId={data.id}
+            />
+          </TabsContent>
 
-        <TabsContent value="communications" className="mt-4">
-          <CommunicationsTab
-            relatedEntityType="Lease"
-            relatedEntityId={data.id}
-          />
-        </TabsContent>
+          <TabsContent value="history">
+            <Card>
+              <CardHeader>
+                <CardTitle>Event history</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ActivityLog parentType="Lease" parentId={data.id} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
-        <TabsContent value="history">
-          <Card>
-            <CardHeader>
-              <CardTitle>Event history</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ActivityLog parentType="Lease" parentId={data.id} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      <EvictionToggleDialog
-        open={evictionOpen}
-        onClose={() => setEvictionOpen(false)}
-        onSaved={load}
-        leaseId={data.id}
-        evictionPending={data.evictionPending}
-        currentNote={data.evictionPendingNote}
-      />
-      <RentersInsuranceModal
-        open={insuranceOpen}
-        onClose={() => {
-          setInsuranceOpen(false);
-          setInsuranceEditingId(undefined);
-        }}
-        editingId={insuranceEditingId}
-        onSaved={load}
-        leaseId={data.id}
-        leaseTenants={data.tenants.map((t) => ({
-          tenantId: t.tenantId,
-          firstName: t.firstName,
-          lastName: t.lastName,
-        }))}
-      />
-      <PetModal
-        open={petOpen}
-        onClose={() => {
-          setPetOpen(false);
-          setPetEditingId(undefined);
-        }}
-        editingId={petEditingId}
-        onSaved={load}
-        leaseId={data.id}
-        leaseTenants={data.tenants.map((t) => ({
-          tenantId: t.tenantId,
-          firstName: t.firstName,
-          lastName: t.lastName,
-        }))}
-      />
-      <EditLeaseModal
-        open={editLeaseOpen}
-        onClose={() => setEditLeaseOpen(false)}
-        leaseId={data.id}
-        onSaved={load}
-      />
-    </div>
+        <EvictionToggleDialog
+          open={evictionOpen}
+          onClose={() => setEvictionOpen(false)}
+          onSaved={load}
+          leaseId={data.id}
+          evictionPending={data.evictionPending}
+          currentNote={data.evictionPendingNote}
+        />
+        <RentersInsuranceModal
+          open={insuranceOpen}
+          onClose={() => {
+            setInsuranceOpen(false);
+            setInsuranceEditingId(undefined);
+          }}
+          editingId={insuranceEditingId}
+          onSaved={load}
+          leaseId={data.id}
+          leaseTenants={data.tenants.map((t) => ({
+            tenantId: t.tenantId,
+            firstName: t.firstName,
+            lastName: t.lastName,
+          }))}
+        />
+        <PetModal
+          open={petOpen}
+          onClose={() => {
+            setPetOpen(false);
+            setPetEditingId(undefined);
+          }}
+          editingId={petEditingId}
+          onSaved={load}
+          leaseId={data.id}
+          leaseTenants={data.tenants.map((t) => ({
+            tenantId: t.tenantId,
+            firstName: t.firstName,
+            lastName: t.lastName,
+          }))}
+        />
+        <EditLeaseModal
+          open={editLeaseOpen}
+          onClose={() => setEditLeaseOpen(false)}
+          leaseId={data.id}
+          onSaved={load}
+        />
+      </div>
     </PmNativeCurrency>
   );
 }

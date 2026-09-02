@@ -19,6 +19,7 @@ import { useToast } from "@/components/ui/toast";
 import { computeWarnings } from "@/lib/pm/warnings";
 import { WarningInline } from "@/components/pm/WarningBadge";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface PolicyRow {
   id: string;
@@ -61,10 +62,16 @@ export default function LockedPeriodsPage() {
   }, [load]);
 
   async function archive(id: string) {
-    const res = await fetch(`/api/pm/locked-periods/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/pm/locked-periods/${id}`, {
+      method: "DELETE",
+    });
     if (!res.ok) {
       const err = (await res.json().catch(() => ({}))) as { error?: string };
-      toast({ title: "Archive failed", description: err.error, variant: "error" });
+      toast({
+        title: "Archive failed",
+        description: err.error,
+        variant: "error",
+      });
       return;
     }
     toast({ title: "Policy archived", variant: "success" });
@@ -79,14 +86,18 @@ export default function LockedPeriodsPage() {
     });
     if (!res.ok) {
       const err = (await res.json().catch(() => ({}))) as { error?: string };
-      toast({ title: "Toggle failed", description: err.error, variant: "error" });
+      toast({
+        title: "Toggle failed",
+        description: err.error,
+        variant: "error",
+      });
       return;
     }
     await load();
   }
 
   const propertyName = (id: string | null) =>
-    id ? properties.find((p) => p.id === id)?.name ?? "Property" : "—";
+    id ? (properties.find((p) => p.id === id)?.name ?? "Property") : "—";
 
   return (
     <div className="space-y-4">
@@ -132,7 +143,8 @@ export default function LockedPeriodsPage() {
                   <tr
                     key={r.id}
                     className={
-                      "border-b border-border/40 " + (r.active ? "" : "opacity-50")
+                      "border-b border-border/40 " +
+                      (r.active ? "" : "opacity-50")
                     }
                   >
                     <td className="py-2 text-fg">
@@ -141,12 +153,10 @@ export default function LockedPeriodsPage() {
                         : `Property — ${propertyName(r.propertyId)}`}
                     </td>
                     <td className="text-fg-muted">
-                      {r.fromDate
-                        ? new Date(r.fromDate).toLocaleDateString()
-                        : "—"}
+                      {r.fromDate ? formatDateOnly(r.fromDate) : "—"}
                     </td>
                     <td className="text-fg-muted">
-                      {r.toDate ? new Date(r.toDate).toLocaleDateString() : "—"}
+                      {formatDateOnly(r.toDate)}
                     </td>
                     <td className="text-fg-muted">{r.message || "—"}</td>
                     <td>
@@ -288,7 +298,7 @@ function AddLockedPeriodModal({
       };
       const issueMsg = err.issues
         ? Object.values(err.issues).flat().join("; ")
-        : err.error ?? "Failed";
+        : (err.error ?? "Failed");
       toast({ title: "Save failed", description: issueMsg, variant: "error" });
       return;
     }
@@ -353,9 +363,7 @@ function AddLockedPeriodModal({
                 id="lp-from"
                 type="date"
                 value={form.fromDate}
-                onChange={(e) =>
-                  setForm({ ...form, fromDate: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, fromDate: e.target.value })}
               />
             </div>
             <div className="space-y-1">

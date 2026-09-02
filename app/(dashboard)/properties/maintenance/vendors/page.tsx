@@ -19,6 +19,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { EditVendorModal } from "@/components/pm/EditVendorModal";
 import { EditEntityButton } from "@/components/pm/EditEntityButton";
+import { formatDateOnly } from "@/lib/utils/dateInput";
 
 interface VendorRow {
   id: string;
@@ -132,7 +133,8 @@ export default function VendorsPage() {
                 <tr
                   key={v.id}
                   className={
-                    "border-b border-border/40 " + (v.active ? "" : "opacity-50")
+                    "border-b border-border/40 " +
+                    (v.active ? "" : "opacity-50")
                   }
                 >
                   <td className="py-2 text-fg">
@@ -144,7 +146,9 @@ export default function VendorsPage() {
                     </Link>
                   </td>
                   <td className="text-fg-muted">{v.primaryEmail || "—"}</td>
-                  <td className="text-fg-muted">{v.insuranceProvider || "—"}</td>
+                  <td className="text-fg-muted">
+                    {v.insuranceProvider || "—"}
+                  </td>
                   <td className="text-fg-muted">
                     <ExpiresChip
                       endDate={v.insuranceExpirationDate}
@@ -230,7 +234,7 @@ function ExpiresChip({
   days: number | null;
 }) {
   if (!endDate) return <span>—</span>;
-  const formatted = new Date(endDate).toLocaleDateString();
+  const formatted = formatDateOnly(endDate);
   if (days !== null && days < 0) {
     return (
       <span className="inline-flex items-center gap-2">
@@ -372,9 +376,7 @@ function AddVendorModal({
               <Input
                 id="v-last"
                 value={form.lastName}
-                onChange={(e) =>
-                  setForm({ ...form, lastName: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
               />
             </div>
           </div>
