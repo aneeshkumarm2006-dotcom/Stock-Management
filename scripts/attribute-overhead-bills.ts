@@ -128,12 +128,23 @@ async function main() {
       )
     : null;
 
-  // The reversal path selects bills already ON the target company, so it cannot
-  // use the legacy-bucket predicate. Everything else does.
+  // Three selection modes.
+  //
+  // The default is the legacy bucket: Company-scoped with no company named.
+  //
+  // The reversal path selects bills already ON a company, so it cannot use that
+  // predicate.
+  //
+  // An explicit `--only` list overrides both and ignores the current scope
+  // entirely, which is what lets a PROPERTY-scoped bill move to a company. That
+  // case is real: a single insurance policy covering three buildings is posted
+  // against one of them, and no predicate can find those — only a human reading
+  // the memo can. Naming the ids IS the authority, so the script does not
+  // second-guess where the bill currently sits.
   const reversing = COMPANY_ARG === "none";
+  const explicit = Boolean(onlyIds) && !reversing;
   const selector: Record<string, unknown> = {
     organizationId: orgObjectId,
-    "scope.type": "Company",
     status: { $ne: "Voided" },
   };
   if (reversing) {
@@ -142,10 +153,16 @@ async function main() {
       console.log("un-attribute every company-scoped bill in the org.");
       return;
     }
+    selector["scope.type"] = "Company";
     selector._id = {
       $in: Array.from(onlyIds).map((s) => new Types.ObjectId(s)),
     };
+  } else if (explicit) {
+    selector._id = {
+      $in: Array.from(onlyIds!).map((s) => new Types.ObjectId(s)),
+    };
   } else {
+    selector["scope.type"] = "Company";
     selector["scope.id"] = null;
   }
 
@@ -328,8 +345,10 @@ async function main() {
     if (!APPLY) continue;
 
     // Re-assert the predicate: a concurrent edit must not be overwritten.
+    // Skipped for an explicit --only list, whose whole point is to move a bill
+    // that already carries a scope.
     const currentScopeId = String(bill.scope?.id ?? "");
-    if (!reversing && currentScopeId !== "") {
+    if (!reversing && !explicit && currentScopeId !== "") {
       console.log("        ⚠ scope changed under us — skipped");
       moved -= 1;
       skipped += 1;
